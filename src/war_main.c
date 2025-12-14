@@ -844,8 +844,8 @@ void* war_window_render(void* args) {
     capture_wav->memfd_capacity = init_capacity;
     capture_wav->fname =
         war_pool_alloc(pool_wr, sizeof(char) * capture_wav->name_limit);
-    capture_wav->fname_size = sizeof("capture.wav") - 1;
-    memcpy(capture_wav->fname, "capture.wav", capture_wav->fname_size);
+    capture_wav->fname = "capture.wav";
+    capture_wav->fname_size = strlen(capture_wav->fname);
     capture_wav->memfd = memfd_create(capture_wav->fname, MFD_CLOEXEC);
     if (capture_wav->memfd < 0) {
         call_terry_davis("memfd failed to open: %s", capture_wav->fname);
@@ -917,6 +917,7 @@ void* war_window_render(void* args) {
     map_wav->note_count = atomic_load(&ctx_lua->A_NOTE_COUNT);
     map_wav->layer_count = atomic_load(&ctx_lua->A_LAYER_COUNT);
     map_wav->name_limit = atomic_load(&ctx_lua->A_PATH_LIMIT);
+    map_wav->capacity = map_wav->note_count * map_wav->layer_count;
     map_wav->id = war_pool_alloc(
         pool_wr, sizeof(uint64_t) * map_wav->note_count * map_wav->layer_count);
     map_wav->fname =
@@ -924,10 +925,6 @@ void* war_window_render(void* args) {
                        sizeof(char) * map_wav->note_count *
                            map_wav->layer_count * map_wav->name_limit);
     map_wav->fname_size = war_pool_alloc(
-        pool_wr, sizeof(uint32_t) * map_wav->note_count * map_wav->layer_count);
-    map_wav->note = war_pool_alloc(
-        pool_wr, sizeof(uint32_t) * map_wav->note_count * map_wav->layer_count);
-    map_wav->layer = war_pool_alloc(
         pool_wr, sizeof(uint32_t) * map_wav->note_count * map_wav->layer_count);
     //-------------------------------------------------------------------------
     // CAPTURE CONTEXT
@@ -1232,8 +1229,6 @@ skip_capture:
             }
             switch (ctx_command->prompt_type) {
             case WAR_COMMAND_PROMPT_CAPTURE_FNAME: {
-                call_terry_davis("entered fname");
-                // logic
                 if (len == 0) { goto war_label_command_processed; }
                 for (uint32_t i = 0; i < len; i++) {
                     if (ctx_command->text[i] == ' ') {
@@ -1241,8 +1236,12 @@ skip_capture:
                     }
                 }
                 memset(ctx_capture->fname, 0, ctx_capture->name_limit);
-                memcpy(ctx_capture->fname, ctx_command->text, len);
-                ctx_capture->fname_size = len;
+                memcpy(ctx_capture->fname, ctx_fsm->cwd, ctx_fsm->cwd_size);
+                memcpy(ctx_capture->fname + ctx_fsm->cwd_size, "/", 1);
+                memcpy(ctx_capture->fname + ctx_fsm->cwd_size + 1,
+                       ctx_command->text,
+                       len);
+                ctx_capture->fname_size = len + ctx_fsm->cwd_size + 1;
                 // done
                 war_command_reset(ctx_command, ctx_status);
                 ctx_command->prompt_type = WAR_COMMAND_PROMPT_CAPTURE_NOTE;
@@ -1256,16 +1255,14 @@ skip_capture:
                 goto war_label_skip_command_processed;
             }
             case WAR_COMMAND_PROMPT_CAPTURE_NOTE: {
-                call_terry_davis("entered note");
-                // logic
                 if (len == 0) { goto war_label_command_processed; }
-                int64_t note = -1;
+                int64_t note = 0;
                 for (uint32_t i = 0; i < len; i++) {
                     if (ctx_command->text[i] == ' ' ||
                         !isdigit(ctx_command->text[i])) {
                         goto war_label_command_processed;
                     }
-                    note = note * 10 + ('0' + (ctx_command->text[i]));
+                    note = note * 10 + (ctx_command->text[i] - '0');
                 }
                 if (note < 0 || note > 127) {
                     goto war_label_command_processed;
@@ -1284,12 +1281,152 @@ skip_capture:
                 goto war_label_skip_command_processed;
             }
             case WAR_COMMAND_PROMPT_CAPTURE_LAYER: {
-                call_terry_davis("entered layer");
-                // logic
                 if (len == 0) { goto war_label_command_processed; }
                 uint64_t layer = 0;
-                bool valid = 1;
-                // done
+                for (uint32_t i = 0; i < len; i++) {
+                    char entry = ctx_command->text[i];
+                    if (!isdigit(entry) || entry == '0') {
+                        goto war_label_command_processed;
+                    }
+                    uint64_t bit_pos = entry - '1';
+                    layer |= (1ULL << bit_pos);
+                }
+                if (__builtin_popcountll(layer) != 1) {
+                    goto war_label_command_processed;
+                }
+                ctx_capture->layer = __builtin_ctzll(layer);
+                uint64_t idx = ctx_capture->note * map_wav->layer_count +
+                               ctx_capture->layer;
+                uint64_t id = cache->next_id++;
+                uint64_t old_id = map_wav->id[idx];
+                map_wav->id[idx] = id;
+                memset(map_wav->fname + idx * map_wav->name_limit,
+                       0,
+                       map_wav->name_limit);
+                memcpy(map_wav->fname + idx * map_wav->name_limit,
+                       ctx_capture->fname,
+                       ctx_capture->fname_size);
+                map_wav->fname_size[idx] = ctx_capture->fname_size;
+
+                uint32_t cache_idx = 0;
+                if (old_id > 0) {
+                    for (uint32_t i = 0; i < cache->count; i++) {
+                        if (cache->id[i] != old_id) { continue; }
+                        cache_idx = i;
+                        break;
+                    }
+                } else if (old_id == 0 && cache->free_count > 0) {
+                    cache_idx = cache->free[--cache->free_count];
+                } else if (old_id == 0 && cache->count < cache->capacity) {
+                    cache_idx = cache->count++;
+                } else {
+                    uint32_t oldest_idx = 0;
+                    for (uint32_t i = 1; i < cache->count; i++) {
+                        if (cache->timestamp[i] <=
+                            cache->timestamp[oldest_idx]) {
+                            oldest_idx = i;
+                        }
+                    }
+                    cache_idx = oldest_idx;
+                }
+                if (cache->id[cache_idx] != 0) {
+                    if (cache->fd[cache_idx] >= 0) {
+                        close(cache->fd[cache_idx]);
+                        cache->fd[cache_idx] = -1;
+                    }
+                    if (cache->file[cache_idx] != MAP_FAILED) {
+                        munmap(cache->file[cache_idx],
+                               cache->memfd_capacity[cache_idx]);
+                        cache->file[cache_idx] = MAP_FAILED;
+                    }
+                    if (cache->memfd[cache_idx] >= 0) {
+                        close(cache->memfd[cache_idx]);
+                        cache->memfd[cache_idx] = -1;
+                    }
+                }
+                cache->id[cache_idx] = id;
+                cache->type[cache_idx] = FILE_WAV;
+                cache->timestamp[cache_idx] = cache->next_timestamp++;
+                cache->memfd_capacity[cache_idx] = capture_wav->memfd_capacity;
+                cache->memfd_size[cache_idx] = capture_wav->memfd_size;
+                cache->memfd[cache_idx] = memfd_create(
+                    map_wav->fname + idx * map_wav->name_limit, MFD_CLOEXEC);
+                if (cache->memfd[cache_idx] < 0) {
+                    call_terry_davis("memfd_create failed: %s",
+                                     map_wav->fname +
+                                         idx * map_wav->name_limit);
+                    cache->id[cache_idx] = 0;
+                    map_wav->id[idx] = 0;
+                    goto war_label_command_processed;
+                }
+                cache->file[cache_idx] = mmap(NULL,
+                                              cache->memfd_capacity[cache_idx],
+                                              PROT_READ | PROT_WRITE,
+                                              MAP_SHARED,
+                                              cache->memfd[cache_idx],
+                                              0);
+                if (cache->file[cache_idx] == MAP_FAILED) {
+                    call_terry_davis("mmap failed: %s",
+                                     map_wav->fname +
+                                         idx * map_wav->name_limit);
+                    cache->id[cache_idx] = 0;
+                    map_wav->id[idx] = 0;
+                    close(cache->memfd[cache_idx]);
+                    cache->memfd[cache_idx] = -1;
+                }
+                cache->fd[cache_idx] =
+                    open(map_wav->fname + idx * map_wav->name_limit,
+                         O_RDWR | O_CREAT | O_TRUNC,
+                         0644);
+                if (cache->fd[cache_idx] == -1) {
+                    call_terry_davis("fd failed to open: %s",
+                                     map_wav->fname +
+                                         idx * map_wav->name_limit);
+                    cache->id[cache_idx] = 0;
+                    map_wav->id[idx] = 0;
+                    close(cache->memfd[cache_idx]);
+                    cache->memfd[cache_idx] = -1;
+                    munmap(cache->file[cache_idx],
+                           cache->memfd_capacity[cache_idx]);
+                    cache->file[cache_idx] = MAP_FAILED;
+                    goto war_label_command_processed;
+                }
+                cache->fd_size[cache_idx] = capture_wav->memfd_size;
+                if (ftruncate(cache->fd[cache_idx],
+                              cache->fd_size[cache_idx]) == -1) {
+                    call_terry_davis("ftruncate failed: %s",
+                                     map_wav->fname +
+                                         idx * map_wav->name_limit);
+                    cache->id[cache_idx] = 0;
+                    map_wav->id[idx] = 0;
+                    close(cache->memfd[cache_idx]);
+                    cache->memfd[cache_idx] = -1;
+                    munmap(cache->file[cache_idx],
+                           cache->memfd_capacity[cache_idx]);
+                    cache->file[cache_idx] = MAP_FAILED;
+                    close(cache->fd[cache_idx]);
+                    cache->fd[cache_idx] = -1;
+                    goto war_label_command_processed;
+                }
+                ssize_t bytes_copied = sendfile(cache->fd[cache_idx],
+                                                capture_wav->memfd,
+                                                NULL,
+                                                capture_wav->memfd_size);
+                if (bytes_copied != (ssize_t)capture_wav->memfd_size) {
+                    call_terry_davis("sendfile failed: %s",
+                                     map_wav->fname +
+                                         idx * map_wav->name_limit);
+                    cache->id[cache_idx] = 0;
+                    map_wav->id[idx] = 0;
+                    close(cache->memfd[cache_idx]);
+                    cache->memfd[cache_idx] = -1;
+                    munmap(cache->file[cache_idx],
+                           cache->memfd_capacity[cache_idx]);
+                    cache->file[cache_idx] = MAP_FAILED;
+                    close(cache->fd[cache_idx]);
+                    cache->fd[cache_idx] = -1;
+                    goto war_label_command_processed;
+                }
                 war_command_reset(ctx_command, ctx_status);
                 ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
                 memset(ctx_command->prompt_text, 0, ctx_command->capacity);

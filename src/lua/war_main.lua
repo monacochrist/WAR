@@ -189,8 +189,6 @@ pool_wr = {
     { name = "map_wav.id",                          type = "uint64_t",            count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT },
     { name = "map_wav.fname",                       type = "char",                count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT * ctx_lua.A_PATH_LIMIT },
     { name = "map_wav.fname_size",                  type = "uint32_t",            count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT },
-    { name = "map_wav.note",                        type = "uint32_t",            count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT },
-    { name = "map_wav.layer",                       type = "uint32_t",            count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT },
     -- color
     { name = "ctx_color",                           type = "war_color_context",   count = 1 },
     -- layres

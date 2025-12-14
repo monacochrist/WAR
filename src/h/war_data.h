@@ -561,8 +561,8 @@ typedef struct war_map_wav {
     uint64_t* id;
     char* fname;
     uint32_t* fname_size;
-    uint32_t* note;
-    uint32_t* layer;
+    uint32_t capacity;
+    // limits
     uint32_t note_count;
     uint32_t layer_count;
     uint32_t name_limit;
@@ -586,6 +586,8 @@ typedef struct war_cache {
     uint64_t* memfd_capacity;
     int* fd;
     uint64_t* fd_size;
+    uint32_t* free;
+    uint32_t free_count;
     uint32_t count;
     uint64_t next_id;
     uint64_t next_timestamp;
@@ -894,7 +896,7 @@ typedef struct war_capture_context {
     char* fname;
     uint32_t fname_size;
     uint32_t note;
-    uint64_t layer;
+    uint32_t layer;
     // limit
     uint32_t name_limit;
 } war_capture_context;
