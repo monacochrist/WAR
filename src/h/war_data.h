@@ -609,10 +609,6 @@ typedef struct war_file {
     ino_t inode;
 } war_file;
 
-typedef struct war_midi_context {
-    uint64_t* start_frames;
-} war_midi_context;
-
 typedef struct war_audio_context {
     double BPM;
     uint32_t sample_rate;
@@ -742,7 +738,7 @@ typedef struct war_window_render_context {
     uint32_t num_cols_for_line_numbers;
     uint32_t mode;
     war_note_quads note_quads;
-    float layers[LAYER_COUNT];
+    float z_layers[LAYER_COUNT];
     float layer_count;
     float playback_bar_pos_x;
     float playback_bar_pos_x_increment;
@@ -862,8 +858,14 @@ typedef struct war_play_context {
     uint64_t rate_us;
     // misc
     uint8_t play;
-    uint64_t* note_layers;
     uint32_t fps;
+    // midi
+    uint8_t* keys;
+    uint64_t* key_layers;
+    int32_t octave;
+    // limits
+    uint32_t note_count;
+    uint32_t layer_count;
 } war_play_context;
 
 enum capture_state {

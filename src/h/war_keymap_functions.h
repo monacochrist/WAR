@@ -367,7 +367,7 @@ static inline void war_roll_map_layer_to_cursor_row(war_env* env) {
     war_atomics* atomics = env->atomics;
     war_play_context* ctx_play = env->ctx_play;
     uint64_t layer = atomic_load(&atomics->layer);
-    ctx_play->note_layers[(int)ctx_wr->cursor_pos_y] = layer;
+    ctx_play->key_layers[(int)ctx_wr->cursor_pos_y] = layer;
     ctx_wr->numeric_prefix = 0;
 }
 
@@ -3673,80 +3673,127 @@ static inline void war_midi_space(war_env* env) {
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_q(war_env* env) {
-    call_terry_davis("war_midi_q");
+static inline void war_midi_c_key(war_env* env) {
+    call_terry_davis("war_midi_c_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 0 + (ctx_play->octave + 1) * 12;
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_w(war_env* env) {
-    call_terry_davis("war_midi_w");
+static inline void war_midi_c_sharp_key(war_env* env) {
+    call_terry_davis("war_midi_c_sharp_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 1 + (ctx_play->octave + 1) * 12;
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_e(war_env* env) {
-    call_terry_davis("war_midi_e");
+static inline void war_midi_d_key(war_env* env) {
+    call_terry_davis("war_midi_d_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 2 + (ctx_play->octave + 1) * 12;
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_r(war_env* env) {
-    call_terry_davis("war_midi_r");
+static inline void war_midi_d_sharp_key(war_env* env) {
+    call_terry_davis("war_midi_d_sharp_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 3 + (ctx_play->octave + 1) * 12;
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_t(war_env* env) {
-    call_terry_davis("war_midi_t");
+static inline void war_midi_e_key(war_env* env) {
+    call_terry_davis("war_midi_e_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 4 + (ctx_play->octave + 1) * 12;
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_y(war_env* env) {
-    call_terry_davis("war_midi_y");
+static inline void war_midi_f_key(war_env* env) {
+    call_terry_davis("war_midi_f_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 5 + (ctx_play->octave + 1) * 12;
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_u(war_env* env) {
-    call_terry_davis("war_midi_u");
+static inline void war_midi_f_sharp_key(war_env* env) {
+    call_terry_davis("war_midi_f_sharp_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 6 + (ctx_play->octave + 1) * 12;
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_i(war_env* env) {
-    call_terry_davis("war_midi_i");
+static inline void war_midi_g_key(war_env* env) {
+    call_terry_davis("war_midi_g_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 7 + (ctx_play->octave + 1) * 12;
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_o(war_env* env) {
-    call_terry_davis("war_midi_o");
+static inline void war_midi_g_sharp_key(war_env* env) {
+    call_terry_davis("war_midi_g_sharp_key");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->numeric_prefix = 0;
-}
-
-static inline void war_midi_p(war_env* env) {
-    call_terry_davis("war_midi_p");
-    war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->numeric_prefix = 0;
-}
-
-static inline void war_midi_leftbracket(war_env* env) {
-    call_terry_davis("war_midi_leftbracket");
-    war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->numeric_prefix = 0;
-}
-
-static inline void war_midi_rightbracket(war_env* env) {
-    call_terry_davis("war_midi_rightbracket");
-    war_window_render_context* ctx_wr = env->ctx_wr;
-    int note = 11 + 12 * (ctx_wr->midi_octave + 1);
-    if (note > 127) {
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 8 + (ctx_play->octave + 1) * 12;
+    if (idx >= ctx_play->note_count) {
         ctx_wr->numeric_prefix = 0;
         return;
     }
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
+    ctx_wr->numeric_prefix = 0;
+}
+
+static inline void war_midi_a_key(war_env* env) {
+    call_terry_davis("war_midi_a_key");
+    war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 9 + (ctx_play->octave + 1) * 12;
+    if (idx >= ctx_play->note_count) {
+        ctx_wr->numeric_prefix = 0;
+        return;
+    }
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
+    ctx_wr->numeric_prefix = 0;
+}
+
+static inline void war_midi_a_sharp_key(war_env* env) {
+    call_terry_davis("war_midi_a_sharp_key");
+    war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 10 + (ctx_play->octave + 1) * 12;
+    if (idx >= ctx_play->note_count) {
+        ctx_wr->numeric_prefix = 0;
+        return;
+    }
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
+    ctx_wr->numeric_prefix = 0;
+}
+
+static inline void war_midi_b_key(war_env* env) {
+    call_terry_davis("war_midi_b_key");
+    war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    uint32_t idx = 11 + (ctx_play->octave + 1) * 12;
+    if (idx >= ctx_play->note_count) {
+        ctx_wr->numeric_prefix = 0;
+        return;
+    }
+    ctx_play->keys[idx] = !ctx_play->keys[idx];
     ctx_wr->numeric_prefix = 0;
 }
 
@@ -3755,13 +3802,6 @@ static inline void war_midi_l(war_env* env) {
     war_window_render_context* ctx_wr = env->ctx_wr;
     war_atomics* atomics = env->atomics;
     atomic_fetch_xor(&atomics->loop, 1);
-    ctx_wr->numeric_prefix = 0;
-}
-
-static inline void war_midi_minus(war_env* env) {
-    call_terry_davis("war_midi_minus");
-    war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = -1;
     ctx_wr->numeric_prefix = 0;
 }
 
@@ -3801,73 +3841,91 @@ static inline void war_previous_mode(war_env* env) {
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_0(war_env* env) {
-    call_terry_davis("war_midi_0");
+static inline void war_midi_negative_1_octave(war_env* env) {
+    call_terry_davis("war_midi_minus_1_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 0;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = -1;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_1(war_env* env) {
-    call_terry_davis("war_midi_1");
+static inline void war_midi_0_octave(war_env* env) {
+    call_terry_davis("war_midi_0_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 1;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 0;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_2(war_env* env) {
-    call_terry_davis("war_midi_2");
+static inline void war_midi_1_octave(war_env* env) {
+    call_terry_davis("war_midi_1_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 2;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 1;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_3(war_env* env) {
-    call_terry_davis("war_midi_3");
+static inline void war_midi_2_octave(war_env* env) {
+    call_terry_davis("war_midi_2_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 3;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 2;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_4(war_env* env) {
-    call_terry_davis("war_midi_4");
+static inline void war_midi_3_octave(war_env* env) {
+    call_terry_davis("war_midi_3_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 4;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 3;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_5(war_env* env) {
-    call_terry_davis("war_midi_5");
+static inline void war_midi_4_octave(war_env* env) {
+    call_terry_davis("war_midi_4_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 5;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 4;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_6(war_env* env) {
-    call_terry_davis("war_midi_6");
+static inline void war_midi_5_octave(war_env* env) {
+    call_terry_davis("war_midi_5_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 6;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 5;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_7(war_env* env) {
-    call_terry_davis("war_midi_7");
+static inline void war_midi_6_octave(war_env* env) {
+    call_terry_davis("war_midi_6_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 7;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 6;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_8(war_env* env) {
-    call_terry_davis("war_midi_8");
+static inline void war_midi_7_octave(war_env* env) {
+    call_terry_davis("war_midi_7_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 8;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 7;
     ctx_wr->numeric_prefix = 0;
 }
 
-static inline void war_midi_9(war_env* env) {
-    call_terry_davis("war_midi_9");
+static inline void war_midi_8_octave(war_env* env) {
+    call_terry_davis("war_midi_8_octave");
     war_window_render_context* ctx_wr = env->ctx_wr;
-    ctx_wr->midi_octave = 9;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 8;
+    ctx_wr->numeric_prefix = 0;
+}
+
+static inline void war_midi_9_octave(war_env* env) {
+    call_terry_davis("war_midi_9_octave");
+    war_window_render_context* ctx_wr = env->ctx_wr;
+    war_play_context* ctx_play = env->ctx_play;
+    ctx_play->octave = 9;
     ctx_wr->numeric_prefix = 0;
 }
 

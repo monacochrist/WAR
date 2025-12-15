@@ -255,8 +255,6 @@ static inline size_t war_get_pool_a_size(war_pool* pool,
                 type_size = sizeof(char*);
             else if (strcmp(type, "char") == 0)
                 type_size = sizeof(char);
-            else if (strcmp(type, "war_midi_context") == 0)
-                type_size = sizeof(war_midi_context);
             else if (strcmp(type, "war_pipewire_context") == 0)
                 type_size = sizeof(war_pipewire_context);
             else if (strcmp(type, "ssize_t") == 0)
@@ -440,7 +438,7 @@ static inline void war_layer_flux(war_window_render_context* ctx_wr,
                                   war_atomics* atomics,
                                   war_play_context* ctx_play,
                                   war_color_context* ctx_color) {
-    uint64_t layer = ctx_play->note_layers[(int)ctx_wr->cursor_pos_y];
+    uint64_t layer = ctx_play->key_layers[(int)ctx_wr->cursor_pos_y];
     atomic_store(&atomics->layer, layer);
     ctx_wr->layers_active_count = __builtin_popcountll(layer);
     switch (ctx_wr->layers_active_count) {
@@ -855,6 +853,16 @@ static inline void war_command_reset(war_command_context* ctx_command,
 
 static inline void war_command_status(war_command_context* ctx_command,
                                       war_status_context* ctx_status) {
+    if (ctx_command->prompt_text_size > 0) {
+        snprintf(ctx_status->middle,
+                 ctx_command->prompt_text_size + 3 + ctx_command->text_size,
+                 "%s: %s",
+                 ctx_command->prompt_text,
+                 ctx_command->text);
+        ctx_status->middle_size =
+            ctx_command->prompt_text_size + 3 + ctx_command->text_size;
+        return;
+    }
     snprintf(ctx_status->middle,
              ctx_command->prompt_text_size + 2 + ctx_command->text_size,
              "%s:%s",
@@ -1410,9 +1418,9 @@ static inline uint32_t war_normalize_keysym(uint32_t keysym) {
         return XKB_KEY_apostrophe;
     case XKB_KEY_question: // ?
         return XKB_KEY_slash;
-    case XKB_KEY_braceleft:
+    case XKB_KEY_braceleft: // {
         return XKB_KEY_bracketleft;
-    case XKB_KEY_braceright:
+    case XKB_KEY_braceright: // }
         return XKB_KEY_bracketright;
     case 65056: // <S-Tab>
         return XKB_KEY_Tab;
@@ -1561,6 +1569,12 @@ static inline uint8_t war_parse_token_to_keysym_mod(const char* token,
         case ')':
             ks = XKB_KEY_0;
             *mod_out |= MOD_SHIFT;
+            break;
+        case '[':
+            ks = XKB_KEY_bracketleft;
+            break;
+        case ']':
+            ks = XKB_KEY_bracketright;
             break;
         case '_':
             ks = XKB_KEY_minus;

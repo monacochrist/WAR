@@ -165,7 +165,8 @@ pool_wr = {
     { name = "char_input",                          type = "char",                count = ctx_lua.A_PATH_LIMIT * 2 },
     -- play context
     { name = "ctx_play",                            type = "war_play_context",    count = 1 },
-    { name = "ctx_play.note_layers",                type = "uint64_t",            count = ctx_lua.A_NOTE_COUNT },
+    { name = "ctx_play.key_layers",                 type = "uint64_t",            count = ctx_lua.A_NOTE_COUNT },
+    { name = "ctx_play.keys",                       type = "uint8_t",             count = ctx_lua.A_NOTE_COUNT },
     -- capture context
     { name = "ctx_capture",                         type = "war_capture_context", count = 1 },
     -- capture_wav
@@ -423,6 +424,7 @@ keymap = {
     {
         sequences = {
             "i",
+
         },
         commands = {
             {
@@ -431,7 +433,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_i",
+                cmd = "war_midi_g_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -537,6 +539,11 @@ keymap = {
                 mode = war.modes.capture,
                 type = war.function_types.c,
             },
+            {
+                cmd = "war_midi_0_octave",
+                mode = war.modes.midi,
+                type = war.function_types.c,
+            },
         },
     },
     {
@@ -591,7 +598,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_1",
+                cmd = "war_midi_1_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -613,7 +620,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_2",
+                cmd = "war_midi_2_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -635,7 +642,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_3",
+                cmd = "war_midi_3_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -657,7 +664,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_4",
+                cmd = "war_midi_4_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -679,7 +686,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_5",
+                cmd = "war_midi_5_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -701,7 +708,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_6",
+                cmd = "war_midi_6_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -723,7 +730,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_7",
+                cmd = "war_midi_7_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -745,7 +752,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_8",
+                cmd = "war_midi_8_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -767,7 +774,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_9",
+                cmd = "war_midi_9_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },
@@ -893,7 +900,20 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_t",
+                cmd = "war_midi_e_key",
+                mode = war.modes.midi,
+                type = war.function_types.c,
+                handle_release = 1,
+            },
+        },
+    },
+    {
+        sequences = {
+            "y",
+        },
+        commands = {
+            {
+                cmd = "war_midi_f_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -1962,7 +1982,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_w",
+                cmd = "war_midi_c_sharp_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -1997,7 +2017,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_e",
+                cmd = "war_midi_d_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -2281,7 +2301,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_q",
+                cmd = "war_midi_c_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -2321,7 +2341,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_r",
+                cmd = "war_midi_d_sharp_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -2344,7 +2364,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_u",
+                cmd = "war_midi_f_sharp_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -2362,7 +2382,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_o",
+                cmd = "war_midi_g_sharp_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -2380,7 +2400,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_p",
+                cmd = "war_midi_a_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -2398,7 +2418,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_leftbracket",
+                cmd = "war_midi_a_sharp_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -2416,7 +2436,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_rightbracket",
+                cmd = "war_midi_b_key",
                 mode = war.modes.midi,
                 type = war.function_types.c,
                 handle_release = 1,
@@ -2434,7 +2454,7 @@ keymap = {
                 type = war.function_types.c,
             },
             {
-                cmd = "war_midi_minus",
+                cmd = "war_midi_negative_1_octave",
                 mode = war.modes.midi,
                 type = war.function_types.c,
             },

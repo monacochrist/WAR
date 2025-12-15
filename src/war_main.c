@@ -469,7 +469,7 @@ void* war_window_render(void* args) {
     ctx_wr->layers_active = war_pool_alloc(
         pool_wr, sizeof(char) * atomic_load(&ctx_lua->A_LAYER_COUNT));
     for (int i = 0; i < LAYER_COUNT; i++) {
-        ctx_wr->layers[i] = i / ctx_wr->layer_count;
+        ctx_wr->z_layers[i] = i / ctx_wr->layer_count;
     }
     uint32_t max_viewport_cols =
         (uint32_t)(physical_width /
@@ -978,10 +978,15 @@ void* war_window_render(void* args) {
     ctx_play->write_count = 0;
     // misc
     ctx_play->play = 0;
-    ctx_play->note_layers = war_pool_alloc(
-        pool_wr, sizeof(uint64_t) * atomic_load(&ctx_lua->A_NOTE_COUNT));
+    ctx_play->octave = 4;
+    ctx_play->key_layers =
+        war_pool_alloc(pool_wr, sizeof(uint64_t) * map_wav->note_count);
+    ctx_play->keys =
+        war_pool_alloc(pool_wr, sizeof(uint8_t) * map_wav->note_count);
+    ctx_play->note_count = map_wav->note_count;
+    ctx_play->layer_count = map_wav->layer_count;
     //-------------------------------------------------------------------------
-    // ENV
+    //  ENV
     //-------------------------------------------------------------------------
     war_env* env = war_pool_alloc(pool_wr, sizeof(war_env));
     env->ctx_wr = ctx_wr;
@@ -1031,20 +1036,9 @@ wr: {
         uint64_t target_samples =
             (uint64_t)((double)atomic_load(&ctx_lua->A_BYTES_NEEDED) / 8.0);
         //---------------------------------------------------------------------
-        // MIX SAMPLES
+        // MIDI PLAYBACK
         //---------------------------------------------------------------------
-        static float phase = 0.0f;
-        const float phase_inc = 2.0f * M_PI * 440.0f / 44100.0f;
-        for (uint64_t i = 0; i < target_samples; i++) {
-            float sample = sinf(phase) * 0.1f;
-            uint64_t byte_offset = pc_play->i_to_a;
-            uint8_t* audio_ptr = pc_play->to_a + byte_offset;
-            ((float*)audio_ptr)[0] = sample;
-            ((float*)audio_ptr)[1] = sample;
-            pc_play->i_to_a = (byte_offset + 8) & (pc_play->size - 1);
-            phase += phase_inc;
-            if (phase >= 2.0f * M_PI) { phase -= 2.0f * M_PI; }
-        }
+        for (uint32_t i = 0; i < ctx_play->note_count; i++) {}
     }
 skip_play:
     //-------------------------------------------------------------------------
@@ -1087,6 +1081,13 @@ skip_play:
             }
             if (max_amplitude > ctx_capture->threshold) {
                 ctx_capture->state = CAPTURE_CAPTURING;
+                memset(capture_wav->file, 0, capture_wav->memfd_capacity);
+                capture_wav->memfd_size = 44;
+                *(war_riff_header*)capture_wav->file = init_riff_header;
+                *(war_fmt_chunk*)(capture_wav->file + sizeof(war_riff_header)) =
+                    init_fmt_chunk;
+                *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
+                                   sizeof(war_fmt_chunk)) = init_data_chunk;
                 call_terry_davis("Sound detected - starting recording");
             }
         } else if (!ctx_capture->capture_wait &&
@@ -1219,8 +1220,10 @@ skip_capture:
                 ctx_command->text[ctx_command->text_size] = '\0';
             } else if (ctx_command->text_write_index == 0 &&
                        ctx_command->text_size == 0) {
-                war_command_reset(ctx_command, ctx_status);
-                war_previous_mode(env);
+                if (!ctx_command->prompt_type) {
+                    war_command_reset(ctx_command, ctx_status);
+                    war_previous_mode(env);
+                }
             }
         } else if (input == '\n') { // ASCII newline
             uint32_t len = war_trim_whitespace(ctx_command->text);
@@ -1408,9 +1411,10 @@ skip_capture:
                     cache->fd[cache_idx] = -1;
                     goto war_label_command_processed;
                 }
+                off_t offset = 0;
                 ssize_t bytes_copied = sendfile(cache->fd[cache_idx],
                                                 capture_wav->memfd,
-                                                NULL,
+                                                &offset,
                                                 capture_wav->memfd_size);
                 if (bytes_copied != (ssize_t)capture_wav->memfd_size) {
                     call_terry_davis("sendfile failed: %s",
@@ -1465,16 +1469,17 @@ skip_capture:
                 len = war_trim_whitespace(ctx_command->text);
                 if (access(ctx_command->text, F_OK) == 0) {
                     if (chdir(ctx_command->text) == 0) {
-                        call_terry_davis("changed working directory to %s",
-                                         ctx_command->text);
                     } else {
                         goto war_label_command_processed;
                     }
                 } else {
                     goto war_label_command_processed;
                 }
-                memcpy(ctx_fsm->cwd, ctx_command->text, len);
-                ctx_fsm->cwd_size = len;
+                memset(ctx_fsm->cwd, 0, ctx_fsm->name_limit);
+                getcwd(ctx_fsm->cwd, ctx_fsm->name_limit);
+                ctx_fsm->cwd_size = strlen(ctx_fsm->cwd);
+                call_terry_davis("changed working directory to %s",
+                                 ctx_fsm->cwd);
                 goto war_label_command_processed;
             } else if (strncmp(ctx_command->text, "e", 1) == 0) {
                 if (ctx_command->text[1] != ' ' &&
@@ -1513,9 +1518,27 @@ skip_capture:
                     }
                 }
                 call_terry_davis("file_path: %s", ctx_fsm->current_file_path);
+            } else if (strcmp(ctx_command->text, "pwd") == 0) {
+                call_terry_davis("pwd");
+                // reset without resettign status bar
+                memset(ctx_command->text, 0, ctx_command->capacity);
+                ctx_command->text_size = 0;
+                ctx_command->text_write_index = 0;
+                memset(ctx_command->input, 0, ctx_command->capacity);
+                ctx_command->input_write_index = 0;
+                ctx_command->input_read_index = 0;
+                memset(ctx_command->prompt_text, 0, ctx_command->capacity);
+                ctx_command->prompt_text_size = 0;
+                ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
+                war_previous_mode(env);
+                ctx_command->text_write_index = 0;
+                ctx_command->text_size = 0;
+                ctx_command->text[0] = '\0';
+                memset(ctx_status->middle, 0, ctx_status->capacity);
+                memcpy(ctx_status->middle, ctx_fsm->cwd, ctx_fsm->cwd_size);
+                goto war_label_skip_command_processed;
             }
         war_label_command_processed:
-            call_terry_davis("%s", ctx_command->text);
             war_command_reset(ctx_command, ctx_status);
             war_previous_mode(env);
             ctx_command->text_write_index = 0;
@@ -2117,7 +2140,7 @@ cmd_timeout_done:
             clear_values[0].color =
                 (VkClearColorValue){{0.1569f, 0.1569f, 0.1569f, 1.0f}};
             clear_values[1].depthStencil = (VkClearDepthStencilValue){
-                ctx_wr->layers[LAYER_OPAQUE_REGION], 0.0f};
+                ctx_wr->z_layers[LAYER_OPAQUE_REGION], 0.0f};
             VkRenderPassBeginInfo render_pass_info = {
                 .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                 .renderPass = ctx_vk->render_pass,
@@ -2192,7 +2215,7 @@ cmd_timeout_done:
                               &quad_indices_count,
                               (float[3]){(float)pos_x,
                                          (float)note_quads->pos_y[i],
-                                         ctx_wr->layers[LAYER_NOTES]},
+                                         ctx_wr->z_layers[LAYER_NOTES]},
                               (float[2]){(float)size_x, 1},
                               color,
                               default_outline_thickness,
@@ -2217,7 +2240,7 @@ cmd_timeout_done:
                                    (float)ctx_wr->sub_col /
                                        ctx_wr->navigation_sub_cells_col,
                                ctx_wr->cursor_pos_y,
-                               ctx_wr->layers[LAYER_CURSOR]},
+                               ctx_wr->z_layers[LAYER_CURSOR]},
                     (float[2]){(float)ctx_wr->cursor_size_x, 1},
                     cursor_color,
                     0,
@@ -2244,7 +2267,7 @@ cmd_timeout_done:
                     &quad_indices_count,
                     (float[3]){offset_col,
                                offset_row,
-                               ctx_wr->layers[LAYER_POPUP_BACKGROUND]},
+                               ctx_wr->z_layers[LAYER_POPUP_BACKGROUND]},
                     (float[2]){views->warpoon_viewport_cols,
                                views->warpoon_viewport_rows},
                     views->warpoon_color_bg,
@@ -2259,7 +2282,7 @@ cmd_timeout_done:
                               &quad_indices_count,
                               (float[3]){offset_col,
                                          offset_row,
-                                         ctx_wr->layers[LAYER_POPUP_HUD]},
+                                         ctx_wr->z_layers[LAYER_POPUP_HUD]},
                               (float[2]){views->warpoon_hud_cols,
                                          views->warpoon_viewport_rows},
                               views->warpoon_color_hud,
@@ -2292,7 +2315,7 @@ cmd_timeout_done:
                                    offset_row + views->warpoon_hud_rows +
                                        views->warpoon_row -
                                        views->warpoon_bottom_row,
-                                   ctx_wr->layers[LAYER_POPUP_CURSOR]},
+                                   ctx_wr->z_layers[LAYER_POPUP_CURSOR]},
                         (float[2]){cursor_span_x, 1},
                         cursor_color_transparent,
                         0,
@@ -2321,7 +2344,7 @@ cmd_timeout_done:
                                        offset_row + row -
                                            views->warpoon_bottom_row +
                                            views->warpoon_hud_rows,
-                                       ctx_wr->layers[LAYER_POPUP_HUD_TEXT]},
+                                       ctx_wr->z_layers[LAYER_POPUP_HUD_TEXT]},
                             (float[2]){1, 1},
                             views->warpoon_color_hud_text,
                             &ctx_vk->glyphs['0' + digits[col - 1]],
@@ -2352,7 +2375,7 @@ cmd_timeout_done:
                                            col,
                                        offset_row + views->warpoon_hud_rows +
                                            row - views->warpoon_bottom_row,
-                                       ctx_wr->layers[LAYER_POPUP_CURSOR]},
+                                       ctx_wr->z_layers[LAYER_POPUP_CURSOR]},
                             (float[2]){1, 1},
                             views->warpoon_color_text,
                             &ctx_vk->glyphs[(int)views
@@ -2364,22 +2387,41 @@ cmd_timeout_done:
                 }
             }
             if (ctx_fsm->current_mode == ctx_fsm->MODE_COMMAND) {
-                war_make_transparent_quad(
-                    transparent_quad_vertices,
-                    transparent_quad_indices,
-                    &transparent_quad_vertices_count,
-                    &transparent_quad_indices_count,
-                    (float[3]){ctx_wr->left_col +
-                                   ctx_command->text_write_index +
-                                   ctx_command->prompt_text_size + 1,
-                               ctx_wr->bottom_row + 1,
-                               ctx_wr->layers[LAYER_CURSOR]},
-                    (float[2]){(float)ctx_wr->cursor_size_x, 1},
-                    cursor_color,
-                    0,
-                    0,
-                    (float[2]){0.0f, 0.0f},
-                    0);
+                if (ctx_command->prompt_text_size > 0) {
+                    war_make_transparent_quad(
+                        transparent_quad_vertices,
+                        transparent_quad_indices,
+                        &transparent_quad_vertices_count,
+                        &transparent_quad_indices_count,
+                        (float[3]){ctx_wr->left_col +
+                                       ctx_command->text_write_index +
+                                       ctx_command->prompt_text_size + 2,
+                                   ctx_wr->bottom_row + 1,
+                                   ctx_wr->z_layers[LAYER_CURSOR]},
+                        (float[2]){(float)ctx_wr->cursor_size_x, 1},
+                        cursor_color,
+                        0,
+                        0,
+                        (float[2]){0.0f, 0.0f},
+                        0);
+                } else {
+                    war_make_transparent_quad(
+                        transparent_quad_vertices,
+                        transparent_quad_indices,
+                        &transparent_quad_vertices_count,
+                        &transparent_quad_indices_count,
+                        (float[3]){ctx_wr->left_col +
+                                       ctx_command->text_write_index +
+                                       ctx_command->prompt_text_size + 1,
+                                   ctx_wr->bottom_row + 1,
+                                   ctx_wr->z_layers[LAYER_CURSOR]},
+                        (float[2]){(float)ctx_wr->cursor_size_x, 1},
+                        cursor_color,
+                        0,
+                        0,
+                        (float[2]){0.0f, 0.0f},
+                        0);
+                }
             }
             // draw playback bar
             uint32_t playback_bar_color = ctx_wr->red_hex;
@@ -2398,7 +2440,7 @@ cmd_timeout_done:
                         ((60.0f / atomic_load(&ctx_lua->A_BPM)) /
                          atomic_load(&ctx_lua->A_DEFAULT_COLUMNS_PER_BEAT)),
                     ctx_wr->bottom_row,
-                    ctx_wr->layers[LAYER_PLAYBACK_BAR]},
+                    ctx_wr->z_layers[LAYER_PLAYBACK_BAR]},
                 (float[2]){0, span_y},
                 playback_bar_color,
                 0,
@@ -2412,7 +2454,7 @@ cmd_timeout_done:
                           &quad_indices_count,
                           (float[3]){ctx_wr->left_col,
                                      ctx_wr->bottom_row,
-                                     ctx_wr->layers[LAYER_HUD]},
+                                     ctx_wr->z_layers[LAYER_HUD]},
                           (float[2]){ctx_wr->viewport_cols + 1, 1},
                           ctx_wr->red_hex,
                           0,
@@ -2425,7 +2467,7 @@ cmd_timeout_done:
                           &quad_indices_count,
                           (float[3]){ctx_wr->left_col,
                                      ctx_wr->bottom_row + 1,
-                                     ctx_wr->layers[LAYER_HUD]},
+                                     ctx_wr->z_layers[LAYER_HUD]},
                           (float[2]){ctx_wr->viewport_cols + 1, 1},
                           ctx_wr->dark_gray_hex,
                           0,
@@ -2438,7 +2480,7 @@ cmd_timeout_done:
                           &quad_indices_count,
                           (float[3]){ctx_wr->left_col,
                                      ctx_wr->bottom_row + 2,
-                                     ctx_wr->layers[LAYER_HUD]},
+                                     ctx_wr->z_layers[LAYER_HUD]},
                           (float[2]){ctx_wr->viewport_cols + 1, 1},
                           ctx_wr->darker_light_gray_hex,
                           0,
@@ -2461,7 +2503,7 @@ cmd_timeout_done:
                               (float[3]){ctx_wr->left_col,
                                          ctx_wr->bottom_row +
                                              ctx_wr->num_rows_for_status_bars,
-                                         ctx_wr->layers[LAYER_HUD]},
+                                         ctx_wr->z_layers[LAYER_HUD]},
                               (float[2]){3 - gutter_end_span_inset, span_y},
                               ctx_wr->full_white_hex,
                               0,
@@ -2479,7 +2521,7 @@ cmd_timeout_done:
                             (float[3]){ctx_wr->left_col,
                                        row + ctx_wr->num_rows_for_status_bars +
                                            1,
-                                       ctx_wr->layers[LAYER_HUD]},
+                                       ctx_wr->z_layers[LAYER_HUD]},
                             (float[2]){3 - gutter_end_span_inset, 0},
                             super_light_gray_hex,
                             0,
@@ -2497,7 +2539,7 @@ cmd_timeout_done:
                             &quad_indices_count,
                             (float[3]){ctx_wr->left_col,
                                        row + ctx_wr->num_rows_for_status_bars,
-                                       ctx_wr->layers[LAYER_HUD]},
+                                       ctx_wr->z_layers[LAYER_HUD]},
                             (float[2]){2 - gutter_end_span_inset, 1},
                             ctx_wr->black_hex,
                             0,
@@ -2524,7 +2566,7 @@ cmd_timeout_done:
                                              default_vertical_line_thickness,
                                          ctx_wr->bottom_row +
                                              ctx_wr->num_rows_for_status_bars,
-                                         ctx_wr->layers[LAYER_HUD]},
+                                         ctx_wr->z_layers[LAYER_HUD]},
                               (float[2]){3 - gutter_end_span_inset, span_y},
                               ctx_wr->red_hex,
                               0,
@@ -2541,7 +2583,7 @@ cmd_timeout_done:
                         &quad_indices_count,
                         (float[3]){ctx_wr->left_col + ln_offset,
                                    row + ctx_wr->num_rows_for_status_bars + 1,
-                                   ctx_wr->layers[LAYER_HUD]},
+                                   ctx_wr->z_layers[LAYER_HUD]},
                         (float[2]){3 - gutter_end_span_inset, 0},
                         ctx_wr->full_white_hex,
                         0,
@@ -2559,8 +2601,9 @@ cmd_timeout_done:
                     quad_indices,
                     &quad_vertices_count,
                     &quad_indices_count,
-                    (float[3]){
-                        ctx_wr->left_col, row, ctx_wr->layers[LAYER_GRIDLINES]},
+                    (float[3]){ctx_wr->left_col,
+                               row,
+                               ctx_wr->z_layers[LAYER_GRIDLINES]},
                     (float[2]){ctx_wr->viewport_cols, 0},
                     ctx_wr->darker_light_gray_hex,
                     0,
@@ -2610,7 +2653,7 @@ cmd_timeout_done:
                               &quad_indices_count,
                               (float[3]){col,
                                          ctx_wr->bottom_row,
-                                         ctx_wr->layers[LAYER_GRIDLINES]},
+                                         ctx_wr->z_layers[LAYER_GRIDLINES]},
                               (float[2]){0, span_y},
                               color,
                               0,
@@ -2765,7 +2808,7 @@ cmd_timeout_done:
                         &text_indices_count,
                         (float[3]){col + ctx_wr->left_col,
                                    2 + ctx_wr->bottom_row,
-                                   ctx_wr->layers[LAYER_HUD_TEXT]},
+                                   ctx_wr->z_layers[LAYER_HUD_TEXT]},
                         (float[2]){1, 1},
                         ctx_wr->white_hex,
                         &ctx_vk->glyphs[(int)ctx_status->top[(int)col]],
@@ -2781,7 +2824,7 @@ cmd_timeout_done:
                         &text_indices_count,
                         (float[3]){col + ctx_wr->left_col,
                                    1 + ctx_wr->bottom_row,
-                                   ctx_wr->layers[LAYER_HUD_TEXT]},
+                                   ctx_wr->z_layers[LAYER_HUD_TEXT]},
                         (float[2]){1, 1},
                         ctx_wr->red_hex,
                         &ctx_vk->glyphs[(int)ctx_status->middle[(int)col]],
@@ -2797,7 +2840,7 @@ cmd_timeout_done:
                         &text_indices_count,
                         (float[3]){col + ctx_wr->left_col,
                                    ctx_wr->bottom_row,
-                                   ctx_wr->layers[LAYER_HUD_TEXT]},
+                                   ctx_wr->z_layers[LAYER_HUD_TEXT]},
                         (float[2]){1, 1},
                         ctx_wr->full_white_hex,
                         &ctx_vk->glyphs[(int)ctx_status->bottom[(int)col]],
@@ -2838,7 +2881,7 @@ cmd_timeout_done:
                     &text_indices_count,
                     (float[3]){1 + ctx_wr->left_col,
                                row + ctx_wr->num_rows_for_status_bars,
-                               ctx_wr->layers[LAYER_HUD_TEXT]},
+                               ctx_wr->z_layers[LAYER_HUD_TEXT]},
                     (float[2]){1, 1},
                     ctx_wr->black_hex,
                     &ctx_vk->glyphs[piano_notes[i_piano_notes][0]],
@@ -2852,7 +2895,7 @@ cmd_timeout_done:
                     &text_indices_count,
                     (float[3]){2 + ctx_wr->left_col,
                                row + ctx_wr->num_rows_for_status_bars,
-                               ctx_wr->layers[LAYER_HUD_TEXT]},
+                               ctx_wr->z_layers[LAYER_HUD_TEXT]},
                     (float[2]){1, 1},
                     ctx_wr->black_hex,
                     &ctx_vk->glyphs['0' + octave],
@@ -2883,7 +2926,7 @@ cmd_timeout_done:
                         &text_indices_count,
                         (float[3]){ctx_wr->left_col + col,
                                    row + ctx_wr->num_rows_for_status_bars,
-                                   ctx_wr->layers[LAYER_HUD_TEXT]},
+                                   ctx_wr->z_layers[LAYER_HUD_TEXT]},
                         (float[2]){1, 1},
                         ctx_wr->full_white_hex,
                         &ctx_vk->glyphs['0' + digits[col - ln_offset]],
