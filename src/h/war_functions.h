@@ -1452,15 +1452,15 @@ static inline uint8_t war_parse_token_to_keysym_mod(const char* token,
                     strcasecmp(part, "Ctrl") == 0 ||
                     strcasecmp(part, "Control") == 0) {
                     *mod_out |= MOD_CTRL;
-                } else if (strcasecmp(part, "S") == 0 ||
+                } else if (strcmp(part, "S") == 0 ||
                            strcasecmp(part, "Shift") == 0) {
                     *mod_out |= MOD_SHIFT;
-                } else if (strcasecmp(part, "A") == 0 ||
+                } else if (strcmp(part, "A") == 0 ||
                            strcasecmp(part, "Alt") == 0 ||
                            strcasecmp(part, "M") == 0 ||
                            strcasecmp(part, "Meta") == 0) {
                     *mod_out |= MOD_ALT;
-                } else if (strcasecmp(part, "D") == 0 ||
+                } else if (strcmp(part, "D") == 0 ||
                            strcasecmp(part, "Cmd") == 0 ||
                            strcasecmp(part, "Super") == 0 ||
                            strcasecmp(part, "Logo") == 0) {
@@ -1617,6 +1617,34 @@ static inline uint8_t war_parse_token_to_keysym_mod(const char* token,
             break;
         case ',':
             ks = XKB_KEY_comma;
+            break;
+        case 'a':
+        case 'b':
+        case 'c':
+        case 'd':
+        case 'e':
+        case 'f':
+        case 'g':
+        case 'h':
+        case 'i':
+        case 'j':
+        case 'k':
+        case 'l':
+        case 'm':
+        case 'n':
+        case 'o':
+        case 'p':
+        case 'q':
+        case 'r':
+        case 's':
+        case 't':
+        case 'u':
+        case 'v':
+        case 'w':
+        case 'x':
+        case 'y':
+        case 'z':
+            ks = XKB_KEY_a + (c - 'a');
             break;
         default:
             ks = xkb_keysym_from_name(key_str, XKB_KEYSYM_NO_FLAGS);

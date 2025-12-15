@@ -141,6 +141,7 @@ enum war_pipelines {
     PIPELINE_NONE = 0,
     PIPELINE_QUAD = 1,
     PIPELINE_SDF = 2,
+    PIPELINE_SPECTROGRAM = 3,
 };
 
 enum war_cursor {
@@ -1034,7 +1035,6 @@ typedef struct war_vulkan_context {
     void* quads_index_buffer_mapped;
     void* quads_instance_buffer_mapped;
     uint32_t current_frame;
-
     //-------------------------------------------------------------------------
     // TEXT PIPELINE
     //-------------------------------------------------------------------------
@@ -1072,14 +1072,69 @@ typedef struct war_vulkan_context {
     void* text_vertex_buffer_mapped;
     void* text_instance_buffer_mapped;
     void* text_index_buffer_mapped;
+    //-------------------------------------------------------------------------
+    // SPECTROGRAM PIPELINE
+    //-------------------------------------------------------------------------
+    VkPipeline spectrogram_pipeline;
+    VkPipelineLayout spectrogram_pipeline_layout;
+    VkShaderModule spectrogram_vertex_shader;
+    VkShaderModule spectrogram_fragment_shader;
+    VkBuffer spectrogram_vertex_buffer;
+    VkDeviceMemory spectrogram_vertex_buffer_memory;
+    VkBuffer spectrogram_instance_buffer;
+    VkDeviceMemory spectrogram_instance_buffer_memory;
+    VkImage spectrogram_texture;
+    VkImageView spectrogram_texture_view;
+    VkDeviceMemory spectrogram_texture_memory;
+    VkSampler spectrogram_sampler;
+    VkDescriptorSet spectrogram_descriptor_set;
+    VkDescriptorSetLayout spectrogram_descriptor_set_layout;
+    VkDescriptorPool spectrogram_descriptor_pool;
+    void* spectrogram_vertex_buffer_mapped;
+    void* spectrogram_instance_buffer_mapped;
+    // audio processing
+    float* fft_input_buffer;
+    float* fft_output_buffer;
+    uint32_t fft_size;
+    uint32_t spectrogram_width;
+    uint32_t spectrogram_height;
+    float* audio_ring_buffer;
+    uint32_t audio_buffer_size;
+    uint32_t audio_write_index;
 } war_vulkan_context;
 
-typedef struct war_drm_context {
-    int drm_fd;
-    uint32_t connector_id;
-    uint32_t crtc_id;
-    drmModeModeInfo mode;
-} war_drm_context;
+typedef struct war_spectrogram_vertex {
+    float corner[2];
+    float pos[3];
+    uint32_t color;
+    float uv[2];
+} war_spectrogram_vertex;
+
+typedef struct war_spectrogram_instance {
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+    float time_offset;
+    float frequency_scale;
+    uint32_t color;
+} war_spectrogram_instance;
+
+typedef struct war_spectrogram_push_constants {
+    float bottom_left[2];
+    float physical_size[2];
+    float cell_size[2];
+    float zoom;
+    uint32_t _pad;
+    float cell_offsets[2];
+    float scroll_margin[2];
+    float anchor_cell[2];
+    float top_right[2];
+    float time_scale;
+    float frequency_scale;
+    float time_offset;
+    uint32_t fft_size;
+} war_spectrogram_push_constants;
 
 typedef struct war_env war_env;
 

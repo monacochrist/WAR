@@ -360,9 +360,9 @@ void* war_window_render(void* args) {
         .midi_octave = 4,
         .capture_octave = 4,
         .gain_increment = 0.05f,
-        .trinity = false,
-        .fullscreen = false,
-        .end_window_render = false,
+        .trinity = 0,
+        .fullscreen = 0,
+        .end_window_render = 0,
         .FPS = atomic_load(&ctx_lua->WR_FPS),
         .now = 0,
         .mode = 0,
@@ -441,7 +441,7 @@ void* war_window_render(void* args) {
         .min_col = 0,
         .min_row = 0,
         .layer_count = (float)LAYER_COUNT,
-        .sleep = false,
+        .sleep = 0,
         .playback_bar_pos_x = 0.0f,
         .light_gray_hex = light_gray_hex,
         .darker_light_gray_hex = darker_light_gray_hex,
@@ -814,7 +814,7 @@ void* war_window_render(void* args) {
         (uint64_t)round((1.0 / (double)ctx_wr->FPS) * microsecond_conversion);
     uint64_t last_frame_time = war_get_monotonic_time_us();
     ctx_wr->cursor_blink_previous_us = last_frame_time;
-    ctx_wr->cursor_blinking = false;
+    ctx_wr->cursor_blinking = 0;
     //-------------------------------------------------------------------------
     // PC CONTROL
     //-------------------------------------------------------------------------
@@ -1606,7 +1606,7 @@ skip_command:
             if (!ctx_fsm->repeating) {
                 // still waiting for initial delay
                 if (elapsed >= ctx_fsm->repeat_delay_us) {
-                    ctx_fsm->repeating = true;
+                    ctx_fsm->repeating = 1;
                     ctx_fsm->key_last_event_us[k * atomic_load(
                                                        &ctx_lua->WR_MOD_COUNT) +
                                                m] = ctx_wr->now; // reset timer
@@ -1647,7 +1647,7 @@ skip_command:
                                 ctx_fsm->current_mode)]) {
                             uint16_t temp = ctx_fsm->current_state;
                             ctx_fsm->current_state = 0;
-                            ctx_fsm->goto_cmd_repeat_done = true;
+                            ctx_fsm->goto_cmd_repeat_done = 1;
                             if (ctx_fsm->function_type[FSM_2D_MODE(
                                     temp, ctx_fsm->current_mode)] ==
                                 ctx_fsm->FUNCTION_NONE) {
@@ -1672,7 +1672,7 @@ skip_command:
     } else {
         ctx_fsm->repeat_keysym = 0;
         ctx_fsm->repeat_mod = 0;
-        ctx_fsm->repeating = false;
+        ctx_fsm->repeating = 0;
     }
 cmd_repeat_done:
     //--------------------------------------------------------------------
@@ -1681,10 +1681,10 @@ cmd_repeat_done:
     if (ctx_fsm->timeout && ctx_wr->now >= ctx_fsm->timeout_start_us +
                                                ctx_fsm->timeout_duration_us) {
         uint16_t temp = ctx_fsm->timeout_state_index;
-        ctx_fsm->timeout = false;
+        ctx_fsm->timeout = 0;
         ctx_fsm->timeout_state_index = 0;
         ctx_fsm->timeout_start_us = 0;
-        ctx_fsm->goto_cmd_timeout_done = true;
+        ctx_fsm->goto_cmd_timeout_done = 1;
         // clear current
         ctx_fsm->current_state = 0;
         ctx_fsm->state_last_event_us = ctx_wr->now;
@@ -2618,7 +2618,7 @@ cmd_timeout_done:
             for (uint32_t col = ctx_wr->left_col + 1;
                  col <= ctx_wr->right_col + 1;
                  col++) {
-                bool draw_vertical_line = false;
+                bool draw_vertical_line = 0;
                 uint32_t color;
                 for (uint32_t i = 0; i < MAX_GRIDLINE_SPLITS; i++) {
                     draw_vertical_line =
@@ -3146,12 +3146,12 @@ cmd_timeout_done:
             size_t states_bytes =
                 size - 12; // subtract object_id/opcode/length + width/height
             size_t num_states = states_bytes / 4;
-            ctx_wr->fullscreen = false;
+            ctx_wr->fullscreen = 0;
             for (size_t i = 0; i < num_states; i++) {
                 uint32_t state = *(uint32_t*)(states_ptr + i * 4);
                 if (state == 2) { // XDG_TOPLEVEL_STATE_FULLSCREEN
-                    ctx_wr->fullscreen = true;
-                    // call_terry_davis("true fullscreen");
+                    ctx_wr->fullscreen = 1;
+                    // call_terry_davis("1 fullscreen");
                     break;
                 }
             }
@@ -4001,20 +4001,23 @@ cmd_timeout_done:
             xkb_mod_mask_t mods = xkb_state_serialize_mods(
                 ctx_fsm->xkb_state, XKB_STATE_MODS_DEPRESSED);
             uint32_t mod = 0;
-            if (mods & (1 << ctx_fsm->mod_shift)) mod |= MOD_SHIFT;
-            if (mods & (1 << ctx_fsm->mod_ctrl)) mod |= MOD_CTRL;
-            if (mods & (1 << ctx_fsm->mod_alt)) mod |= MOD_ALT;
-            if (mods & (1 << ctx_fsm->mod_logo)) mod |= MOD_LOGO;
+            if (mods & (1 << ctx_fsm->mod_shift)) { mod |= MOD_SHIFT; }
+            if (mods & (1 << ctx_fsm->mod_ctrl)) { mod |= MOD_CTRL; }
+            if (mods & (1 << ctx_fsm->mod_alt)) { mod |= MOD_ALT; }
+            if (mods & (1 << ctx_fsm->mod_logo)) { mod |= MOD_LOGO; }
             uint8_t pressed = (wl_key_state == 1);
             keysym = war_normalize_keysym(keysym);
             if (keysym == XKB_KEY_NoSymbol) {
                 ctx_fsm->repeat_keysym = 0;
                 ctx_fsm->repeat_mod = 0;
-                ctx_fsm->repeating = false;
+                ctx_fsm->repeating = 0;
                 // timeouts
-                ctx_fsm->timeout = false;
+                ctx_fsm->timeout = 0;
                 ctx_fsm->timeout_state_index = 0;
                 ctx_fsm->timeout_start_us = 0;
+                memset(ctx_fsm->key_down,
+                       0,
+                       ctx_fsm->keysym_count * ctx_fsm->mod_count);
                 goto cmd_done;
             }
             //-----------------------------------------------------------------
@@ -4047,7 +4050,7 @@ cmd_timeout_done:
                 }
                 if (!pressed) {
                     ctx_fsm->key_down[FSM_3D_INDEX(
-                        ctx_fsm->current_state, keysym, mod)] = false;
+                        ctx_fsm->current_state, keysym, mod)] = 0;
                     ctx_fsm->key_last_event_us[FSM_3D_INDEX(
                         ctx_fsm->current_state, keysym, mod)] = 0;
                     if (ctx_fsm->repeat_keysym == keysym &&
@@ -4056,15 +4059,11 @@ cmd_timeout_done:
                         ctx_fsm->current_mode != ctx_fsm->MODE_COMMAND) {
                         ctx_fsm->repeat_keysym = 0;
                         ctx_fsm->repeat_mod = 0;
-                        ctx_fsm->repeating = false;
+                        ctx_fsm->repeating = 0;
                         // timeouts
-                        ctx_fsm->timeout = false;
+                        ctx_fsm->timeout = 0;
                         ctx_fsm->timeout_state_index = 0;
                         ctx_fsm->timeout_start_us = 0;
-                    }
-                    if (ctx_wr->skip_release) {
-                        ctx_wr->skip_release = 0;
-                        goto cmd_done;
                     }
                     goto cmd_done;
                 }
@@ -4072,7 +4071,7 @@ cmd_timeout_done:
             }
             if (!pressed) {
                 ctx_fsm->key_down[FSM_3D_INDEX(
-                    ctx_fsm->current_state, keysym, mod)] = false;
+                    ctx_fsm->current_state, keysym, mod)] = 0;
                 ctx_fsm->key_last_event_us[FSM_3D_INDEX(
                     ctx_fsm->current_state, keysym, mod)] = 0;
                 // repeats
@@ -4082,17 +4081,13 @@ cmd_timeout_done:
                     ctx_fsm->current_mode != ctx_fsm->MODE_COMMAND) {
                     ctx_fsm->repeat_keysym = 0;
                     ctx_fsm->repeat_mod = 0;
-                    ctx_fsm->repeating = false;
+                    ctx_fsm->repeating = 0;
                     // timeouts
-                    ctx_fsm->timeout = false;
+                    ctx_fsm->timeout = 0;
                     ctx_fsm->timeout_state_index = 0;
                     ctx_fsm->timeout_start_us = 0;
                 }
-                if (ctx_wr->skip_release) {
-                    ctx_wr->skip_release = 0;
-                    goto cmd_done;
-                }
-                uint16_t idx = ctx_fsm->next_state[FSM_3D_INDEX(
+                uint64_t idx = ctx_fsm->next_state[FSM_3D_INDEX(
                     ctx_fsm->current_state, keysym, mod)];
                 if (idx && ctx_fsm->handle_release[FSM_2D_MODE(
                                idx, ctx_fsm->current_mode)]) {
@@ -4107,7 +4102,7 @@ cmd_timeout_done:
                 ctx_fsm->key_last_event_us[FSM_3D_INDEX(
                     ctx_fsm->current_state, keysym, mod)] = ctx_wr->now;
             }
-            uint16_t next_state_index = ctx_fsm->next_state[FSM_3D_INDEX(
+            uint64_t next_state_index = ctx_fsm->next_state[FSM_3D_INDEX(
                 ctx_fsm->current_state, keysym, mod)];
             if (ctx_fsm->timeout &&
                 ctx_fsm->next_state[FSM_3D_INDEX(
@@ -4129,7 +4124,7 @@ cmd_timeout_done:
                 FSM_2D_MODE(ctx_fsm->current_state, ctx_fsm->current_mode);
             if (ctx_fsm->is_terminal[mode_idx] &&
                 !ctx_fsm->is_prefix[mode_idx]) {
-                uint16_t temp = ctx_fsm->current_state;
+                uint64_t temp = ctx_fsm->current_state;
                 ctx_fsm->current_state = 0;
                 // repeats
                 if ((ctx_fsm->current_mode != ctx_fsm->MODE_MIDI ||
@@ -4161,7 +4156,7 @@ cmd_timeout_done:
                     ctx_fsm->current_state = 0;
                     goto cmd_done;
                 }
-                uint16_t temp = ctx_fsm->current_state;
+                uint64_t temp = ctx_fsm->current_state;
                 ctx_fsm->current_state = 0;
                 // repeats
                 if ((ctx_fsm->current_mode != ctx_fsm->MODE_MIDI ||
@@ -4177,7 +4172,7 @@ cmd_timeout_done:
                     ctx_fsm->timeout_state_index = 0;
                 }
                 ctx_fsm->timeout_start_us = 0;
-                ctx_fsm->timeout = false;
+                ctx_fsm->timeout = 0;
                 war_fsm_execute_command(env, ctx_fsm, temp);
             }
             goto cmd_done;
@@ -4263,7 +4258,7 @@ cmd_timeout_done:
                                    ctx_vk->cell_height) -
                         ctx_wr->num_rows_for_status_bars + ctx_wr->bottom_row;
                     ctx_wr->cursor_blink_previous_us = ctx_wr->now;
-                    ctx_wr->cursor_blinking = false;
+                    ctx_wr->cursor_blinking = 0;
                     if (ctx_wr->cursor_pos_y > ctx_wr->max_row) {
                         ctx_wr->cursor_pos_y = ctx_wr->max_row;
                     }

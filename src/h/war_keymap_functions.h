@@ -1916,8 +1916,8 @@ static inline void war_views_mode(war_env* env) {
     // reset
     ctx_fsm->repeat_keysym = 0;
     ctx_fsm->repeat_mod = 0;
-    ctx_fsm->repeating = false;
-    ctx_fsm->timeout = false;
+    ctx_fsm->repeating = 0;
+    ctx_fsm->timeout = 0;
     ctx_fsm->timeout_state_index = 0;
     ctx_fsm->timeout_start_us = 0;
 }
@@ -2757,17 +2757,17 @@ static inline void war_roll_tab(war_env* env) {
     switch (ctx_wr->cursor_blink_state) {
     case CURSOR_BLINK:
         ctx_wr->cursor_blink_state = CURSOR_BLINK_BPM;
-        ctx_wr->cursor_blinking = false;
+        ctx_wr->cursor_blinking = 0;
         ctx_wr->cursor_blink_previous_us = ctx_wr->now;
         break;
     case CURSOR_BLINK_BPM:
         ctx_wr->cursor_blink_state = 0;
-        ctx_wr->cursor_blinking = false;
+        ctx_wr->cursor_blinking = 0;
         ctx_wr->cursor_blink_previous_us = ctx_wr->now;
         break;
     case 0:
         ctx_wr->cursor_blink_state = CURSOR_BLINK;
-        ctx_wr->cursor_blinking = false;
+        ctx_wr->cursor_blinking = 0;
         ctx_wr->cursor_blink_previous_us = ctx_wr->now;
         ctx_wr->cursor_blink_duration_us = DEFAULT_CURSOR_BLINK_DURATION;
         break;
@@ -2833,8 +2833,8 @@ static inline void war_command_mode(war_env* env) {
     // reset
     ctx_fsm->repeat_keysym = 0;
     ctx_fsm->repeat_mod = 0;
-    ctx_fsm->repeating = false;
-    ctx_fsm->timeout = false;
+    ctx_fsm->repeating = 0;
+    ctx_fsm->timeout = 0;
     ctx_fsm->timeout_state_index = 0;
     ctx_fsm->timeout_start_us = 0;
 }
@@ -2849,8 +2849,8 @@ static inline void war_capture_mode(war_env* env) {
     war_command_context* ctx_command = env->ctx_command;
     ctx_fsm->repeat_keysym = 0;
     ctx_fsm->repeat_mod = 0;
-    ctx_fsm->repeating = false;
-    ctx_fsm->timeout = false;
+    ctx_fsm->repeating = 0;
+    ctx_fsm->timeout = 0;
     ctx_fsm->timeout_state_index = 0;
     ctx_fsm->timeout_start_us = 0;
     if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) {
