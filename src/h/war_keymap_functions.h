@@ -170,10 +170,11 @@ static inline void war_roll_cursor_left(war_env* env) {
     double pan = initial - ctx_wr->cursor_pos_x;
     if (ctx_wr->cursor_pos_x < ctx_wr->left_col + ctx_wr->scroll_margin_cols) {
         uint32_t viewport_width = ctx_wr->right_col - ctx_wr->left_col;
-        ctx_wr->left_col =
-            war_clamp_subtract_uint32(ctx_wr->left_col, pan, ctx_wr->min_col);
-        ctx_wr->right_col =
-            war_clamp_subtract_uint32(ctx_wr->right_col, pan, ctx_wr->min_col);
+        uint32_t pan_units = (uint32_t)ceil(pan);
+        ctx_wr->left_col = war_clamp_subtract_uint32(
+            ctx_wr->left_col, pan_units, ctx_wr->min_col);
+        ctx_wr->right_col = war_clamp_subtract_uint32(
+            ctx_wr->right_col, pan_units, ctx_wr->min_col);
         uint32_t new_viewport_width = ctx_wr->right_col - ctx_wr->left_col;
         if (new_viewport_width < viewport_width) {
             uint32_t diff = viewport_width - new_viewport_width;
@@ -198,10 +199,11 @@ static inline void war_roll_cursor_right(war_env* env) {
     double pan = ctx_wr->cursor_pos_x - initial;
     if (ctx_wr->cursor_pos_x > ctx_wr->right_col - ctx_wr->scroll_margin_cols) {
         uint32_t viewport_width = ctx_wr->right_col - ctx_wr->left_col;
+        uint32_t pan_units = (uint32_t)ceil(pan);
         ctx_wr->left_col =
-            war_clamp_add_uint32(ctx_wr->left_col, pan, ctx_wr->max_col);
+            war_clamp_add_uint32(ctx_wr->left_col, pan_units, ctx_wr->max_col);
         ctx_wr->right_col =
-            war_clamp_add_uint32(ctx_wr->right_col, pan, ctx_wr->max_col);
+            war_clamp_add_uint32(ctx_wr->right_col, pan_units, ctx_wr->max_col);
         uint32_t new_viewport_width = ctx_wr->right_col - ctx_wr->left_col;
         if (new_viewport_width < viewport_width) {
             uint32_t diff = viewport_width - new_viewport_width;
@@ -319,10 +321,11 @@ static inline void war_roll_cursor_right_leap(war_env* env) {
     double pan = ctx_wr->cursor_pos_x - initial;
     if (ctx_wr->cursor_pos_x > ctx_wr->right_col - ctx_wr->scroll_margin_cols) {
         uint32_t viewport_width = ctx_wr->right_col - ctx_wr->left_col;
+        uint32_t pan_units = (uint32_t)ceil(pan);
         ctx_wr->left_col =
-            war_clamp_add_uint32(ctx_wr->left_col, pan, ctx_wr->max_col);
+            war_clamp_add_uint32(ctx_wr->left_col, pan_units, ctx_wr->max_col);
         ctx_wr->right_col =
-            war_clamp_add_uint32(ctx_wr->right_col, pan, ctx_wr->max_col);
+            war_clamp_add_uint32(ctx_wr->right_col, pan_units, ctx_wr->max_col);
         uint32_t new_viewport_width = ctx_wr->right_col - ctx_wr->left_col;
         if (new_viewport_width < viewport_width) {
             uint32_t diff = viewport_width - new_viewport_width;
@@ -347,10 +350,11 @@ static inline void war_roll_cursor_left_leap(war_env* env) {
     double pan = initial - ctx_wr->cursor_pos_x;
     if (ctx_wr->cursor_pos_x < ctx_wr->left_col + ctx_wr->scroll_margin_cols) {
         uint32_t viewport_width = ctx_wr->right_col - ctx_wr->left_col;
-        ctx_wr->left_col =
-            war_clamp_subtract_uint32(ctx_wr->left_col, pan, ctx_wr->min_col);
-        ctx_wr->right_col =
-            war_clamp_subtract_uint32(ctx_wr->right_col, pan, ctx_wr->min_col);
+        uint32_t pan_units = (uint32_t)ceil(pan);
+        ctx_wr->left_col = war_clamp_subtract_uint32(
+            ctx_wr->left_col, pan_units, ctx_wr->min_col);
+        ctx_wr->right_col = war_clamp_subtract_uint32(
+            ctx_wr->right_col, pan_units, ctx_wr->min_col);
         uint32_t new_viewport_width = ctx_wr->right_col - ctx_wr->left_col;
         if (new_viewport_width < viewport_width) {
             uint32_t diff = viewport_width - new_viewport_width;

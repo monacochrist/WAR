@@ -82,7 +82,6 @@ enum war_misc {
     max_quads = 20000,
     max_text_quads = 20000,
     max_note_quads = 20000,
-    max_frames = 1,
     max_instances_per_quad = 1,
     max_instances_per_sdf_quad = 1,
     max_fds = 50,
@@ -415,6 +414,10 @@ typedef struct war_lua_context {
     _Atomic int VK_ATLAS_WIDTH;
     _Atomic int VK_ATLAS_HEIGHT;
     _Atomic float VK_FONT_PIXEL_HEIGHT;
+    _Atomic int VK_MAX_FRAMES;
+    _Atomic int VK_GLYPH_COUNT;
+    _Atomic int VK_SPECTROGRAM_WIDTH;
+    _Atomic int VK_SPECTROGRAM_HEIGHT;
     // misc
     _Atomic float DEFAULT_ALPHA_SCALE;
     _Atomic float DEFAULT_CURSOR_ALPHA_SCALE;
@@ -1072,6 +1075,7 @@ typedef struct war_vulkan_context {
     void* text_vertex_buffer_mapped;
     void* text_instance_buffer_mapped;
     void* text_index_buffer_mapped;
+    int glyph_count;
     //-------------------------------------------------------------------------
     // SPECTROGRAM PIPELINE
     //-------------------------------------------------------------------------
@@ -1090,17 +1094,11 @@ typedef struct war_vulkan_context {
     VkDescriptorSet spectrogram_descriptor_set;
     VkDescriptorSetLayout spectrogram_descriptor_set_layout;
     VkDescriptorPool spectrogram_descriptor_pool;
+    VkPushConstantRange spectrogram_push_constant_range;
     void* spectrogram_vertex_buffer_mapped;
     void* spectrogram_instance_buffer_mapped;
-    // audio processing
-    float* fft_input_buffer;
-    float* fft_output_buffer;
-    uint32_t fft_size;
     uint32_t spectrogram_width;
     uint32_t spectrogram_height;
-    float* audio_ring_buffer;
-    uint32_t audio_buffer_size;
-    uint32_t audio_write_index;
 } war_vulkan_context;
 
 typedef struct war_spectrogram_vertex {

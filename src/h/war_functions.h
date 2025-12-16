@@ -130,8 +130,13 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(WR_REPEAT_RATE_US)
     LOAD_INT(WR_UNDO_NOTES_BATCH_MAX)
     LOAD_INT(WR_INPUT_SEQUENCE_LENGTH_MAX)
+    // vk
     LOAD_INT(VK_ATLAS_HEIGHT)
     LOAD_INT(VK_ATLAS_WIDTH)
+    LOAD_INT(VK_GLYPH_COUNT)
+    LOAD_INT(VK_MAX_FRAMES)
+    LOAD_INT(VK_SPECTROGRAM_WIDTH)
+    LOAD_INT(VK_SPECTROGRAM_HEIGHT)
     // pool
     LOAD_INT(POOL_ALIGNMENT)
     // cmd
@@ -338,10 +343,20 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(int);
             else if (strcmp(type, "float") == 0)
                 type_size = sizeof(float);
+            else if (strcmp(type, "float*") == 0)
+                type_size = sizeof(float*);
             else if (strcmp(type, "double") == 0)
                 type_size = sizeof(double);
             else if (strcmp(type, "void*") == 0)
                 type_size = sizeof(void*);
+            else if (strcmp(type, "VkFence*") == 0)
+                type_size = sizeof(VkFence*);
+            else if (strcmp(type, "VkFence") == 0)
+                type_size = sizeof(VkFence);
+            else if (strcmp(type, "war_glyph_info*") == 0)
+                type_size = sizeof(war_glyph_info*);
+            else if (strcmp(type, "war_glyph_info") == 0)
+                type_size = sizeof(war_glyph_info);
             else if (strcmp(type, "char") == 0)
                 type_size = sizeof(char);
             else if (strcmp(type, "char*") == 0)
@@ -394,6 +409,8 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(war_undo_tree);
             else if (strcmp(type, "war_payload_union") == 0)
                 type_size = sizeof(war_payload_union);
+            else if (strcmp(type, "war_vulkan_context") == 0)
+                type_size = sizeof(war_vulkan_context);
 
             /* --- Pointer variants (optional but useful if you define them in
              * Lua) --- */

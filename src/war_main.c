@@ -20,10 +20,10 @@
 // src/war_main.c
 //-----------------------------------------------------------------------------
 
-#include "war_vulkan.c"
-#include "war_wayland.c"
+#include "../build/h/war_build_keymap_functions.h"
 
-#include "../build/war_keymap_macros.h"
+#include "h/war_vulkan.h"
+#include "h/war_wayland.h"
 #include "h/war_data.h"
 #include "h/war_debug_macros.h"
 #include "h/war_functions.h"
@@ -234,9 +234,9 @@ void* war_window_render(void* args) {
     double physical_width = 2560;
     double physical_height = 1600;
     const uint32_t stride = physical_width * 4;
-    war_vulkan_context ctx_vk_stack =
-        war_vulkan_init(ctx_lua, physical_width, physical_height);
-    war_vulkan_context* ctx_vk = &ctx_vk_stack;
+    war_vulkan_context* ctx_vk =
+        war_pool_alloc(pool_wr, sizeof(war_vulkan_context));
+    war_vulkan_init(ctx_vk, ctx_lua, pool_wr, physical_width, physical_height);
     assert(ctx_vk->dmabuf_fd >= 0);
     //-------------------------------------------------------------------------
     // COLOR CONTEXT
@@ -3953,7 +3953,7 @@ cmd_timeout_done:
                             '\0';
                         if (type == ctx_fsm->FUNCTION_C) {
                             ctx_fsm->function[mode_idx].c =
-                                war_get_keymap_function(cmd_name);
+                                war_build_keymap_functions(cmd_name);
                             if (!ctx_fsm->function[mode_idx].c) {
                                 ctx_fsm->function_type[mode_idx] =
                                     ctx_fsm->FUNCTION_NONE;
