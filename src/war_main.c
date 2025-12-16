@@ -21,7 +21,6 @@
 //-----------------------------------------------------------------------------
 
 #include "../build/h/war_build_keymap_functions.h"
-
 #include "h/war_vulkan.h"
 #include "h/war_wayland.h"
 #include "h/war_data.h"

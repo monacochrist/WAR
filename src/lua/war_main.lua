@@ -163,11 +163,8 @@ pool_wr = {
     { name = "ctx_vk.text_vertex_buffer_mapped",          type = "void*",               count = 1 },
     { name = "ctx_vk.text_instance_buffer_mapped",        type = "void*",               count = 1 },
     { name = "ctx_vk.text_index_buffer_mapped",           type = "void*",               count = 1 },
-    { name = "ctx_vk.spectrogram_vertex_buffer_mapped",   type = "void*",               count = 0 },
-    { name = "ctx_vk.spectrogram_instance_buffer_mapped", type = "void*",               count = 0 },
-    { name = "ctx_vk.fft_input_buffer",                   type = "float*",              count = 0 },
-    { name = "ctx_vk.fft_output_buffer",                  type = "float*",              count = 0 },
-    { name = "ctx_vk.audio_ring_buffer",                  type = "float*",              count = 0 },
+    { name = "ctx_vk.spectrogram_vertex_buffer_mapped",   type = "void*",               count = 1 },
+    { name = "ctx_vk.spectrogram_instance_buffer_mapped", type = "void*",               count = 1 },
 
     -- env
     { name = "env",                                       type = "war_env",             count = 1 },
