@@ -130,6 +130,7 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(WR_REPEAT_RATE_US)
     LOAD_INT(WR_UNDO_NOTES_BATCH_MAX)
     LOAD_INT(WR_INPUT_SEQUENCE_LENGTH_MAX)
+    LOAD_INT(WR_SPECTROGRAM_QUADS_MAX)
     // vk
     LOAD_INT(VK_ATLAS_HEIGHT)
     LOAD_INT(VK_ATLAS_WIDTH)
@@ -391,6 +392,8 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(war_play_context);
             else if (strcmp(type, "war_audio_context") == 0)
                 type_size = sizeof(war_audio_context);
+            else if (strcmp(type, "war_spectrogram_vertex") == 0)
+                type_size = sizeof(war_spectrogram_vertex);
             else if (strcmp(type, "war_cache") == 0)
                 type_size = sizeof(war_cache);
             else if (strcmp(type, "war_map_wav") == 0)

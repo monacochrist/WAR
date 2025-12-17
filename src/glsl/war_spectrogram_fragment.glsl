@@ -35,15 +35,27 @@ layout(binding = 0) uniform sampler2D spectrogram_texture;
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    // Sample spectrogram texture with time/frequency scaling
-    vec2 uv_adjusted = frag_uv;
-    uv_adjusted.x = uv_adjusted.x * frag_time_offset;    // Time dimension
-    uv_adjusted.y = uv_adjusted.y * frag_frequency_scale; // Frequency dimension
-    
-    vec4 texel = texture(spectrogram_texture, uv_adjusted);
-    
-    // Blend texture color with instance color
-    out_color = texel * frag_color;
+    // For testing: create a detailed spectrogram-like pattern
+    vec2 uv = frag_uv;
+
+    // Create multiple frequency bands with different patterns
+    float freq1 = sin(uv.x * 50.0 + uv.y * 10.0) * 0.5 + 0.5;
+    float freq2 = cos(uv.x * 30.0 + uv.y * 15.0) * 0.5 + 0.5;
+    float freq3 = sin(uv.x * 20.0 - uv.y * 8.0) * 0.5 + 0.5;
+    float freq4 = cos(uv.x * 70.0 + uv.y * 5.0) * 0.5 + 0.5;
+
+    // Combine frequencies with different weights for different "harmonics"
+    float intensity = (freq1 * 0.4 + freq2 * 0.3 + freq3 * 0.2 + freq4 * 0.1);
+
+    // Add some noise-like variation
+    intensity += sin(uv.x * 200.0) * cos(uv.y * 150.0) * 0.1;
+
+    // Clamp and create spectrogram color (black to white with yellow tint)
+    intensity = clamp(intensity, 0.0, 1.0);
+    vec3 spectrogram_color = vec3(intensity, intensity, intensity * 0.7);
+
+    // Blend with instance color
+    out_color = vec4(spectrogram_color, 1.0) * frag_color;
     
     // Optional: Add some visual effects
     // out_color.rgb = pow(out_color.rgb, vec3(0.8)); // S-curve for contrast

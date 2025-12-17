@@ -394,6 +394,7 @@ typedef struct war_lua_context {
     _Atomic int WR_FN_NAME_LIMIT;
     _Atomic int WR_UNDO_NODES_MAX;
     _Atomic int WR_UNDO_NODES_CHILDREN_MAX;
+    _Atomic int WR_SPECTROGRAM_QUADS_MAX;
     _Atomic int WR_TIMESTAMP_LENGTH_MAX;
     _Atomic int WR_REPEAT_DELAY_US;
     _Atomic int WR_REPEAT_RATE_US;

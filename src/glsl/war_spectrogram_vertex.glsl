@@ -75,12 +75,8 @@ void main() {
     
     // Pass through to fragment shader
     frag_uv = uv;
-    frag_color = vec4(
-        float((instance_color >> 0) & 0xFF) / 255.0,
-        float((instance_color >> 8) & 0xFF) / 255.0,
-        float((instance_color >> 16) & 0xFF) / 255.0,
-        float((instance_color >> 24) & 0xFF) / 255.0
-    );
+    // For testing without instances, use a fixed color
+    frag_color = vec4(0.0, 1.0, 0.0, 1.0); // Green
     frag_time_offset = instance_time_offset + pc.time_offset;
     frag_frequency_scale = instance_frequency_scale * pc.frequency_scale;
 }

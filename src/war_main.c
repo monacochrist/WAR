@@ -20,14 +20,14 @@
 // src/war_main.c
 //-----------------------------------------------------------------------------
 
+#include "h/war_main.h"
 #include "../build/h/war_build_keymap_functions.h"
-#include "h/war_vulkan.h"
-#include "h/war_wayland.h"
 #include "h/war_data.h"
 #include "h/war_debug_macros.h"
 #include "h/war_functions.h"
 #include "h/war_keymap_functions.h"
-#include "h/war_main.h"
+#include "h/war_vulkan.h"
+#include "h/war_wayland.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -786,6 +786,8 @@ void* war_window_render(void* args) {
     note_quads->count = 0;
     uint32_t quads_max = atomic_load(&ctx_lua->WR_QUADS_MAX);
     uint32_t text_quads_max = atomic_load(&ctx_lua->WR_TEXT_QUADS_MAX);
+    uint32_t spectrogram_quads_max =
+        atomic_load(&ctx_lua->WR_SPECTROGRAM_QUADS_MAX);
     war_quad_vertex* quad_vertices =
         war_pool_alloc(pool_wr, sizeof(war_quad_vertex) * quads_max);
     uint32_t quad_vertices_count = 0;
@@ -804,6 +806,12 @@ void* war_window_render(void* args) {
     uint16_t* text_indices =
         war_pool_alloc(pool_wr, sizeof(uint16_t) * text_quads_max);
     uint32_t text_indices_count = 0;
+    war_spectrogram_vertex* spectrogram_vertices = war_pool_alloc(
+        pool_wr, sizeof(war_spectrogram_vertex) * spectrogram_quads_max);
+    uint32_t spectrogram_vertices_count = 0;
+    uint16_t* spectrogram_indices =
+        war_pool_alloc(pool_wr, sizeof(uint16_t) * spectrogram_quads_max);
+    uint32_t spectrogram_indices_count = 0;
     //-------------------------------------------------------------------------
     // RENDERING FPS
     //-------------------------------------------------------------------------
@@ -1309,7 +1317,6 @@ skip_capture:
                        ctx_capture->fname,
                        ctx_capture->fname_size);
                 map_wav->fname_size[idx] = ctx_capture->fname_size;
-
                 uint32_t cache_idx = 0;
                 if (old_id > 0) {
                     for (uint32_t i = 0; i < cache->count; i++) {
@@ -1410,12 +1417,32 @@ skip_capture:
                     cache->fd[cache_idx] = -1;
                     goto war_label_command_processed;
                 }
-                off_t offset = 0;
-                ssize_t bytes_copied = sendfile(cache->fd[cache_idx],
+                off_t offset_1 = 0;
+                ssize_t bytes_copied = sendfile(cache->memfd[cache_idx],
                                                 capture_wav->memfd,
-                                                &offset,
-                                                capture_wav->memfd_size);
-                if (bytes_copied != (ssize_t)capture_wav->memfd_size) {
+                                                &offset_1,
+                                                cache->memfd_size[cache_idx]);
+                if (bytes_copied != (ssize_t)cache->memfd_size[cache_idx]) {
+                    call_terry_davis("sendfile failed: %s",
+                                     map_wav->fname +
+                                         idx * map_wav->name_limit);
+                    cache->id[cache_idx] = 0;
+                    map_wav->id[idx] = 0;
+                    close(cache->memfd[cache_idx]);
+                    cache->memfd[cache_idx] = -1;
+                    munmap(cache->file[cache_idx],
+                           cache->memfd_capacity[cache_idx]);
+                    cache->file[cache_idx] = MAP_FAILED;
+                    close(cache->fd[cache_idx]);
+                    cache->fd[cache_idx] = -1;
+                    goto war_label_command_processed;
+                }
+                off_t offset_2 = 0;
+                bytes_copied = sendfile(cache->fd[cache_idx],
+                                        cache->memfd[cache_idx],
+                                        &offset_2,
+                                        cache->memfd_size[cache_idx]);
+                if (bytes_copied != (ssize_t)cache->memfd_size[cache_idx]) {
                     call_terry_davis("sendfile failed: %s",
                                      map_wav->fname +
                                          idx * map_wav->name_limit);
@@ -2152,6 +2179,34 @@ cmd_timeout_done:
                 .clearValueCount = 2,
                 .pClearValues = clear_values,
             };
+            VkImageMemoryBarrier spectrogram_barrier = {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = 0,
+                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = ctx_vk->spectrogram_texture,
+                .subresourceRange =
+                    {
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
+            };
+            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
+                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0,
+                                 0,
+                                 NULL,
+                                 0,
+                                 NULL,
+                                 1,
+                                 &spectrogram_barrier);
             vkCmdBeginRenderPass(ctx_vk->cmd_buffer,
                                  &render_pass_info,
                                  VK_SUBPASS_CONTENTS_INLINE);
@@ -2161,6 +2216,8 @@ cmd_timeout_done:
             transparent_quad_indices_count = 0;
             text_vertices_count = 0;
             text_indices_count = 0;
+            spectrogram_vertices_count = 0;
+            spectrogram_indices_count = 0;
             //---------------------------------------------------------
             // QUAD PIPELINE
             //---------------------------------------------------------
@@ -2993,6 +3050,74 @@ cmd_timeout_done:
                                &text_push_constants);
             vkCmdDrawIndexed(
                 ctx_vk->cmd_buffer, text_indices_count, 1, 0, 0, 0);
+            //-----------------------------------------------------------------
+            // SPECTROGRAM PIPELINE
+            //-----------------------------------------------------------------
+            vkCmdBindPipeline(ctx_vk->cmd_buffer,
+                              VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              ctx_vk->spectrogram_pipeline);
+            war_spectrogram_push_constants spectrogram_push_constants = {
+                .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
+                .physical_size = {physical_width, physical_height},
+                .cell_size = {ctx_wr->cell_width, ctx_wr->cell_height},
+                .zoom = ctx_wr->zoom_scale,
+                ._pad = 0,
+                .cell_offsets = {ctx_wr->num_cols_for_line_numbers,
+                                 ctx_wr->num_rows_for_status_bars},
+                .scroll_margin = {ctx_wr->scroll_margin_cols,
+                                  ctx_wr->scroll_margin_rows},
+                .anchor_cell = {ctx_wr->cursor_pos_x, ctx_wr->cursor_pos_y},
+                .top_right = {ctx_wr->right_col, ctx_wr->top_row},
+                .time_scale = 1.0f,
+                .frequency_scale = 1.0f,
+                .time_offset = 0.0f,
+                .fft_size = 1024};
+            vkCmdPushConstants(ctx_vk->cmd_buffer,
+                               ctx_vk->spectrogram_pipeline_layout,
+                               VK_SHADER_STAGE_VERTEX_BIT,
+                               0,
+                               sizeof(war_spectrogram_push_constants),
+                               &spectrogram_push_constants);
+            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    ctx_vk->spectrogram_pipeline_layout,
+                                    0,
+                                    1,
+                                    &ctx_vk->spectrogram_descriptor_set,
+                                    0,
+                                    NULL);
+            // try to generate the vertices from the float sample data in the
+            // capture wav please inline without functions
+            float* capture_wav_samples = capture_wav->file + 44;
+            memcpy(ctx_vk->spectrogram_vertex_buffer_mapped,
+                   spectrogram_vertices,
+                   sizeof(war_spectrogram_vertex) * spectrogram_vertices_count);
+            memcpy(ctx_vk->quads_index_buffer_mapped +
+                       quad_indices_count * sizeof(uint16_t),
+                   spectrogram_indices,
+                   sizeof(uint16_t) * spectrogram_indices_count);
+            VkMappedMemoryRange spectrogram_flush_ranges[1] = {
+                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                 .memory = ctx_vk->spectrogram_vertex_buffer_memory,
+                 .offset = 0,
+                 .size = war_align64(sizeof(war_spectrogram_vertex) *
+                                     spectrogram_vertices_count)}};
+            vkFlushMappedMemoryRanges(
+                ctx_vk->device, 1, spectrogram_flush_ranges);
+            VkDeviceSize spectrogram_vertices_offsets[1] = {0};
+            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
+                                   0,
+                                   1,
+                                   &ctx_vk->spectrogram_vertex_buffer,
+                                   spectrogram_vertices_offsets);
+            VkDeviceSize spectrogram_indices_offset =
+                quad_indices_count * sizeof(uint16_t);
+            vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
+                                 ctx_vk->quads_index_buffer,
+                                 spectrogram_indices_offset,
+                                 VK_INDEX_TYPE_UINT16);
+            vkCmdDrawIndexed(
+                ctx_vk->cmd_buffer, spectrogram_indices_count, 1, 0, 0, 0);
             //---------------------------------------------------------
             //   END RENDER PASS
             //---------------------------------------------------------
@@ -4655,7 +4780,7 @@ void* war_audio(void* args) {
     //-------------------------------------------------------------------------
     // AUDIO LOOP
     //-------------------------------------------------------------------------
-pc_a: {
+a: {
     if (war_pc_from_wr(pc_control, &header, &size, control_payload)) {
         goto* pc_control_cmd[header];
     }
@@ -4663,7 +4788,7 @@ pc_a: {
 }
 pc_a_done: {
     pw_loop_iterate(ctx_pw->loop, 0);
-    goto pc_a;
+    goto a;
 }
 end_a: {
     war_pc_to_wr(pc_control, CONTROL_END_WAR, 0, NULL);
