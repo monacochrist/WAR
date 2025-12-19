@@ -1074,33 +1074,25 @@ typedef struct war_vulkan_context {
     //-------------------------------------------------------------------------
     // NSGT PIPELINE
     //-------------------------------------------------------------------------
-    VkPipeline nsgt_pipeline;              // Compute shader pipeline
-    VkPipelineLayout nsgt_pipeline_layout; // Pipeline layout (push constants,
-                                           // descriptor sets)
-    VkShaderModule nsgt_compute_shader;    // NSGT compute shader
-
-    // Device-local buffers (VRAM)
-    VkBuffer nsgt_l_buffer; // Left channel
+    VkPipeline nsgt_pipeline;
+    VkPipelineLayout nsgt_pipeline_layout;
+    VkShaderModule nsgt_compute_shader;
+    VkBuffer nsgt_l_buffer;
     VkDeviceMemory nsgt_l_memory;
-    VkBuffer nsgt_r_buffer; // Right channel
+    VkBuffer nsgt_r_buffer;
     VkDeviceMemory nsgt_r_memory;
-
-    // Staging buffers (host-visible, coherent)
-    VkBuffer nsgt_l_staging; // Left channel for CPU access / preview
+    VkBuffer nsgt_l_staging;
     VkDeviceMemory nsgt_l_staging_memory;
-    VkBuffer nsgt_r_staging; // Right channel for CPU access / preview
+    VkBuffer nsgt_r_staging;
     VkDeviceMemory nsgt_r_staging_memory;
-
-    VkBuffer nsgt_diff_staging; // Staging buffer for undo diffs / parameter
-                                // snapshots
+    VkBuffer nsgt_diff_staging;
     VkDeviceMemory nsgt_diff_staging_memory;
-
-    // NSGT parameters
-    VkDescriptorSet nsgt_descriptor_set; // For passing parameters
+    VkDescriptorSet nsgt_descriptor_set;
     VkDescriptorSetLayout nsgt_descriptor_set_layout;
-
-    // Synchronization
-    VkFence nsgt_fence; // To sync compute → CPU staging reads
+    VkFence nsgt_fence;
+    //-------------------------------------------------------------------------
+    // NSGT VISUAL PIPELINE
+    //-------------------------------------------------------------------------
 } war_vulkan_context;
 
 typedef struct war_env war_env;
