@@ -130,14 +130,11 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(WR_REPEAT_RATE_US)
     LOAD_INT(WR_UNDO_NOTES_BATCH_MAX)
     LOAD_INT(WR_INPUT_SEQUENCE_LENGTH_MAX)
-    LOAD_INT(WR_SPECTROGRAM_QUADS_MAX)
     // vk
     LOAD_INT(VK_ATLAS_HEIGHT)
     LOAD_INT(VK_ATLAS_WIDTH)
     LOAD_INT(VK_GLYPH_COUNT)
     LOAD_INT(VK_MAX_FRAMES)
-    LOAD_INT(VK_SPECTROGRAM_WIDTH)
-    LOAD_INT(VK_SPECTROGRAM_HEIGHT)
     // pool
     LOAD_INT(POOL_ALIGNMENT)
     // cmd
@@ -392,8 +389,6 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(war_play_context);
             else if (strcmp(type, "war_audio_context") == 0)
                 type_size = sizeof(war_audio_context);
-            else if (strcmp(type, "war_spectrogram_vertex") == 0)
-                type_size = sizeof(war_spectrogram_vertex);
             else if (strcmp(type, "war_cache") == 0)
                 type_size = sizeof(war_cache);
             else if (strcmp(type, "war_map_wav") == 0)
@@ -925,7 +920,7 @@ static inline void war_wl_surface_set_opaque_region(int fd,
 }
 
 static inline void war_make_text_quad(war_text_vertex* text_vertices,
-                                      uint16_t* text_indices,
+                                      uint32_t* text_indices,
                                       uint32_t* text_vertices_count,
                                       uint32_t* text_indices_count,
                                       float bottom_left_pos[3],
@@ -1004,7 +999,7 @@ static inline void war_make_text_quad(war_text_vertex* text_vertices,
 }
 
 static inline void war_make_blank_text_quad(war_text_vertex* text_vertices,
-                                            uint16_t* text_indices,
+                                            uint32_t* text_indices,
                                             uint32_t* text_vertices_count,
                                             uint32_t* text_indices_count) {
     text_vertices[*text_vertices_count] = (war_text_vertex){
@@ -1070,7 +1065,7 @@ static inline void war_make_blank_text_quad(war_text_vertex* text_vertices,
 }
 
 static inline void war_make_quad(war_quad_vertex* quad_vertices,
-                                 uint16_t* quad_indices,
+                                 uint32_t* quad_indices,
                                  uint32_t* vertices_count,
                                  uint32_t* indices_count,
                                  float bottom_left_pos[3],
@@ -1138,7 +1133,7 @@ static inline void war_make_quad(war_quad_vertex* quad_vertices,
 
 static inline void
 war_make_transparent_quad(war_quad_vertex* transparent_quad_vertices,
-                          uint16_t* transparent_quad_indices,
+                          uint32_t* transparent_quad_indices,
                           uint32_t* vertices_count,
                           uint32_t* indices_count,
                           float bottom_left_pos[3],
@@ -1205,7 +1200,7 @@ war_make_transparent_quad(war_quad_vertex* transparent_quad_vertices,
 }
 
 static inline void war_make_blank_quad(war_quad_vertex* quad_vertices,
-                                       uint16_t* quad_indices,
+                                       uint32_t* quad_indices,
                                        uint32_t* vertices_count,
                                        uint32_t* indices_count) {
     quad_vertices[*vertices_count] = (war_quad_vertex){
@@ -1450,7 +1445,7 @@ static inline uint32_t war_normalize_keysym(uint32_t keysym) {
 }
 
 static inline uint8_t war_parse_token_to_keysym_mod(const char* token,
-                                                    uint16_t* keysym_out,
+                                                    uint32_t* keysym_out,
                                                     uint8_t* mod_out) {
     if (!token || !keysym_out || !mod_out) { return 0; }
     *mod_out = 0;

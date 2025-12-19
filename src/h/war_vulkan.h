@@ -829,9 +829,12 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
             ctx_vk->device, &fence_info, NULL, &ctx_vk->in_flight_fences[i]);
         assert(result == VK_SUCCESS);
     }
+    uint32_t quads_max = atomic_load(&ctx_lua->WR_QUADS_MAX);
+    uint32_t quads_vertices_max = quads_max * 4;
+    uint32_t quads_indices_max = quads_max * 6;
     VkBufferCreateInfo quads_vertex_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = max_quads * sizeof(war_quad_vertex) * 4 * max_frames,
+        .size = quads_vertices_max * sizeof(war_quad_vertex) * max_frames,
         .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
@@ -842,7 +845,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     assert(result == VK_SUCCESS);
     VkBufferCreateInfo quads_index_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = max_quads * 6 * sizeof(uint16_t) * max_frames,
+        .size = quads_indices_max * sizeof(uint32_t) * max_frames,
         .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
@@ -853,8 +856,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     assert(result == VK_SUCCESS);
     VkBufferCreateInfo quads_instance_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = max_quads * max_instances_per_quad * sizeof(war_quad_instance) *
-                max_frames,
+        .size = 1,
         .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
@@ -1080,14 +1082,14 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     vkMapMemory(ctx_vk->device,
                 ctx_vk->quads_vertex_buffer_memory,
                 0,
-                sizeof(war_quad_vertex) * max_quads * 4 * max_frames,
+                sizeof(war_quad_vertex) * quads_vertices_max * max_frames,
                 0,
                 &ctx_vk->quads_vertex_buffer_mapped);
     ctx_vk->quads_index_buffer_mapped = war_pool_alloc(pool_wr, sizeof(void*));
     vkMapMemory(ctx_vk->device,
                 ctx_vk->quads_index_buffer_memory,
                 0,
-                sizeof(uint16_t) * max_quads * 6 * max_frames,
+                sizeof(uint32_t) * quads_indices_max * max_frames,
                 0,
                 &ctx_vk->quads_index_buffer_mapped);
     ctx_vk->quads_instance_buffer_mapped =
@@ -1095,13 +1097,11 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     vkMapMemory(ctx_vk->device,
                 ctx_vk->quads_instance_buffer_memory,
                 0,
-                sizeof(war_quad_instance) * max_quads * max_instances_per_quad *
-                    max_frames,
+                1,
                 0,
                 &ctx_vk->quads_instance_buffer_mapped);
-
     //-------------------------------------------------------------------------
-    // SDF FONT RENDERING PIPELINE
+    // TEXT PIPELINE
     //-------------------------------------------------------------------------
     FT_Init_FreeType(&ctx_vk->ft_library);
     FT_New_Face(ctx_vk->ft_library,
@@ -1540,8 +1540,11 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
             .pName = "main",
         },
     };
+    uint32_t text_quads_max = atomic_load(&ctx_lua->WR_TEXT_QUADS_MAX);
+    uint32_t text_quads_vertices_max = text_quads_max * 4;
+    uint32_t text_quads_indices_max = text_quads_max * 6;
     VkDeviceSize sdf_vertex_buffer_size =
-        sizeof(war_text_vertex) * max_text_quads * 4 * max_frames;
+        sizeof(war_text_vertex) * text_quads_vertices_max * max_frames;
     VkBufferCreateInfo sdf_vertex_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sdf_vertex_buffer_size,
@@ -1589,7 +1592,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                                 0);
     assert(result == VK_SUCCESS);
     VkDeviceSize sdf_index_buffer_size =
-        sizeof(uint16_t) * max_text_quads * 6 * max_frames;
+        sizeof(uint32_t) * text_quads_indices_max * max_frames;
     VkBufferCreateInfo sdf_index_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sdf_index_buffer_size,
@@ -1635,9 +1638,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                                 ctx_vk->text_index_buffer_memory,
                                 0);
     assert(result == VK_SUCCESS);
-    VkDeviceSize sdf_instance_buffer_size =
-        sizeof(war_text_instance) * max_text_quads *
-        max_instances_per_sdf_quad * max_frames;
+    VkDeviceSize sdf_instance_buffer_size = 1;
     VkBufferCreateInfo sdf_instance_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sdf_instance_buffer_size,
@@ -1899,14 +1900,14 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     vkMapMemory(ctx_vk->device,
                 ctx_vk->text_vertex_buffer_memory,
                 0,
-                sizeof(war_text_vertex) * max_text_quads * 4 * max_frames,
+                sizeof(war_text_vertex) * text_quads_vertices_max * max_frames,
                 0,
                 &ctx_vk->text_vertex_buffer_mapped);
     ctx_vk->text_index_buffer_mapped = war_pool_alloc(pool_wr, sizeof(void*));
     vkMapMemory(ctx_vk->device,
                 ctx_vk->text_index_buffer_memory,
                 0,
-                sizeof(uint16_t) * max_text_quads * 6 * max_frames,
+                sizeof(uint32_t) * text_quads_indices_max * max_frames,
                 0,
                 &ctx_vk->text_index_buffer_mapped);
     ctx_vk->text_instance_buffer_mapped =
@@ -1914,11 +1915,9 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     vkMapMemory(ctx_vk->device,
                 ctx_vk->text_instance_buffer_memory,
                 0,
-                sizeof(war_text_instance) * max_text_quads *
-                    max_instances_per_sdf_quad * max_frames,
+                1,
                 0,
                 &ctx_vk->text_instance_buffer_mapped);
-
     VkPipelineDepthStencilStateCreateInfo transparent_depth_stencil = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,   // enable depth testing
@@ -2003,508 +2002,9 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                                        &ctx_vk->transparent_quad_pipeline);
     assert(result == VK_SUCCESS);
     //-------------------------------------------------------------------------
-    // SPECTROGRAM PIPELINE
+    // NSGT PIPELINE
     //-------------------------------------------------------------------------
-    ctx_vk->spectrogram_width = atomic_load(&ctx_lua->VK_SPECTROGRAM_WIDTH);
-    ctx_vk->spectrogram_height = atomic_load(&ctx_lua->VK_SPECTROGRAM_HEIGHT);
-    uint32_t* spectrogram_vertex_code;
-    const char* spectrogram_vertex_path =
-        "build/spv/war_spectrogram_vertex.spv";
-    FILE* spectrogram_vertex_spv = fopen(spectrogram_vertex_path, "rb");
-    assert(spectrogram_vertex_spv);
-    fseek(spectrogram_vertex_spv, 0, SEEK_END);
-    long spectrogram_vertex_size = ftell(spectrogram_vertex_spv);
-    fseek(spectrogram_vertex_spv, 0, SEEK_SET);
-    assert(spectrogram_vertex_size > 0 && (spectrogram_vertex_size % 4 == 0));
-    spectrogram_vertex_code = malloc(spectrogram_vertex_size);
-    assert(spectrogram_vertex_code);
-    size_t spectrogram_vertex_spv_read = fread(spectrogram_vertex_code,
-                                               1,
-                                               spectrogram_vertex_size,
-                                               spectrogram_vertex_spv);
-    assert(spectrogram_vertex_spv_read == (size_t)spectrogram_vertex_size);
-    fclose(spectrogram_vertex_spv);
-    VkShaderModuleCreateInfo spectrogram_vertex_shader_info = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = spectrogram_vertex_size,
-        .pCode = spectrogram_vertex_code};
-    result = vkCreateShaderModule(ctx_vk->device,
-                                  &spectrogram_vertex_shader_info,
-                                  NULL,
-                                  &ctx_vk->spectrogram_vertex_shader);
-    assert(result == VK_SUCCESS);
-    free(spectrogram_vertex_code);
-    uint32_t* spectrogram_fragment_code;
-    const char* spectrogram_fragment_path =
-        "build/spv/war_spectrogram_fragment.spv";
-    FILE* spectrogram_fragment_spv = fopen(spectrogram_fragment_path, "rb");
-    assert(spectrogram_fragment_spv);
-    fseek(spectrogram_fragment_spv, 0, SEEK_END);
-    long spectrogram_fragment_size = ftell(spectrogram_fragment_spv);
-    fseek(spectrogram_fragment_spv, 0, SEEK_SET);
-    assert(spectrogram_fragment_size > 0 &&
-           (spectrogram_fragment_size % 4 == 0));
-    spectrogram_fragment_code = malloc(spectrogram_fragment_size);
-    assert(spectrogram_fragment_code);
-    size_t spectrogram_fragment_spv_read = fread(spectrogram_fragment_code,
-                                                 1,
-                                                 spectrogram_fragment_size,
-                                                 spectrogram_fragment_spv);
-    assert(spectrogram_fragment_spv_read == (size_t)spectrogram_fragment_size);
-    fclose(spectrogram_fragment_spv);
-    VkShaderModuleCreateInfo spectrogram_fragment_shader_info = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = spectrogram_fragment_size,
-        .pCode = spectrogram_fragment_code};
-    result = vkCreateShaderModule(ctx_vk->device,
-                                  &spectrogram_fragment_shader_info,
-                                  NULL,
-                                  &ctx_vk->spectrogram_fragment_shader);
-    assert(result == VK_SUCCESS);
-    free(spectrogram_fragment_code);
-    VkImageCreateInfo spectrogram_image_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R8_UNORM, // Single channel for frequency data
-        .extent = {ctx_vk->spectrogram_width, ctx_vk->spectrogram_height, 1},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-    result = vkCreateImage(ctx_vk->device,
-                           &spectrogram_image_info,
-                           NULL,
-                           &ctx_vk->spectrogram_texture);
-    assert(result == VK_SUCCESS);
-    VkMemoryRequirements spectrogram_image_mem_reqs;
-    vkGetImageMemoryRequirements(ctx_vk->device,
-                                 ctx_vk->spectrogram_texture,
-                                 &spectrogram_image_mem_reqs);
-    VkPhysicalDeviceMemoryProperties spectrogram_image_mem_props;
-    vkGetPhysicalDeviceMemoryProperties(ctx_vk->physical_device,
-                                        &spectrogram_image_mem_props);
-    uint32_t spectrogram_image_memory_type_index = UINT32_MAX;
-    for (uint32_t i = 0; i < spectrogram_image_mem_props.memoryTypeCount; i++) {
-        if ((spectrogram_image_mem_reqs.memoryTypeBits & (1 << i)) &&
-            (spectrogram_image_mem_props.memoryTypes[i].propertyFlags &
-             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-            spectrogram_image_memory_type_index = i;
-            break;
-        }
-    }
-    assert(spectrogram_image_memory_type_index != UINT32_MAX);
-    VkMemoryAllocateInfo spectrogram_image_alloc_info = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = spectrogram_image_mem_reqs.size,
-        .memoryTypeIndex = spectrogram_image_memory_type_index,
-    };
-    result = vkAllocateMemory(ctx_vk->device,
-                              &spectrogram_image_alloc_info,
-                              NULL,
-                              &ctx_vk->spectrogram_texture_memory);
-    assert(result == VK_SUCCESS);
-    result = vkBindImageMemory(ctx_vk->device,
-                               ctx_vk->spectrogram_texture,
-                               ctx_vk->spectrogram_texture_memory,
-                               0);
-    assert(result == VK_SUCCESS);
-    VkImageViewCreateInfo spectrogram_view_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = ctx_vk->spectrogram_texture,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_R8_UNORM,
-        .subresourceRange =
-            {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-    };
-    result = vkCreateImageView(ctx_vk->device,
-                               &spectrogram_view_info,
-                               NULL,
-                               &ctx_vk->spectrogram_texture_view);
-    assert(result == VK_SUCCESS);
-    VkSamplerCreateInfo spectrogram_sampler_info = {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .anisotropyEnable = VK_FALSE,
-        .maxAnisotropy = 1.0f,
-        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-        .unnormalizedCoordinates = VK_FALSE,
-        .compareEnable = VK_FALSE,
-        .compareOp = VK_COMPARE_OP_ALWAYS,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .mipLodBias = 0.0f,
-        .minLod = 0.0f,
-        .maxLod = 0.0f,
-    };
-    result = vkCreateSampler(ctx_vk->device,
-                             &spectrogram_sampler_info,
-                             NULL,
-                             &ctx_vk->spectrogram_sampler);
-    assert(result == VK_SUCCESS);
-    VkDescriptorSetLayoutBinding spectrogram_binding = {
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-    };
-    VkDescriptorSetLayoutCreateInfo spectrogram_layout_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &spectrogram_binding,
-    };
-    result =
-        vkCreateDescriptorSetLayout(ctx_vk->device,
-                                    &spectrogram_layout_info,
-                                    NULL,
-                                    &ctx_vk->spectrogram_descriptor_set_layout);
-    assert(result == VK_SUCCESS);
-    VkDescriptorPoolSize spectrogram_pool_size = {
-        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1,
-    };
-    VkDescriptorPoolCreateInfo spectrogram_pool_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = 1,
-        .pPoolSizes = &spectrogram_pool_size,
-        .maxSets = 1,
-    };
-    result = vkCreateDescriptorPool(ctx_vk->device,
-                                    &spectrogram_pool_info,
-                                    NULL,
-                                    &ctx_vk->spectrogram_descriptor_pool);
-    assert(result == VK_SUCCESS);
-    VkDescriptorSetAllocateInfo spectrogram_descriptor_set_alloc_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = ctx_vk->spectrogram_descriptor_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &ctx_vk->spectrogram_descriptor_set_layout,
-    };
-    vkAllocateDescriptorSets(ctx_vk->device,
-                             &spectrogram_descriptor_set_alloc_info,
-                             &ctx_vk->spectrogram_descriptor_set);
-    VkDescriptorImageInfo spectrogram_descriptor_image_info = {
-        .sampler = ctx_vk->spectrogram_sampler,
-        .imageView = ctx_vk->spectrogram_texture_view,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    };
-    VkWriteDescriptorSet spectrogram_descriptor_write = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = ctx_vk->spectrogram_descriptor_set,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = &spectrogram_descriptor_image_info,
-    };
-    vkUpdateDescriptorSets(
-        ctx_vk->device, 1, &spectrogram_descriptor_write, 0, NULL);
-    ctx_vk->spectrogram_push_constant_range = (VkPushConstantRange){
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .offset = 0,
-        .size = sizeof(war_spectrogram_push_constants),
-    };
-    VkPipelineLayoutCreateInfo spectrogram_pipeline_layout_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &ctx_vk->spectrogram_descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &ctx_vk->spectrogram_push_constant_range,
-    };
-    result = vkCreatePipelineLayout(ctx_vk->device,
-                                    &spectrogram_pipeline_layout_info,
-                                    NULL,
-                                    &ctx_vk->spectrogram_pipeline_layout);
-    assert(result == VK_SUCCESS);
-    VkDeviceSize spectrogram_vertex_buffer_size =
-        sizeof(war_spectrogram_vertex) * 4 * max_frames;
-    VkBufferCreateInfo spectrogram_vertex_buffer_info = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = spectrogram_vertex_buffer_size,
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
-    result = vkCreateBuffer(ctx_vk->device,
-                            &spectrogram_vertex_buffer_info,
-                            NULL,
-                            &ctx_vk->spectrogram_vertex_buffer);
-    assert(result == VK_SUCCESS);
-    VkMemoryRequirements spectrogram_vertex_mem_reqs;
-    vkGetBufferMemoryRequirements(ctx_vk->device,
-                                  ctx_vk->spectrogram_vertex_buffer,
-                                  &spectrogram_vertex_mem_reqs);
-    uint32_t spectrogram_vertex_memory_type_index = UINT32_MAX;
-    VkPhysicalDeviceMemoryProperties spectrogram_vertex_mem_props;
-    vkGetPhysicalDeviceMemoryProperties(ctx_vk->physical_device,
-                                        &spectrogram_vertex_mem_props);
-    for (uint32_t i = 0; i < spectrogram_vertex_mem_props.memoryTypeCount;
-         i++) {
-        if ((spectrogram_vertex_mem_reqs.memoryTypeBits & (1 << i)) &&
-            (spectrogram_vertex_mem_props.memoryTypes[i].propertyFlags &
-             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
-            spectrogram_vertex_memory_type_index = i;
-            break;
-        }
-    }
-    assert(spectrogram_vertex_memory_type_index != UINT32_MAX);
-    VkMemoryAllocateInfo spectrogram_vertex_alloc_info = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = spectrogram_vertex_mem_reqs.size,
-        .memoryTypeIndex = spectrogram_vertex_memory_type_index,
-    };
-    result = vkAllocateMemory(ctx_vk->device,
-                              &spectrogram_vertex_alloc_info,
-                              NULL,
-                              &ctx_vk->spectrogram_vertex_buffer_memory);
-    assert(result == VK_SUCCESS);
-    result = vkBindBufferMemory(ctx_vk->device,
-                                ctx_vk->spectrogram_vertex_buffer,
-                                ctx_vk->spectrogram_vertex_buffer_memory,
-                                0);
-    assert(result == VK_SUCCESS);
-    VkDeviceSize spectrogram_instance_buffer_size =
-        sizeof(war_spectrogram_instance) * max_frames;
-    VkBufferCreateInfo spectrogram_instance_buffer_info = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = spectrogram_instance_buffer_size,
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
-    result = vkCreateBuffer(ctx_vk->device,
-                            &spectrogram_instance_buffer_info,
-                            NULL,
-                            &ctx_vk->spectrogram_instance_buffer);
-    assert(result == VK_SUCCESS);
-    VkMemoryRequirements spectrogram_instance_mem_reqs;
-    vkGetBufferMemoryRequirements(ctx_vk->device,
-                                  ctx_vk->spectrogram_instance_buffer,
-                                  &spectrogram_instance_mem_reqs);
-    uint32_t spectrogram_instance_memory_type_index = UINT32_MAX;
-    VkPhysicalDeviceMemoryProperties spectrogram_instance_mem_props;
-    vkGetPhysicalDeviceMemoryProperties(ctx_vk->physical_device,
-                                        &spectrogram_instance_mem_props);
-    for (uint32_t i = 0; i < spectrogram_instance_mem_props.memoryTypeCount;
-         i++) {
-        if ((spectrogram_instance_mem_reqs.memoryTypeBits & (1 << i)) &&
-            (spectrogram_instance_mem_props.memoryTypes[i].propertyFlags &
-             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
-            spectrogram_instance_memory_type_index = i;
-            break;
-        }
-    }
-    assert(spectrogram_instance_memory_type_index != UINT32_MAX);
-    VkMemoryAllocateInfo spectrogram_instance_alloc_info = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = spectrogram_instance_mem_reqs.size,
-        .memoryTypeIndex = spectrogram_instance_memory_type_index,
-    };
-    result = vkAllocateMemory(ctx_vk->device,
-                              &spectrogram_instance_alloc_info,
-                              NULL,
-                              &ctx_vk->spectrogram_instance_buffer_memory);
-    assert(result == VK_SUCCESS);
-    result = vkBindBufferMemory(ctx_vk->device,
-                                ctx_vk->spectrogram_instance_buffer,
-                                ctx_vk->spectrogram_instance_buffer_memory,
-                                0);
-    assert(result == VK_SUCCESS);
-    ctx_vk->spectrogram_vertex_buffer_mapped =
-        war_pool_alloc(pool_wr, sizeof(void*));
-    vkMapMemory(ctx_vk->device,
-                ctx_vk->spectrogram_vertex_buffer_memory,
-                0,
-                sizeof(war_spectrogram_vertex) * 4 * max_frames,
-                0,
-                &ctx_vk->spectrogram_vertex_buffer_mapped);
-    ctx_vk->spectrogram_instance_buffer_mapped =
-        war_pool_alloc(pool_wr, sizeof(void*));
-    vkMapMemory(ctx_vk->device,
-                ctx_vk->spectrogram_instance_buffer_memory,
-                0,
-                sizeof(war_spectrogram_instance) * max_frames,
-                0,
-                &ctx_vk->spectrogram_instance_buffer_mapped);
-    VkPipelineShaderStageCreateInfo spectrogram_shader_stages[] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = ctx_vk->spectrogram_vertex_shader,
-            .pName = "main",
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = ctx_vk->spectrogram_fragment_shader,
-            .pName = "main",
-        },
-    };
-    VkVertexInputBindingDescription spectrogram_vertex_binding = {
-        .binding = 0,
-        .stride = sizeof(war_spectrogram_vertex),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    };
-    VkVertexInputBindingDescription spectrogram_instance_binding = {
-        .binding = 1,
-        .stride = sizeof(war_spectrogram_instance),
-        .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE,
-    };
-    VkVertexInputAttributeDescription spectrogram_vertex_attrs[] = {
-        {0,
-         0,
-         VK_FORMAT_R32G32_SFLOAT,
-         offsetof(war_spectrogram_vertex, corner)},
-        {1,
-         0,
-         VK_FORMAT_R32G32B32_SFLOAT,
-         offsetof(war_spectrogram_vertex, pos)},
-        {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(war_spectrogram_vertex, uv)},
-    };
-    uint32_t num_spectrogram_vertex_attrs = 3;
-    VkVertexInputAttributeDescription spectrogram_instance_attrs[] = {
-        {num_spectrogram_vertex_attrs,
-         1,
-         VK_FORMAT_R32G32_UINT,
-         offsetof(war_spectrogram_instance, x)},
-        {num_spectrogram_vertex_attrs + 1,
-         1,
-         VK_FORMAT_R32G32_UINT,
-         offsetof(war_spectrogram_instance, y)},
-        {num_spectrogram_vertex_attrs + 2,
-         1,
-         VK_FORMAT_R32_UINT,
-         offsetof(war_spectrogram_instance, color)},
-        {num_spectrogram_vertex_attrs + 3,
-         1,
-         VK_FORMAT_R32_SFLOAT,
-         offsetof(war_spectrogram_instance, time_offset)},
-        {num_spectrogram_vertex_attrs + 4,
-         1,
-         VK_FORMAT_R32_SFLOAT,
-         offsetof(war_spectrogram_instance, frequency_scale)},
-    };
-    uint32_t num_spectrogram_instance_attrs = 5;
-    VkVertexInputAttributeDescription* spectrogram_all_attrs =
-        malloc((num_spectrogram_vertex_attrs + num_spectrogram_instance_attrs) *
-               sizeof(VkVertexInputAttributeDescription));
-    memcpy(spectrogram_all_attrs,
-           spectrogram_vertex_attrs,
-           sizeof(VkVertexInputAttributeDescription) *
-               num_spectrogram_vertex_attrs);
-    memcpy(spectrogram_all_attrs + num_spectrogram_vertex_attrs,
-           spectrogram_instance_attrs,
-           sizeof(VkVertexInputAttributeDescription) *
-               num_spectrogram_instance_attrs);
-    VkVertexInputBindingDescription spectrogram_all_bindings[] = {
-        spectrogram_vertex_binding, spectrogram_instance_binding};
-    VkPipelineVertexInputStateCreateInfo spectrogram_vertex_input_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 2,
-        .pVertexBindingDescriptions = spectrogram_all_bindings,
-        .vertexAttributeDescriptionCount =
-            num_spectrogram_vertex_attrs + num_spectrogram_instance_attrs,
-        .pVertexAttributeDescriptions = spectrogram_all_attrs,
-    };
-    VkViewport spectrogram_viewport = {
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = (float)width,
-        .height = (float)height,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    };
-    VkRect2D spectrogram_scissor = {
-        .offset = {0, 0},
-        .extent = {width, height},
-    };
-    VkGraphicsPipelineCreateInfo spectrogram_pipeline_info = {
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .stageCount = 2,
-        .pStages = spectrogram_shader_stages,
-        .pVertexInputState = &spectrogram_vertex_input_info,
-        .pInputAssemblyState =
-            &(VkPipelineInputAssemblyStateCreateInfo){
-                .sType =
-                    VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-                .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
-            },
-        .pViewportState =
-            &(VkPipelineViewportStateCreateInfo){
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-                .viewportCount = 1,
-                .pViewports = &spectrogram_viewport,
-                .scissorCount = 1,
-                .pScissors = &spectrogram_scissor,
-            },
-        .pRasterizationState =
-            &(VkPipelineRasterizationStateCreateInfo){
-                .sType =
-                    VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-                .polygonMode = VK_POLYGON_MODE_FILL,
-                .cullMode = VK_CULL_MODE_NONE,
-                .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-                .lineWidth = 1.0f,
-            },
-        .pMultisampleState =
-            &(VkPipelineMultisampleStateCreateInfo){
-                .sType =
-                    VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-                .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-            },
-        .pDepthStencilState =
-            &(VkPipelineDepthStencilStateCreateInfo){
-                .sType =
-                    VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-                .depthTestEnable = VK_FALSE,
-                .depthWriteEnable = VK_FALSE,
-                .depthCompareOp = VK_COMPARE_OP_ALWAYS,
-                .stencilTestEnable = VK_FALSE,
-            },
-        .pColorBlendState =
-            &(VkPipelineColorBlendStateCreateInfo){
-                .sType =
-                    VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-                .logicOpEnable = VK_FALSE,
-                .attachmentCount = 1,
-                .pAttachments =
-                    &(VkPipelineColorBlendAttachmentState){
-                        .blendEnable = VK_TRUE,
-                        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-                        .dstColorBlendFactor =
-                            VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-                        .colorBlendOp = VK_BLEND_OP_ADD,
-                        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-                        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-                        .alphaBlendOp = VK_BLEND_OP_ADD,
-                        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-                                          VK_COLOR_COMPONENT_G_BIT |
-                                          VK_COLOR_COMPONENT_B_BIT |
-                                          VK_COLOR_COMPONENT_A_BIT,
-                    },
-            },
-        .layout = ctx_vk->spectrogram_pipeline_layout,
-        .renderPass = ctx_vk->render_pass,
-        .subpass = 0,
-        .pDynamicState = NULL,
-    };
-    result = vkCreateGraphicsPipelines(ctx_vk->device,
-                                       VK_NULL_HANDLE,
-                                       1,
-                                       &spectrogram_pipeline_info,
-                                       NULL,
-                                       &ctx_vk->spectrogram_pipeline);
-    assert(result == VK_SUCCESS);
+    
     //-------------------------------------------------------------------------
     // END
     //-------------------------------------------------------------------------
@@ -2513,7 +2013,6 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     free(device_extensions_properties);
     free(all_attrs);
     free(sdf_all_attrs);
-    free(spectrogram_all_attrs);
     end("war_vulkan_init");
 }
 

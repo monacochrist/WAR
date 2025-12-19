@@ -784,34 +784,33 @@ void* war_window_render(void* args) {
     note_quads->mute =
         war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
     note_quads->count = 0;
+    // quads
     uint32_t quads_max = atomic_load(&ctx_lua->WR_QUADS_MAX);
-    uint32_t text_quads_max = atomic_load(&ctx_lua->WR_TEXT_QUADS_MAX);
-    uint32_t spectrogram_quads_max =
-        atomic_load(&ctx_lua->WR_SPECTROGRAM_QUADS_MAX);
+    uint32_t quads_vertices_max = quads_max * 4;
+    uint32_t quads_indices_max = quads_max * 6;
     war_quad_vertex* quad_vertices =
-        war_pool_alloc(pool_wr, sizeof(war_quad_vertex) * quads_max);
+        war_pool_alloc(pool_wr, sizeof(war_quad_vertex) * quads_vertices_max);
     uint32_t quad_vertices_count = 0;
-    uint16_t* quad_indices =
-        war_pool_alloc(pool_wr, sizeof(uint16_t) * quads_max);
+    uint32_t* quad_indices =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * quads_indices_max);
     uint32_t quad_indices_count = 0;
     war_quad_vertex* transparent_quad_vertices =
-        war_pool_alloc(pool_wr, sizeof(war_quad_vertex) * quads_max);
+        war_pool_alloc(pool_wr, sizeof(war_quad_vertex) * quads_vertices_max);
     uint32_t transparent_quad_vertices_count = 0;
-    uint16_t* transparent_quad_indices =
-        war_pool_alloc(pool_wr, sizeof(uint16_t) * quads_max);
+    uint32_t* transparent_quad_indices =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * quads_indices_max);
     uint32_t transparent_quad_indices_count = 0;
-    war_text_vertex* text_vertices =
-        war_pool_alloc(pool_wr, sizeof(war_text_vertex) * text_quads_max);
+    // text quads
+    uint32_t text_quads_max = atomic_load(&ctx_lua->WR_TEXT_QUADS_MAX);
+    uint32_t text_quads_vertices_max = text_quads_max * 4;
+    uint32_t text_quads_indices_max = text_quads_max * 6;
+    war_text_vertex* text_vertices = war_pool_alloc(
+        pool_wr, sizeof(war_text_vertex) * text_quads_vertices_max);
     uint32_t text_vertices_count = 0;
-    uint16_t* text_indices =
-        war_pool_alloc(pool_wr, sizeof(uint16_t) * text_quads_max);
+    uint32_t* text_indices =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * text_quads_indices_max);
     uint32_t text_indices_count = 0;
-    war_spectrogram_vertex* spectrogram_vertices = war_pool_alloc(
-        pool_wr, sizeof(war_spectrogram_vertex) * spectrogram_quads_max);
-    uint32_t spectrogram_vertices_count = 0;
-    uint16_t* spectrogram_indices =
-        war_pool_alloc(pool_wr, sizeof(uint16_t) * spectrogram_quads_max);
-    uint32_t spectrogram_indices_count = 0;
+    // nsgt
     //-------------------------------------------------------------------------
     // RENDERING FPS
     //-------------------------------------------------------------------------
@@ -1095,7 +1094,6 @@ skip_play:
                     init_fmt_chunk;
                 *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
                                    sizeof(war_fmt_chunk)) = init_data_chunk;
-                call_terry_davis("Sound detected - starting recording");
             }
         } else if (!ctx_capture->capture_wait &&
                    ctx_capture->state == CAPTURE_WAITING) {
@@ -1563,6 +1561,12 @@ skip_capture:
                 memset(ctx_status->middle, 0, ctx_status->capacity);
                 memcpy(ctx_status->middle, ctx_fsm->cwd, ctx_fsm->cwd_size);
                 goto war_label_skip_command_processed;
+            } else if (strcmp(ctx_command->text, "q!") == 0) {
+                call_terry_davis("q!");
+                goto xdg_toplevel_close;
+            } else if (strcmp(ctx_command->text, "q") == 0) {
+                call_terry_davis("q");
+                goto xdg_toplevel_close;
             }
         war_label_command_processed:
             war_command_reset(ctx_command, ctx_status);
@@ -1656,7 +1660,7 @@ skip_command:
                         }
                         goto cmd_repeat_done; // Skip FSM processing
                     }
-                    uint16_t next_state_index =
+                    uint32_t next_state_index =
                         ctx_fsm->next_state[FSM_3D_INDEX(
                             ctx_fsm->current_state, k, m)];
                     if (next_state_index != 0) {
@@ -1671,7 +1675,7 @@ skip_command:
                             ctx_fsm->handle_repeat[FSM_2D_MODE(
                                 ctx_fsm->current_state,
                                 ctx_fsm->current_mode)]) {
-                            uint16_t temp = ctx_fsm->current_state;
+                            uint32_t temp = ctx_fsm->current_state;
                             ctx_fsm->current_state = 0;
                             ctx_fsm->goto_cmd_repeat_done = 1;
                             if (ctx_fsm->function_type[FSM_2D_MODE(
@@ -1706,7 +1710,7 @@ cmd_repeat_done:
     //--------------------------------------------------------------------
     if (ctx_fsm->timeout && ctx_wr->now >= ctx_fsm->timeout_start_us +
                                                ctx_fsm->timeout_duration_us) {
-        uint16_t temp = ctx_fsm->timeout_state_index;
+        uint32_t temp = ctx_fsm->timeout_state_index;
         ctx_fsm->timeout = 0;
         ctx_fsm->timeout_state_index = 0;
         ctx_fsm->timeout_start_us = 0;
@@ -1753,16 +1757,16 @@ cmd_timeout_done:
         msg_buffer_size += size_read;
         size_t msg_buffer_offset = 0;
         while (msg_buffer_size - msg_buffer_offset >= 8) {
-            uint16_t size = war_read_le16(msg_buffer + msg_buffer_offset + 6);
+            uint32_t size = war_read_le16(msg_buffer + msg_buffer_offset + 6);
             if ((size < 8) || (size > (msg_buffer_size - msg_buffer_offset))) {
                 break;
             };
             uint32_t object_id = war_read_le32(msg_buffer + msg_buffer_offset);
-            uint16_t opcode = war_read_le16(msg_buffer + msg_buffer_offset + 4);
+            uint32_t opcode = war_read_le16(msg_buffer + msg_buffer_offset + 4);
             if (object_id >=
                     (uint32_t)atomic_load(&ctx_lua->WR_WAYLAND_MAX_OBJECTS) ||
                 opcode >=
-                    (uint16_t)atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES)) {
+                    (uint32_t)atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES)) {
                 // COMMENT CONCERN: INVALID OBJECT/OP 27 TIMES!
                 // call_terry_davis(
                 //    "invalid object/op: id=%u, op=%u", object_id,
@@ -2179,34 +2183,6 @@ cmd_timeout_done:
                 .clearValueCount = 2,
                 .pClearValues = clear_values,
             };
-            VkImageMemoryBarrier spectrogram_barrier = {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .srcAccessMask = 0,
-                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = ctx_vk->spectrogram_texture,
-                .subresourceRange =
-                    {
-                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                        .baseMipLevel = 0,
-                        .levelCount = 1,
-                        .baseArrayLayer = 0,
-                        .layerCount = 1,
-                    },
-            };
-            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
-                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                 0,
-                                 0,
-                                 NULL,
-                                 0,
-                                 NULL,
-                                 1,
-                                 &spectrogram_barrier);
             vkCmdBeginRenderPass(ctx_vk->cmd_buffer,
                                  &render_pass_info,
                                  VK_SUBPASS_CONTENTS_INLINE);
@@ -2216,8 +2192,6 @@ cmd_timeout_done:
             transparent_quad_indices_count = 0;
             text_vertices_count = 0;
             text_indices_count = 0;
-            spectrogram_vertices_count = 0;
-            spectrogram_indices_count = 0;
             //---------------------------------------------------------
             // QUAD PIPELINE
             //---------------------------------------------------------
@@ -2722,7 +2696,7 @@ cmd_timeout_done:
                    sizeof(war_quad_vertex) * quad_vertices_count);
             memcpy(ctx_vk->quads_index_buffer_mapped,
                    quad_indices,
-                   sizeof(uint16_t) * quad_indices_count);
+                   sizeof(uint32_t) * quad_indices_count);
             VkMappedMemoryRange quad_flush_ranges[2] = {
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->quads_vertex_buffer_memory,
@@ -2732,7 +2706,7 @@ cmd_timeout_done:
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->quads_index_buffer_memory,
                  .offset = 0,
-                 .size = war_align64(sizeof(uint16_t) * quad_indices_count)}};
+                 .size = war_align64(sizeof(uint32_t) * quad_indices_count)}};
             vkFlushMappedMemoryRanges(ctx_vk->device, 2, quad_flush_ranges);
             VkDeviceSize quad_vertices_offsets[2] = {0};
             vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
@@ -2740,17 +2714,17 @@ cmd_timeout_done:
                                    1,
                                    &ctx_vk->quads_vertex_buffer,
                                    quad_vertices_offsets);
-            VkDeviceSize quad_instances_offsets[2] = {0};
-            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-                                   1,
-                                   1,
-                                   &ctx_vk->quads_instance_buffer,
-                                   quad_instances_offsets);
+            //VkDeviceSize quad_instances_offsets[2] = {0};
+            //vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
+            //                       1,
+            //                       1,
+            //                       &ctx_vk->quads_instance_buffer,
+            //                       quad_instances_offsets);
             VkDeviceSize quad_indices_offset = 0;
             vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
                                  ctx_vk->quads_index_buffer,
                                  quad_indices_offset,
-                                 VK_INDEX_TYPE_UINT16);
+                                 VK_INDEX_TYPE_UINT32);
             war_quad_push_constants quad_push_constants = {
                 .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
                 .physical_size = {physical_width, physical_height},
@@ -2780,9 +2754,9 @@ cmd_timeout_done:
                    transparent_quad_vertices,
                    sizeof(war_quad_vertex) * transparent_quad_vertices_count);
             memcpy(ctx_vk->quads_index_buffer_mapped +
-                       quad_indices_count * sizeof(uint16_t),
+                       quad_indices_count * sizeof(uint32_t),
                    transparent_quad_indices,
-                   sizeof(uint16_t) * transparent_quad_indices_count);
+                   sizeof(uint32_t) * transparent_quad_indices_count);
             VkMappedMemoryRange transparent_quad_flush_ranges[2] = {
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->quads_vertex_buffer_memory,
@@ -2792,8 +2766,8 @@ cmd_timeout_done:
                                      transparent_quad_vertices_count)},
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->quads_index_buffer_memory,
-                 .offset = war_align64(sizeof(uint16_t) * quad_indices_count),
-                 .size = war_align64(sizeof(uint16_t) *
+                 .offset = war_align64(sizeof(uint32_t) * quad_indices_count),
+                 .size = war_align64(sizeof(uint32_t) *
                                      transparent_quad_indices_count)}};
             vkFlushMappedMemoryRanges(
                 ctx_vk->device, 2, transparent_quad_flush_ranges);
@@ -2804,18 +2778,18 @@ cmd_timeout_done:
                                    1,
                                    &ctx_vk->quads_vertex_buffer,
                                    transparent_quad_vertices_offsets);
-            VkDeviceSize transparent_quad_instances_offsets[2] = {0};
-            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-                                   1,
-                                   1,
-                                   &ctx_vk->quads_instance_buffer,
-                                   transparent_quad_instances_offsets);
+            //VkDeviceSize transparent_quad_instances_offsets[2] = {0};
+            //vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
+            //                       1,
+            //                       1,
+            //                       &ctx_vk->quads_instance_buffer,
+            //                       transparent_quad_instances_offsets);
             VkDeviceSize transparent_quad_indices_offset =
-                quad_indices_count * sizeof(uint16_t);
+                quad_indices_count * sizeof(uint32_t);
             vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
                                  ctx_vk->quads_index_buffer,
                                  transparent_quad_indices_offset,
-                                 VK_INDEX_TYPE_UINT16);
+                                 VK_INDEX_TYPE_UINT32);
             war_quad_push_constants transparent_quad_push_constants = {
                 .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
                 .physical_size = {physical_width, physical_height},
@@ -2996,7 +2970,7 @@ cmd_timeout_done:
                    sizeof(war_text_vertex) * text_vertices_count);
             memcpy(ctx_vk->text_index_buffer_mapped,
                    text_indices,
-                   sizeof(uint16_t) * text_indices_count);
+                   sizeof(uint32_t) * text_indices_count);
             VkMappedMemoryRange text_flush_ranges[2] = {
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->text_vertex_buffer_memory,
@@ -3006,7 +2980,7 @@ cmd_timeout_done:
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->text_index_buffer_memory,
                  .offset = 0,
-                 .size = war_align64(sizeof(uint16_t) * text_indices_count)}};
+                 .size = war_align64(sizeof(uint32_t) * text_indices_count)}};
             vkFlushMappedMemoryRanges(ctx_vk->device, 2, text_flush_ranges);
             VkDeviceSize text_vertices_offsets[2] = {0};
             vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
@@ -3014,17 +2988,17 @@ cmd_timeout_done:
                                    1,
                                    &ctx_vk->text_vertex_buffer,
                                    text_vertices_offsets);
-            VkDeviceSize text_instances_offsets[2] = {0};
-            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-                                   1,
-                                   1,
-                                   &ctx_vk->text_instance_buffer,
-                                   text_instances_offsets);
+            //VkDeviceSize text_instances_offsets[2] = {0};
+            //vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
+            //                       1,
+            //                       1,
+            //                       &ctx_vk->text_instance_buffer,
+            //                       text_instances_offsets);
             VkDeviceSize text_indices_offset = 0;
             vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
                                  ctx_vk->text_index_buffer,
                                  text_indices_offset,
-                                 VK_INDEX_TYPE_UINT16);
+                                 VK_INDEX_TYPE_UINT32);
             war_text_push_constants text_push_constants = {
                 .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
                 .physical_size = {physical_width, physical_height},
@@ -3051,76 +3025,19 @@ cmd_timeout_done:
             vkCmdDrawIndexed(
                 ctx_vk->cmd_buffer, text_indices_count, 1, 0, 0, 0);
             //-----------------------------------------------------------------
-            // SPECTROGRAM PIPELINE
+            // NSGT PIPELINE
             //-----------------------------------------------------------------
-            vkCmdBindPipeline(ctx_vk->cmd_buffer,
-                              VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              ctx_vk->spectrogram_pipeline);
-            war_spectrogram_push_constants spectrogram_push_constants = {
-                .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
-                .physical_size = {physical_width, physical_height},
-                .cell_size = {ctx_wr->cell_width, ctx_wr->cell_height},
-                .zoom = ctx_wr->zoom_scale,
-                ._pad = 0,
-                .cell_offsets = {ctx_wr->num_cols_for_line_numbers,
-                                 ctx_wr->num_rows_for_status_bars},
-                .scroll_margin = {ctx_wr->scroll_margin_cols,
-                                  ctx_wr->scroll_margin_rows},
-                .anchor_cell = {ctx_wr->cursor_pos_x, ctx_wr->cursor_pos_y},
-                .top_right = {ctx_wr->right_col, ctx_wr->top_row},
-                .time_scale = 1.0f,
-                .frequency_scale = 1.0f,
-                .time_offset = 0.0f,
-                .fft_size = 1024};
-            vkCmdPushConstants(ctx_vk->cmd_buffer,
-                               ctx_vk->spectrogram_pipeline_layout,
-                               VK_SHADER_STAGE_VERTEX_BIT,
-                               0,
-                               sizeof(war_spectrogram_push_constants),
-                               &spectrogram_push_constants);
-            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
-                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    ctx_vk->spectrogram_pipeline_layout,
-                                    0,
-                                    1,
-                                    &ctx_vk->spectrogram_descriptor_set,
-                                    0,
-                                    NULL);
-            // try to generate the vertices from the float sample data in the
-            // capture wav please inline without functions
-            float* capture_wav_samples = capture_wav->file + 44;
-            memcpy(ctx_vk->spectrogram_vertex_buffer_mapped,
-                   spectrogram_vertices,
-                   sizeof(war_spectrogram_vertex) * spectrogram_vertices_count);
-            memcpy(ctx_vk->quads_index_buffer_mapped +
-                       quad_indices_count * sizeof(uint16_t),
-                   spectrogram_indices,
-                   sizeof(uint16_t) * spectrogram_indices_count);
-            VkMappedMemoryRange spectrogram_flush_ranges[1] = {
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->spectrogram_vertex_buffer_memory,
-                 .offset = 0,
-                 .size = war_align64(sizeof(war_spectrogram_vertex) *
-                                     spectrogram_vertices_count)}};
-            vkFlushMappedMemoryRanges(
-                ctx_vk->device, 1, spectrogram_flush_ranges);
-            VkDeviceSize spectrogram_vertices_offsets[1] = {0};
-            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-                                   0,
-                                   1,
-                                   &ctx_vk->spectrogram_vertex_buffer,
-                                   spectrogram_vertices_offsets);
-            VkDeviceSize spectrogram_indices_offset =
-                quad_indices_count * sizeof(uint16_t);
-            vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
-                                 ctx_vk->quads_index_buffer,
-                                 spectrogram_indices_offset,
-                                 VK_INDEX_TYPE_UINT16);
-            vkCmdDrawIndexed(
-                ctx_vk->cmd_buffer, spectrogram_indices_count, 1, 0, 0, 0);
+            // if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
+            //    ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
+            //    ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE &&
+            //    ctx_fsm->previous_mode != ctx_fsm->MODE_WAV) {
+            //    goto war_label_end_render_pass;
+            //}
+
             //---------------------------------------------------------
             //   END RENDER PASS
             //---------------------------------------------------------
+        war_label_end_render_pass:
             vkCmdEndRenderPass(ctx_vk->cmd_buffer);
             result = vkEndCommandBuffer(ctx_vk->cmd_buffer);
             assert(result == VK_SUCCESS);
@@ -3965,10 +3882,10 @@ cmd_timeout_done:
                 goto wayland_done;
             }
 
-            uint16_t max_states = ctx_fsm->state_count;
+            uint32_t max_states = ctx_fsm->state_count;
             uint8_t state_has_children[max_states];
             memset(state_has_children, 0, sizeof(state_has_children));
-            uint16_t next_state_counter = 1;
+            uint32_t next_state_counter = 1;
             uint32_t sequence_count = 0;
 
             lua_pushnil(ctx_lua->L);
@@ -3989,17 +3906,17 @@ cmd_timeout_done:
                     continue;
                 }
 
-                uint16_t current_state = 0;
+                uint32_t current_state = 0;
                 size_t keys_len = lua_objlen(ctx_lua->L, idx_keys);
                 for (size_t i = 1; i <= keys_len; i++) {
                     lua_rawgeti(ctx_lua->L, idx_keys, (int)i);
                     const char* token = lua_tostring(ctx_lua->L, -1);
-                    uint16_t keysym = 0;
+                    uint32_t keysym = 0;
                     uint8_t mod = 0;
                     if (token &&
                         war_parse_token_to_keysym_mod(token, &keysym, &mod)) {
                         size_t idx3d = FSM_3D_INDEX(current_state, keysym, mod);
-                        uint16_t next_state = ctx_fsm->next_state[idx3d];
+                        uint32_t next_state = ctx_fsm->next_state[idx3d];
                         if (next_state == 0) {
                             if (next_state_counter < max_states) {
                                 next_state = next_state_counter++;
@@ -4092,7 +4009,7 @@ cmd_timeout_done:
                 lua_pop(ctx_lua->L, 1); // entry table
             }
             lua_pop(ctx_lua->L, 1); // war_flattened table
-            for (uint16_t s = 0; s < next_state_counter; s++) {
+            for (uint32_t s = 0; s < next_state_counter; s++) {
                 if (!state_has_children[s]) { continue; }
                 for (uint32_t m = 0; m < ctx_fsm->mode_count; m++) {
                     ctx_fsm->is_prefix[FSM_2D_MODE(s, m)] = 1;

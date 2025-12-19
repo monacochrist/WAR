@@ -79,9 +79,6 @@ enum war_keysyms {
 enum war_misc {
     max_objects = 1000,
     max_opcodes = 20,
-    max_quads = 20000,
-    max_text_quads = 20000,
-    max_note_quads = 20000,
     max_instances_per_quad = 1,
     max_instances_per_sdf_quad = 1,
     max_fds = 50,
@@ -140,7 +137,7 @@ enum war_pipelines {
     PIPELINE_NONE = 0,
     PIPELINE_QUAD = 1,
     PIPELINE_SDF = 2,
-    PIPELINE_SPECTROGRAM = 3,
+    PIPELINE_NSGT = 3,
 };
 
 enum war_cursor {
@@ -394,7 +391,6 @@ typedef struct war_lua_context {
     _Atomic int WR_FN_NAME_LIMIT;
     _Atomic int WR_UNDO_NODES_MAX;
     _Atomic int WR_UNDO_NODES_CHILDREN_MAX;
-    _Atomic int WR_SPECTROGRAM_QUADS_MAX;
     _Atomic int WR_TIMESTAMP_LENGTH_MAX;
     _Atomic int WR_REPEAT_DELAY_US;
     _Atomic int WR_REPEAT_RATE_US;
@@ -417,8 +413,6 @@ typedef struct war_lua_context {
     _Atomic float VK_FONT_PIXEL_HEIGHT;
     _Atomic int VK_MAX_FRAMES;
     _Atomic int VK_GLYPH_COUNT;
-    _Atomic int VK_SPECTROGRAM_WIDTH;
-    _Atomic int VK_SPECTROGRAM_HEIGHT;
     // misc
     _Atomic float DEFAULT_ALPHA_SCALE;
     _Atomic float DEFAULT_CURSOR_ALPHA_SCALE;
@@ -1078,62 +1072,36 @@ typedef struct war_vulkan_context {
     void* text_index_buffer_mapped;
     int glyph_count;
     //-------------------------------------------------------------------------
-    // SPECTROGRAM PIPELINE
+    // NSGT PIPELINE
     //-------------------------------------------------------------------------
-    VkPipeline spectrogram_pipeline;
-    VkPipelineLayout spectrogram_pipeline_layout;
-    VkShaderModule spectrogram_vertex_shader;
-    VkShaderModule spectrogram_fragment_shader;
-    VkBuffer spectrogram_vertex_buffer;
-    VkDeviceMemory spectrogram_vertex_buffer_memory;
-    VkBuffer spectrogram_instance_buffer;
-    VkDeviceMemory spectrogram_instance_buffer_memory;
-    VkImage spectrogram_texture;
-    VkImageView spectrogram_texture_view;
-    VkDeviceMemory spectrogram_texture_memory;
-    VkSampler spectrogram_sampler;
-    VkDescriptorSet spectrogram_descriptor_set;
-    VkDescriptorSetLayout spectrogram_descriptor_set_layout;
-    VkDescriptorPool spectrogram_descriptor_pool;
-    VkPushConstantRange spectrogram_push_constant_range;
-    void* spectrogram_vertex_buffer_mapped;
-    void* spectrogram_instance_buffer_mapped;
-    uint32_t spectrogram_width;
-    uint32_t spectrogram_height;
+    VkPipeline nsgt_pipeline;              // Compute shader pipeline
+    VkPipelineLayout nsgt_pipeline_layout; // Pipeline layout (push constants,
+                                           // descriptor sets)
+    VkShaderModule nsgt_compute_shader;    // NSGT compute shader
+
+    // Device-local buffers (VRAM)
+    VkBuffer nsgt_l_buffer; // Left channel
+    VkDeviceMemory nsgt_l_memory;
+    VkBuffer nsgt_r_buffer; // Right channel
+    VkDeviceMemory nsgt_r_memory;
+
+    // Staging buffers (host-visible, coherent)
+    VkBuffer nsgt_l_staging; // Left channel for CPU access / preview
+    VkDeviceMemory nsgt_l_staging_memory;
+    VkBuffer nsgt_r_staging; // Right channel for CPU access / preview
+    VkDeviceMemory nsgt_r_staging_memory;
+
+    VkBuffer nsgt_diff_staging; // Staging buffer for undo diffs / parameter
+                                // snapshots
+    VkDeviceMemory nsgt_diff_staging_memory;
+
+    // NSGT parameters
+    VkDescriptorSet nsgt_descriptor_set; // For passing parameters
+    VkDescriptorSetLayout nsgt_descriptor_set_layout;
+
+    // Synchronization
+    VkFence nsgt_fence; // To sync compute → CPU staging reads
 } war_vulkan_context;
-
-typedef struct war_spectrogram_vertex {
-    float corner[2];
-    float pos[3];
-    uint32_t color;
-    float uv[2];
-} war_spectrogram_vertex;
-
-typedef struct war_spectrogram_instance {
-    uint32_t x;
-    uint32_t y;
-    uint32_t width;
-    uint32_t height;
-    float time_offset;
-    float frequency_scale;
-    uint32_t color;
-} war_spectrogram_instance;
-
-typedef struct war_spectrogram_push_constants {
-    float bottom_left[2];
-    float physical_size[2];
-    float cell_size[2];
-    float zoom;
-    uint32_t _pad;
-    float cell_offsets[2];
-    float scroll_margin[2];
-    float anchor_cell[2];
-    float top_right[2];
-    float time_scale;
-    float frequency_scale;
-    float time_offset;
-    uint32_t fft_size;
-} war_spectrogram_push_constants;
 
 typedef struct war_env war_env;
 
