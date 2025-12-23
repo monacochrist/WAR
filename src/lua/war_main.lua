@@ -120,6 +120,10 @@ ctx_lua = {
     VK_FONT_PIXEL_HEIGHT                = 69.0,
     VK_MAX_FRAMES                       = 1,
     VK_GLYPH_COUNT                      = 128,
+    VK_NSGT_BIN_CAPACITY                = 1024,
+    VK_NSGT_FRAME_CAPACITY              = 512,
+    VK_NSGT_DIFF_CAPACITY               = 65536,
+    VK_NSGT_VISUAL_QUAD_CAPACITY        = 13, -- need room for align to 64
     -- misc
     DEFAULT_ALPHA_SCALE                 = 0.2,
     DEFAULT_CURSOR_ALPHA_SCALE          = 0.6,
@@ -161,6 +165,11 @@ pool_wr = {
     { name = "ctx_vk.text_vertex_buffer_mapped",    type = "void*",               count = 1 },
     { name = "ctx_vk.text_instance_buffer_mapped",  type = "void*",               count = 1 },
     { name = "ctx_vk.text_index_buffer_mapped",     type = "void*",               count = 1 },
+    { name = "ctx_vk.nsgt_map_diff",                type = "void*",               count = 1 },
+    { name = "ctx_vk.nsgt_map_l",                   type = "void*",               count = 1 },
+    { name = "ctx_vk.nsgt_map_r",                   type = "void*",               count = 1 },
+    { name = "ctx_vk.nsgt_map_vertex",              type = "void*",               count = 1 },
+    { name = "ctx_vk.nsgt_map_index",               type = "void*",               count = 1 },
     -- env
     { name = "env",                                 type = "war_env",             count = 1 },
     -- command context

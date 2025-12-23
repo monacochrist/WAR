@@ -413,6 +413,10 @@ typedef struct war_lua_context {
     _Atomic float VK_FONT_PIXEL_HEIGHT;
     _Atomic int VK_MAX_FRAMES;
     _Atomic int VK_GLYPH_COUNT;
+    _Atomic int VK_NSGT_BIN_CAPACITY;
+    _Atomic int VK_NSGT_FRAME_CAPACITY;
+    _Atomic int VK_NSGT_DIFF_CAPACITY;
+    _Atomic int VK_NSGT_VISUAL_QUAD_CAPACITY;
     // misc
     _Atomic float DEFAULT_ALPHA_SCALE;
     _Atomic float DEFAULT_CURSOR_ALPHA_SCALE;
@@ -994,6 +998,37 @@ typedef struct war_quad_push_constants {
     uint32_t _pad2[2];
 } war_quad_push_constants;
 
+// compute
+typedef struct war_nsgt_push_constants {
+    int operation_type;
+    int channel;
+    int bin_start;
+    int bin_end;
+    int frame_start;
+    int frame_end;
+    float param1;
+    float param2;
+} war_nsgt_push_constants;
+
+// visual
+typedef struct war_nsgt_visual_push_constants {
+    int channel;
+    int blend;
+    int _pad1[2];
+    float color_l[4]; // <-- RGBA now
+    float color_r[4]; // <-- RGBA now
+    int _pad2[2];
+    float time_offset;
+    float freq_scale;
+    float time_scale;
+    int _pad3[1];
+} war_nsgt_visual_push_constants;
+
+typedef struct war_nsgt_vertex {
+    float uv[2];
+    float pos[3];
+} war_nsgt_vertex;
+
 typedef struct war_vulkan_context {
     //-------------------------------------------------------------------------
     // QUAD PIPELINE
@@ -1057,7 +1092,6 @@ typedef struct war_vulkan_context {
     VkDeviceMemory text_instance_buffer_memory;
     VkBuffer text_index_buffer;
     VkDeviceMemory text_index_buffer_memory;
-    VkRenderPass text_render_pass;
     float ascent;
     float descent;
     float line_gap;
@@ -1083,16 +1117,43 @@ typedef struct war_vulkan_context {
     VkDeviceMemory nsgt_r_memory;
     VkBuffer nsgt_l_staging;
     VkDeviceMemory nsgt_l_staging_memory;
+    void* nsgt_map_l;
+    VkDescriptorBufferInfo nsgt_l_buffer_info;
     VkBuffer nsgt_r_staging;
     VkDeviceMemory nsgt_r_staging_memory;
-    VkBuffer nsgt_diff_staging;
+    void* nsgt_map_r;
+    VkDescriptorBufferInfo nsgt_r_buffer_info;
+    VkBuffer nsgt_diff_buffer;
     VkDeviceMemory nsgt_diff_staging_memory;
+    void* nsgt_map_diff;
+    VkDescriptorBufferInfo nsgt_diff_buffer_info;
     VkDescriptorSet nsgt_descriptor_set;
     VkDescriptorSetLayout nsgt_descriptor_set_layout;
+    VkDescriptorPool nsgt_descriptor_pool;
     VkFence nsgt_fence;
+    VkDeviceSize nsgt_buffer_capacity;
+    VkDeviceSize nsgt_diff_buffer_capacity;
+    uint32_t nsgt_bin_capacity;
+    uint32_t nsgt_frame_capacity;
     //-------------------------------------------------------------------------
     // NSGT VISUAL PIPELINE
     //-------------------------------------------------------------------------
+    VkPipeline nsgt_visual_pipeline;
+    VkPipelineLayout nsgt_visual_pipeline_layout;
+    VkShaderModule nsgt_vertex_shader;
+    VkShaderModule nsgt_fragment_shader;
+    VkBuffer nsgt_vertex_buffer;
+    VkDeviceMemory nsgt_vertex_buffer_memory;
+    void* nsgt_map_vertex;
+    VkBuffer nsgt_index_buffer;
+    VkDeviceMemory nsgt_index_buffer_memory;
+    void* nsgt_map_index;
+    VkDescriptorSet nsgt_visual_descriptor_set;
+    VkDescriptorSetLayout nsgt_visual_descriptor_set_layout;
+    VkDescriptorPool nsgt_visual_descriptor_pool;
+    uint32_t nsgt_visual_quad_capacity;
+    uint32_t nsgt_vertex_buffer_capacity;
+    uint32_t nsgt_index_buffer_capacity;
 } war_vulkan_context;
 
 typedef struct war_env war_env;

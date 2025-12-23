@@ -69,13 +69,13 @@
 static inline int war_load_lua_config(war_lua_context* ctx_lua,
                                       const char* lua_file) {
     if (luaL_dofile(ctx_lua->L, lua_file) != LUA_OK) {
-        call_terry_davis("Lua error: %s", lua_tostring(ctx_lua->L, -1));
+        call_king_terry("Lua error: %s", lua_tostring(ctx_lua->L, -1));
         return -1;
     }
 
     lua_getglobal(ctx_lua->L, "ctx_lua");
     if (!lua_istable(ctx_lua->L, -1)) {
-        call_terry_davis("ctx_lua not a table");
+        call_king_terry("ctx_lua not a table");
         return -1;
     }
 
@@ -83,7 +83,7 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     lua_getfield(ctx_lua->L, -1, #field);                                      \
     if (lua_type(ctx_lua->L, -1) == LUA_TNUMBER) {                             \
         ctx_lua->field = (int)lua_tointeger(ctx_lua->L, -1);                   \
-        call_terry_davis("ctx_lua: %s = %d", #field, ctx_lua->field);          \
+        call_king_terry("ctx_lua: %s = %d", #field, ctx_lua->field);           \
     }                                                                          \
     lua_pop(ctx_lua->L, 1);
 
@@ -135,6 +135,10 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(VK_ATLAS_WIDTH)
     LOAD_INT(VK_GLYPH_COUNT)
     LOAD_INT(VK_MAX_FRAMES)
+    LOAD_INT(VK_NSGT_BIN_CAPACITY)
+    LOAD_INT(VK_NSGT_FRAME_CAPACITY)
+    LOAD_INT(VK_NSGT_DIFF_CAPACITY)
+    LOAD_INT(VK_NSGT_VISUAL_QUAD_CAPACITY)
     // pool
     LOAD_INT(POOL_ALIGNMENT)
     // cmd
@@ -151,7 +155,7 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     lua_getfield(ctx_lua->L, -1, #field);                                      \
     if (lua_type(ctx_lua->L, -1) == LUA_TNUMBER) {                             \
         ctx_lua->field = (float)lua_tonumber(ctx_lua->L, -1);                  \
-        call_terry_davis("ctx_lua: %s = %f", #field, ctx_lua->field);          \
+        call_king_terry("ctx_lua: %s = %f", #field, ctx_lua->field);           \
     }                                                                          \
     lua_pop(ctx_lua->L, 1);
 
@@ -180,7 +184,7 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     lua_getfield(ctx_lua->L, -1, #field);                                      \
     if (lua_type(ctx_lua->L, -1) == LUA_TNUMBER) {                             \
         ctx_lua->field = (double)lua_tonumber(ctx_lua->L, -1);                 \
-        call_terry_davis("ctx_lua: %s = %f", #field, ctx_lua->field);          \
+        call_king_terry("ctx_lua: %s = %f", #field, ctx_lua->field);           \
     }                                                                          \
     lua_pop(ctx_lua->L, 1);
 
@@ -200,7 +204,7 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     //         char* str = strdup(lua_tostring(ctx_lua->L, -1)); \
     //         if (str) { \
     //             atomic_store(&ctx_lua->field, str); \
-    //             call_terry_davis( \
+    //             call_king_terry( \
     //                 "ctx_lua: %s = %s", #field,
     //                 atomic_load(&ctx_lua->field));     \
     //         } \
@@ -217,7 +221,7 @@ static inline size_t war_get_pool_a_size(war_pool* pool,
                                          const char* lua_file) {
     lua_getglobal(ctx_lua->L, "pool_a");
     if (!lua_istable(ctx_lua->L, -1)) {
-        call_terry_davis("pool_a not a table");
+        call_king_terry("pool_a not a table");
         return 0;
     }
 
@@ -285,7 +289,7 @@ static inline size_t war_get_pool_a_size(war_pool* pool,
             } else if (strcmp(type, "bool") == 0) {
                 type_size = sizeof(bool);
             } else {
-                call_terry_davis("Unknown pool_a type: %s", type);
+                call_king_terry("Unknown pool_a type: %s", type);
                 type_size = 0;
             }
 
@@ -297,7 +301,7 @@ static inline size_t war_get_pool_a_size(war_pool* pool,
     // align total_size to pool alignment
     size_t alignment = atomic_load(&ctx_lua->POOL_ALIGNMENT);
     total_size = (total_size + alignment - 1) & ~(alignment - 1);
-    call_terry_davis("pool_a size: %zu", total_size);
+    call_king_terry("pool_a size: %zu", total_size);
     return total_size;
 }
 
@@ -306,7 +310,7 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                                           const char* lua_file) {
     lua_getglobal(ctx_lua->L, "pool_wr");
     if (!lua_istable(ctx_lua->L, -1)) {
-        call_terry_davis("pool_wr not a table");
+        call_king_terry("pool_wr not a table");
         return 0;
     }
 
@@ -422,7 +426,7 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(void**);
 
             else {
-                call_terry_davis("Unknown pool_wr type: %s", type);
+                call_king_terry("Unknown pool_wr type: %s", type);
                 type_size = 0;
             }
 
@@ -434,14 +438,14 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
     // align total_size to pool alignment
     size_t alignment = atomic_load(&ctx_lua->POOL_ALIGNMENT);
     total_size = (total_size + alignment - 1) & ~(alignment - 1);
-    call_terry_davis("pool_wr size: %zu", total_size);
+    call_king_terry("pool_wr size: %zu", total_size);
     return total_size;
 }
 
 static inline void* war_pool_alloc(war_pool* pool, size_t size) {
     size = ALIGN_UP(size, pool->pool_alignment);
     if (pool->pool_ptr + size > (uint8_t*)pool->pool + pool->pool_size) {
-        call_terry_davis("war_pool_alloc not big enough! %zu bytes", size);
+        call_king_terry("war_pool_alloc not big enough! %zu bytes", size);
         abort();
     }
     void* ptr = pool->pool_ptr;
@@ -1728,6 +1732,68 @@ war_get_ext(const char* file_name, char* ext, uint32_t name_limit) {
     memcpy(ext, ext_start, copy_len);
     ext[copy_len] = '\0';
     return copy_len;
+}
+
+static inline uint8_t war_vulkan_get_shader_module(
+    VkDevice device, VkShaderModule* shader_module, const char* path) {
+    call_king_terry("war_vulkan_get_shader_module");
+    FILE* file = fopen(path, "rb");
+    fseek(file, 0, SEEK_END);
+    size_t size = ftell(file);
+    rewind(file);
+    char* code = malloc(size);
+    fread(code, 1, size, file);
+    fclose(file);
+    VkShaderModuleCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = size,
+        .pCode = (uint32_t*)code};
+    if (vkCreateShaderModule(device, &create_info, NULL, shader_module) !=
+        VK_SUCCESS) {
+        call_king_terry("Failed to create shader module: %s", path);
+        return 0;
+    }
+    free(code);
+    return 1;
+}
+
+static inline uint8_t war_vulkan_create_buffer(VkDevice device,
+                                               VkPhysicalDevice physical_device,
+                                               VkDeviceSize capacity,
+                                               VkBufferUsageFlags usage,
+                                               VkMemoryPropertyFlags properties,
+                                               VkBuffer* buffer,
+                                               VkDeviceMemory* memory) {
+    call_king_terry("war_vulkan_create_buffer");
+    VkBufferCreateInfo bufferInfo = {0};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = capacity;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(device, &bufferInfo, NULL, buffer) != VK_SUCCESS) {
+        return 0;
+    }
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device, *buffer, &memRequirements);
+    VkMemoryAllocateInfo allocInfo = {0};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    // Find suitable memory type
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &memProperties);
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((memRequirements.memoryTypeBits & (1 << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) ==
+                properties) {
+            allocInfo.memoryTypeIndex = i;
+            break;
+        }
+    }
+    if (vkAllocateMemory(device, &allocInfo, NULL, memory) != VK_SUCCESS) {
+        return 0;
+    }
+    vkBindBufferMemory(device, *buffer, *memory, 0);
+    return 1;
 }
 
 #endif // WAR_FUNCTIONS_H

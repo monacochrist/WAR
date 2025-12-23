@@ -112,7 +112,7 @@ war_wayland_wl_surface_frame(int fd, uint32_t wl_surface_id, uint32_t new_id) {
     war_write_le16(frame + 4, 3);
     war_write_le16(frame + 6, 12);
     war_write_le32(frame + 8, new_id);
-    // call_terry_davis("bound wl_callback");
+    // call_king_terry("bound wl_callback");
     // dump_bytes("wl_surface::frame request", frame, 12);
     ssize_t frame_written = write(fd, frame, 12);
     assert(frame_written == 12);
@@ -135,8 +135,8 @@ static inline void war_wayland_registry_bind(int fd,
     war_write_le32(bind + size, new_id);
 
     // dump_bytes("bind request", bind, size + 4);
-    // call_terry_davis("bound: %s", (const char*)msg_buffer + msg_buffer_offset
-    // + 16); call_terry_davis("to id: %u", new_id);
+    // call_king_terry("bound: %s", (const char*)msg_buffer + msg_buffer_offset
+    // + 16); call_king_terry("to id: %u", new_id);
 
     ssize_t bind_written = write(fd, bind, size + 4);
     assert(bind_written == size + 4);
@@ -173,9 +173,9 @@ static inline int war_wayland_make_fd() {
     const char env_xdg_runtime_dir_prefix[] = "XDG_RUNTIME_DIR=";
     const char env_wayland_display_prefix[] = "WAYLAND_DISPLAY=";
     const size_t xdg_prefix_size = sizeof(env_xdg_runtime_dir_prefix);
-    call_terry_davis("xdg_prefix_size: %lu", xdg_prefix_size);
+    call_king_terry("xdg_prefix_size: %lu", xdg_prefix_size);
     const size_t wayland_prefix_size = sizeof(env_wayland_display_prefix);
-    call_terry_davis("wayland_prefix_size: %lu", wayland_prefix_size);
+    call_king_terry("wayland_prefix_size: %lu", wayland_prefix_size);
 
     enum {
         max_wayland_display = (64),
@@ -197,7 +197,7 @@ static inline int war_wayland_make_fd() {
                 0) {
             found_xdg_runtime_dir = 1;
             const char* val = *env + xdg_prefix_size - 1;
-            call_terry_davis("val: %s", val);
+            call_king_terry("val: %s", val);
             size_xdg_runtime_dir = strlen(val);
             assert(size_xdg_runtime_dir <= max_xdg_runtime_dir);
             memcpy(xdg_runtime_dir, val, size_xdg_runtime_dir);
@@ -207,7 +207,7 @@ static inline int war_wayland_make_fd() {
                            wayland_prefix_size - 1) == 0) {
             found_wayland_display = 1;
             const char* val = *env + wayland_prefix_size - 1;
-            call_terry_davis("val: %s", val);
+            call_king_terry("val: %s", val);
             size_wayland_display = strlen(val);
             assert(size_wayland_display <= max_wayland_display);
             memcpy(wayland_display, val, size_wayland_display);
@@ -219,7 +219,7 @@ static inline int war_wayland_make_fd() {
     assert(found_xdg_runtime_dir);
 
     if (!found_wayland_display) {
-        call_terry_davis(
+        call_king_terry(
             "could not find wayland_display, setting to default: %s",
             default_wayland_display);
         size_wayland_display = sizeof(default_wayland_display);
@@ -241,9 +241,9 @@ static inline int war_wayland_make_fd() {
     size_t path_len = size_xdg_runtime_dir + size_wayland_display;
     size_t addr_len = offsetof(struct sockaddr_un, sun_path) + path_len;
 
-    call_terry_davis("path: %s", addr.sun_path);
-    call_terry_davis("path_len: %lu", path_len);
-    call_terry_davis("addr_len: %lu", addr_len);
+    call_king_terry("path: %s", addr.sun_path);
+    call_king_terry("path_len: %lu", path_len);
+    call_king_terry("addr_len: %lu", addr_len);
 
     int ret = connect(fd, (struct sockaddr*)&addr, addr_len);
     assert(ret >= 0);

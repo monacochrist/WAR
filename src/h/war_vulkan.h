@@ -106,23 +106,23 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     VkPhysicalDeviceProperties device_props;
     for (uint32_t i = 0; i < gpu_count; i++) {
         vkGetPhysicalDeviceProperties(physical_devices[i], &device_props);
-        call_terry_davis("Found GPU %u: %s (vendorID=0x%x, deviceID=0x%x)",
-                         i,
-                         device_props.deviceName,
-                         device_props.vendorID,
-                         device_props.deviceID);
+        call_king_terry("Found GPU %u: %s (vendorID=0x%x, deviceID=0x%x)",
+                        i,
+                        device_props.deviceName,
+                        device_props.vendorID,
+                        device_props.deviceID);
         if (device_props.vendorID == 0x8086) {
             ctx_vk->physical_device = physical_devices[i];
-            call_terry_davis("Selected Intel GPU: %s", device_props.deviceName);
+            call_king_terry("Selected Intel GPU: %s", device_props.deviceName);
             break;
         }
     }
     if (ctx_vk->physical_device == VK_NULL_HANDLE) {
         ctx_vk->physical_device = physical_devices[0];
         vkGetPhysicalDeviceProperties(ctx_vk->physical_device, &device_props);
-        call_terry_davis("Fallback GPU selected: %s (vendorID=0x%x)",
-                         device_props.deviceName,
-                         device_props.vendorID);
+        call_king_terry("Fallback GPU selected: %s (vendorID=0x%x)",
+                        device_props.deviceName,
+                        device_props.vendorID);
     }
     assert(ctx_vk->physical_device != VK_NULL_HANDLE);
     uint32_t device_extension_count = 0;
@@ -149,7 +149,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         ctx_vk->physical_device, NULL, &extension_count, available_extensions);
 #if DEBUG
     for (uint32_t i = 0; i < extension_count; i++) {
-        call_terry_davis("%s", available_extensions[i].extensionName);
+        call_king_terry("%s", available_extensions[i].extensionName);
     }
 #endif
     uint8_t has_external_memory = 0;
@@ -337,17 +337,17 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     uint32_t memory_type = 0;
     uint8_t found_memory_type = 0;
-    call_terry_davis("Looking for ctx_vk->memory type with properties: 0x%x",
-                     properties);
-    call_terry_davis("Available ctx_vk->memory types:");
+    call_king_terry("Looking for ctx_vk->memory type with properties: 0x%x",
+                    properties);
+    call_king_terry("Available ctx_vk->memory types:");
     for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
         VkMemoryPropertyFlags flags =
             mem_properties.memoryTypes[i].propertyFlags;
-        call_terry_davis("Type %u: flags=0x%x", i, flags);
+        call_king_terry("Type %u: flags=0x%x", i, flags);
 
         if ((mem_reqs.memoryTypeBits & (1 << i)) &&
             (flags & properties) == properties) {
-            call_terry_davis("-> Selected ctx_vk->memory type %u", i);
+            call_king_terry("-> Selected ctx_vk->memory type %u", i);
             memory_type = i;
             found_memory_type = 1;
             break;
@@ -1131,7 +1131,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     for (int c = 0; c < ctx_vk->glyph_count; c++) {
         FT_Load_Char(ctx_vk->ft_regular, c, FT_LOAD_RENDER);
         if (c == 'M') {
-            call_terry_davis("for monospaced fonts");
+            call_king_terry("for monospaced fonts");
             ctx_vk->cell_width = ctx_vk->ft_regular->glyph->advance.x / 64.0f;
         }
         FT_Bitmap* bmp = &ctx_vk->ft_regular->glyph->bitmap;
@@ -1854,16 +1854,6 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     };
     VkAttachmentDescription sdf_attachments[2] = {sdf_color_attachment,
                                                   quad_depth_attachment};
-    VkRenderPassCreateInfo sdf_render_pass_info = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 2,
-        .pAttachments = sdf_attachments,
-        .subpassCount = 1,
-        .pSubpasses = &sdf_subpass,
-    };
-    result = vkCreateRenderPass(
-        ctx_vk->device, &sdf_render_pass_info, NULL, &ctx_vk->text_render_pass);
-    assert(result == VK_SUCCESS);
     VkGraphicsPipelineCreateInfo sdf_pipeline_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount = 2,
@@ -1884,7 +1874,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         .pColorBlendState = &color_blending,
         .pDynamicState = NULL,
         .layout = ctx_vk->text_pipeline_layout,
-        .renderPass = ctx_vk->text_render_pass,
+        .renderPass = ctx_vk->render_pass,
         .subpass = 0,
         .basePipelineHandle = VK_NULL_HANDLE,
         .basePipelineIndex = -1,
@@ -2004,7 +1994,494 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     //-------------------------------------------------------------------------
     // NSGT PIPELINE
     //-------------------------------------------------------------------------
-    
+    uint8_t fn_result =
+        war_vulkan_get_shader_module(ctx_vk->device,
+                                     &ctx_vk->nsgt_compute_shader,
+                                     "build/spv/war_nsgt_compute.spv");
+    assert(fn_result);
+    VkDescriptorSetLayoutBinding* nsgt_bindings =
+        (VkDescriptorSetLayoutBinding[3]){
+            // L buffer
+            {0,
+             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             1,
+             VK_SHADER_STAGE_COMPUTE_BIT,
+             NULL},
+            // R buffer
+            {1,
+             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             1,
+             VK_SHADER_STAGE_COMPUTE_BIT,
+             NULL},
+            // Diff / undo buffer
+            {2,
+             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             1,
+             VK_SHADER_STAGE_COMPUTE_BIT,
+             NULL},
+        };
+    VkDescriptorSetLayoutCreateInfo nsgt_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 3,
+        .pBindings = nsgt_bindings,
+    };
+    result = vkCreateDescriptorSetLayout(ctx_vk->device,
+                                         &nsgt_layout_info,
+                                         NULL,
+                                         &ctx_vk->nsgt_descriptor_set_layout);
+    assert(result == VK_SUCCESS);
+    VkPushConstantRange nsgt_push_constant_range = {
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset = 0,
+        .size = sizeof(war_nsgt_push_constants), // todo add
+    };
+    VkPipelineLayoutCreateInfo nsgt_pipeline_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &ctx_vk->nsgt_descriptor_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &nsgt_push_constant_range,
+    };
+    result = vkCreatePipelineLayout(ctx_vk->device,
+                                    &nsgt_pipeline_layout_info,
+                                    NULL,
+                                    &ctx_vk->nsgt_pipeline_layout);
+    assert(result == VK_SUCCESS);
+    VkComputePipelineCreateInfo nsgt_pipeline_info = {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage =
+            (VkPipelineShaderStageCreateInfo){
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                .module = ctx_vk->nsgt_compute_shader,
+                .pName = "main",
+            },
+        .layout = ctx_vk->nsgt_pipeline_layout,
+    };
+    result = vkCreateComputePipelines(ctx_vk->device,
+                                      VK_NULL_HANDLE,
+                                      1,
+                                      &nsgt_pipeline_info,
+                                      NULL,
+                                      &ctx_vk->nsgt_pipeline);
+    assert(result == VK_SUCCESS);
+    VkDescriptorPoolSize nsgt_descriptor_pool_sizes[1] = {
+        (VkDescriptorPoolSize){
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 3,
+        },
+    };
+    VkDescriptorPoolCreateInfo nsgt_descriptor_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = 1,
+        .pPoolSizes = nsgt_descriptor_pool_sizes,
+        .maxSets = 1,
+    };
+    result = vkCreateDescriptorPool(ctx_vk->device,
+                                    &nsgt_descriptor_pool_info,
+                                    NULL,
+                                    &ctx_vk->nsgt_descriptor_pool);
+    assert(result == VK_SUCCESS);
+    VkDescriptorSetAllocateInfo nsgt_descriptor_set_alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = ctx_vk->nsgt_descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &ctx_vk->nsgt_descriptor_set_layout,
+    };
+    result = vkAllocateDescriptorSets(ctx_vk->device,
+                                      &nsgt_descriptor_set_alloc_info,
+                                      &ctx_vk->nsgt_descriptor_set);
+    assert(result == VK_SUCCESS);
+    ctx_vk->nsgt_bin_capacity =
+        atomic_load(&ctx_lua->VK_NSGT_BIN_CAPACITY); // 1024
+    ctx_vk->nsgt_frame_capacity =
+        atomic_load(&ctx_lua->VK_NSGT_FRAME_CAPACITY); // 512
+    ctx_vk->nsgt_buffer_capacity =
+        ctx_vk->nsgt_bin_capacity * ctx_vk->nsgt_frame_capacity * sizeof(float);
+    ctx_vk->nsgt_diff_buffer_capacity =
+        atomic_load(&ctx_lua->VK_NSGT_DIFF_CAPACITY);
+    fn_result = war_vulkan_create_buffer(ctx_vk->device,
+                                         ctx_vk->physical_device,
+                                         ctx_vk->nsgt_buffer_capacity,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         &ctx_vk->nsgt_l_buffer,
+                                         &ctx_vk->nsgt_l_memory);
+    assert(fn_result);
+    fn_result = war_vulkan_create_buffer(ctx_vk->device,
+                                         ctx_vk->physical_device,
+                                         ctx_vk->nsgt_buffer_capacity,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                         &ctx_vk->nsgt_r_buffer,
+                                         &ctx_vk->nsgt_r_memory);
+    assert(fn_result);
+    fn_result = war_vulkan_create_buffer(
+        ctx_vk->device,
+        ctx_vk->physical_device,
+        ctx_vk->nsgt_buffer_capacity,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &ctx_vk->nsgt_l_staging,
+        &ctx_vk->nsgt_l_staging_memory);
+    assert(fn_result);
+    fn_result = war_vulkan_create_buffer(
+        ctx_vk->device,
+        ctx_vk->physical_device,
+        ctx_vk->nsgt_buffer_capacity,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &ctx_vk->nsgt_r_staging,
+        &ctx_vk->nsgt_r_staging_memory);
+    assert(fn_result);
+    fn_result = war_vulkan_create_buffer(
+        ctx_vk->device,
+        ctx_vk->physical_device,
+        ctx_vk->nsgt_diff_buffer_capacity,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &ctx_vk->nsgt_diff_buffer,
+        &ctx_vk->nsgt_diff_staging_memory);
+    assert(fn_result);
+    ctx_vk->nsgt_map_l = war_pool_alloc(pool_wr, sizeof(void*));
+    ctx_vk->nsgt_map_r = war_pool_alloc(pool_wr, sizeof(void*));
+    ctx_vk->nsgt_map_diff = war_pool_alloc(pool_wr, sizeof(void*));
+    result = vkMapMemory(ctx_vk->device,
+                         ctx_vk->nsgt_l_staging_memory,
+                         0,
+                         VK_WHOLE_SIZE,
+                         0,
+                         &ctx_vk->nsgt_map_l);
+    assert(result == VK_SUCCESS);
+    result = vkMapMemory(ctx_vk->device,
+                         ctx_vk->nsgt_r_staging_memory,
+                         0,
+                         VK_WHOLE_SIZE,
+                         0,
+                         &ctx_vk->nsgt_map_r);
+    assert(result == VK_SUCCESS);
+    result = vkMapMemory(ctx_vk->device,
+                         ctx_vk->nsgt_diff_staging_memory,
+                         0,
+                         VK_WHOLE_SIZE,
+                         0,
+                         &ctx_vk->nsgt_map_diff);
+    assert(result == VK_SUCCESS);
+    ctx_vk->nsgt_l_buffer_info = (VkDescriptorBufferInfo){
+        .buffer = ctx_vk->nsgt_l_buffer,
+        .offset = 0,
+        .range = ctx_vk->nsgt_buffer_capacity,
+    };
+    ctx_vk->nsgt_r_buffer_info = (VkDescriptorBufferInfo){
+        .buffer = ctx_vk->nsgt_r_buffer,
+        .offset = 0,
+        .range = ctx_vk->nsgt_buffer_capacity,
+    };
+    ctx_vk->nsgt_diff_buffer_info = (VkDescriptorBufferInfo){
+        .buffer = ctx_vk->nsgt_diff_buffer,
+        .offset = 0,
+        .range = ctx_vk->nsgt_diff_buffer_capacity,
+    };
+    VkWriteDescriptorSet nsgt_write_descriptor_set[3] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = ctx_vk->nsgt_descriptor_set,
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &ctx_vk->nsgt_l_buffer_info,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = ctx_vk->nsgt_descriptor_set,
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &ctx_vk->nsgt_r_buffer_info,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = ctx_vk->nsgt_descriptor_set,
+            .dstBinding = 2,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &ctx_vk->nsgt_diff_buffer_info,
+        },
+    };
+    vkUpdateDescriptorSets(
+        ctx_vk->device, 3, nsgt_write_descriptor_set, 0, NULL);
+    VkFenceCreateInfo nsgt_fence_info = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = 0,
+    };
+    result = vkCreateFence(
+        ctx_vk->device, &nsgt_fence_info, NULL, &ctx_vk->nsgt_fence);
+    assert(result == VK_SUCCESS);
+    //-------------------------------------------------------------------------
+    // NSGT VISUAL PIPELINE
+    //-------------------------------------------------------------------------
+    fn_result = war_vulkan_get_shader_module(ctx_vk->device,
+                                             &ctx_vk->nsgt_vertex_shader,
+                                             "build/spv/war_nsgt_vertex.spv");
+    assert(fn_result);
+    fn_result = war_vulkan_get_shader_module(ctx_vk->device,
+                                             &ctx_vk->nsgt_fragment_shader,
+                                             "build/spv/war_nsgt_fragment.spv");
+    assert(fn_result);
+    VkDescriptorSetLayoutBinding* nsgt_visual_bindings =
+        (VkDescriptorSetLayoutBinding[2]){
+            // L buffer
+            {0,
+             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             1,
+             VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
+             NULL},
+            // R buffer
+            {1,
+             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             1,
+             VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
+             NULL},
+        };
+    VkDescriptorSetLayoutCreateInfo nsgt_visual_descriptor_set_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 2,
+        .pBindings = nsgt_visual_bindings};
+    result =
+        vkCreateDescriptorSetLayout(ctx_vk->device,
+                                    &nsgt_visual_descriptor_set_layout_info,
+                                    NULL,
+                                    &ctx_vk->nsgt_visual_descriptor_set_layout);
+    assert(result == VK_SUCCESS);
+    VkPushConstantRange nsgt_visual_push_constant_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = sizeof(war_nsgt_visual_push_constants), // todo add
+    };
+    VkPipelineLayoutCreateInfo nsgt_visual_pipeline_layout_create_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &ctx_vk->nsgt_visual_descriptor_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &nsgt_visual_push_constant_range,
+    };
+    result = vkCreatePipelineLayout(ctx_vk->device,
+                                    &nsgt_visual_pipeline_layout_create_info,
+                                    NULL,
+                                    &ctx_vk->nsgt_visual_pipeline_layout);
+    assert(result == VK_SUCCESS);
+    VkPipelineShaderStageCreateInfo nsgt_visual_pipeline_shader_stages[2] = {
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_VERTEX_BIT,
+         .module = ctx_vk->nsgt_vertex_shader,
+         .pName = "main"},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .module = ctx_vk->nsgt_fragment_shader,
+         .pName = "main"}};
+    VkPipelineRasterizationStateCreateInfo nsgt_visual_rasterizer = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .depthClampEnable = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .lineWidth = 1.0f,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .depthBiasEnable = VK_FALSE,
+    };
+    VkPipelineMultisampleStateCreateInfo nsgt_visual_multisampling = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .sampleShadingEnable = VK_FALSE,
+    };
+    VkViewport nsgt_visual_viewport = {
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = width,
+        .height = height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+    VkRect2D nsgt_visual_scissor = {
+        .offset = {0, 0},
+        .extent = {width, height},
+    };
+    VkPipelineViewportStateCreateInfo nsgt_visual_viewport_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports = &nsgt_visual_viewport,
+        .scissorCount = 1,
+        .pScissors = &nsgt_visual_scissor,
+    };
+    VkVertexInputBindingDescription nsgt_visual_vertex_binding = {
+        .binding = 0,
+        .stride = sizeof(war_nsgt_vertex),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    };
+    VkVertexInputAttributeDescription nsgt_visual_vertex_attributes[2] = {
+
+        {
+            .location = 0,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32_SFLOAT,
+            .offset = offsetof(war_nsgt_vertex, uv),
+        },
+        {
+            .location = 1,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = offsetof(war_nsgt_vertex, pos),
+        },
+    };
+    VkPipelineVertexInputStateCreateInfo nsgt_vertex_input_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &nsgt_visual_vertex_binding,
+        .vertexAttributeDescriptionCount = 2,
+        .pVertexAttributeDescriptions = nsgt_visual_vertex_attributes,
+    };
+    VkPipelineInputAssemblyStateCreateInfo nsgt_visual_input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = VK_FALSE,
+    };
+    VkPipelineColorBlendAttachmentState nsgt_visual_color_blend_attachment = {
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+        .blendEnable = VK_FALSE,
+    };
+    VkPipelineColorBlendStateCreateInfo nsgt_visual_color_blending = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = VK_FALSE,
+        .attachmentCount = 1,
+        .pAttachments = &nsgt_visual_color_blend_attachment,
+    };
+    VkPipelineDepthStencilStateCreateInfo nsgt_visual_depth_stencil = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
+        .stencilTestEnable = VK_FALSE,
+    };
+    VkGraphicsPipelineCreateInfo nsgt_visual_pipeline_info = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 2,
+        .pStages = nsgt_visual_pipeline_shader_stages,
+        .layout = ctx_vk->nsgt_visual_pipeline_layout,
+        .renderPass = ctx_vk->render_pass, // must be created beforehand
+        // other fixed-function state (vertex input, rasterization, viewport,
+        // blending)
+        .pVertexInputState = &nsgt_vertex_input_info,
+        .pRasterizationState = &nsgt_visual_rasterizer,
+        .pMultisampleState = &nsgt_visual_multisampling,
+        .pViewportState = &nsgt_visual_viewport_state,
+        .pInputAssemblyState = &nsgt_visual_input_assembly,
+        .pColorBlendState = &nsgt_visual_color_blending,
+        .pDepthStencilState = &nsgt_visual_depth_stencil,
+    };
+    result = vkCreateGraphicsPipelines(ctx_vk->device,
+                                       VK_NULL_HANDLE,
+                                       1,
+                                       &nsgt_visual_pipeline_info,
+                                       NULL,
+                                       &ctx_vk->nsgt_visual_pipeline);
+    assert(result == VK_SUCCESS);
+    VkDescriptorPoolSize nsgt_visual_descriptor_pool_sizes[1] = {
+        (VkDescriptorPoolSize){
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 2,
+        },
+    };
+    VkDescriptorPoolCreateInfo nsgt_visual_descriptor_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = 1,
+        .pPoolSizes = nsgt_visual_descriptor_pool_sizes,
+        .maxSets = 1,
+    };
+    result = vkCreateDescriptorPool(ctx_vk->device,
+                                    &nsgt_visual_descriptor_pool_info,
+                                    NULL,
+                                    &ctx_vk->nsgt_visual_descriptor_pool);
+    assert(result == VK_SUCCESS);
+    VkDescriptorSetAllocateInfo nsgt_visual_descriptor_set_alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = ctx_vk->nsgt_visual_descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &ctx_vk->nsgt_visual_descriptor_set_layout,
+    };
+    result = vkAllocateDescriptorSets(ctx_vk->device,
+                                      &nsgt_visual_descriptor_set_alloc_info,
+                                      &ctx_vk->nsgt_visual_descriptor_set);
+    assert(result == VK_SUCCESS);
+    VkWriteDescriptorSet nsgt_visual_write_descriptor_set[2] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = ctx_vk->nsgt_visual_descriptor_set,
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &ctx_vk->nsgt_l_buffer_info,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = ctx_vk->nsgt_visual_descriptor_set,
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &ctx_vk->nsgt_r_buffer_info,
+        },
+    };
+    vkUpdateDescriptorSets(
+        ctx_vk->device, 2, nsgt_visual_write_descriptor_set, 0, NULL);
+    ctx_vk->nsgt_visual_quad_capacity =
+        atomic_load(&ctx_lua->VK_NSGT_VISUAL_QUAD_CAPACITY);
+    ctx_vk->nsgt_vertex_buffer_capacity =
+        ctx_vk->nsgt_visual_quad_capacity * 4 * sizeof(war_nsgt_vertex);
+    ctx_vk->nsgt_index_buffer_capacity =
+        ctx_vk->nsgt_visual_quad_capacity * 6 * sizeof(uint32_t);
+    fn_result =
+        war_vulkan_create_buffer(ctx_vk->device,
+                                 ctx_vk->physical_device,
+                                 ctx_vk->nsgt_vertex_buffer_capacity,
+                                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                 &ctx_vk->nsgt_vertex_buffer,
+                                 &ctx_vk->nsgt_vertex_buffer_memory);
+    assert(fn_result);
+    fn_result =
+        war_vulkan_create_buffer(ctx_vk->device,
+                                 ctx_vk->physical_device,
+                                 ctx_vk->nsgt_index_buffer_capacity,
+                                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                 &ctx_vk->nsgt_index_buffer,
+                                 &ctx_vk->nsgt_index_buffer_memory);
+    assert(fn_result);
+    result = vkMapMemory(ctx_vk->device,
+                         ctx_vk->nsgt_vertex_buffer_memory,
+                         0,
+                         VK_WHOLE_SIZE,
+                         0,
+                         &ctx_vk->nsgt_map_vertex);
+    assert(result == VK_SUCCESS);
+    result = vkMapMemory(ctx_vk->device,
+                         ctx_vk->nsgt_index_buffer_memory,
+                         0,
+                         VK_WHOLE_SIZE,
+                         0,
+                         &ctx_vk->nsgt_map_index);
+    assert(result == VK_SUCCESS);
     //-------------------------------------------------------------------------
     // END
     //-------------------------------------------------------------------------

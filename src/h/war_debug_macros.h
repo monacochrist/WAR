@@ -78,7 +78,7 @@
             YEAR_CHAR3,                                                        \
             YEAR_CHAR4)
 
-#define CALL_TERRY_DAVIS(fmt, ...)                                             \
+#define CALL_KING_TERRY(fmt, ...)                                             \
     do {                                                                       \
         fprintf(stderr, "# " fmt, ##__VA_ARGS__);                              \
         if ((fmt)[sizeof(fmt) - 2] == '\n')                                    \
@@ -109,18 +109,18 @@
     } while (0)
 
 #define end(fmt, ...) header("END " fmt, ##__VA_ARGS__)
-#define END(fmt, ...) CALL_TERRY_DAVIS("END " fmt, ##__VA_ARGS__)
+#define END(fmt, ...) CALL_KING_TERRY("END " fmt, ##__VA_ARGS__)
 
-#define call_terry_davis(fmt, ...) fprintf(stderr, "- " fmt "\n", ##__VA_ARGS__)
+#define call_king_terry(fmt, ...) fprintf(stderr, "- " fmt "\n", ##__VA_ARGS__)
 
 #else // DEBUG not defined
 
-#define CALL_TERRY_DAVIS(fmt, ...) ((void)0)
+#define CALL_KING_TERRY(fmt, ...) ((void)0)
 #define header(fmt, ...) ((void)0)
 #define end(fmt, ...) ((void)0)
 #define END(fmt, ...) ((void)0)
 #define sub_header(fmt, ...) ((void)0)
-#define call_terry_davis(fmt, ...) ((void)0)
+#define call_king_terry(fmt, ...) ((void)0)
 #define PRINT_DATE_NUMERIC() ((void)0)
 #define dump_bytes(label, arr, len) ((void)0)
 

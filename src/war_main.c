@@ -59,14 +59,14 @@
 #include <unistd.h>
 
 int main() {
-    CALL_TERRY_DAVIS("war");
+    CALL_KING_TERRY("war");
     //-------------------------------------------------------------------------
     // LUA
     //-------------------------------------------------------------------------
     war_lua_context ctx_lua;
     ctx_lua.L = luaL_newstate();
     if (!ctx_lua.L) {
-        call_terry_davis("failed to create Lua state");
+        call_king_terry("failed to create Lua state");
         return -1;
     }
     luaL_openlibs(ctx_lua.L);
@@ -213,12 +213,12 @@ void* war_window_render(void* args) {
     war_lua_context* ctx_lua = args_ptrs[3];
     war_producer_consumer* pc_play = args_ptrs[4];
     war_producer_consumer* pc_capture = args_ptrs[5];
-    call_terry_davis("ctx_lua WR_STATES: %i", atomic_load(&ctx_lua->WR_STATES));
+    call_king_terry("ctx_lua WR_STATES: %i", atomic_load(&ctx_lua->WR_STATES));
     pool_wr->pool_alignment = atomic_load(&ctx_lua->POOL_ALIGNMENT);
     pool_wr->pool_size =
         war_get_pool_wr_size(pool_wr, ctx_lua, "src/lua/war_main.lua");
     pool_wr->pool_size += pool_wr->pool_alignment * 2000;
-    call_terry_davis("pool_wr hack size: %zu", pool_wr->pool_size);
+    call_king_terry("pool_wr hack size: %zu", pool_wr->pool_size);
     pool_wr->pool_size = ALIGN_UP(pool_wr->pool_size, pool_wr->pool_alignment);
     int pool_result = posix_memalign(
         &pool_wr->pool, pool_wr->pool_alignment, pool_wr->pool_size);
@@ -719,7 +719,7 @@ void* war_window_render(void* args) {
     war_write_le16(get_registry + 6, 12);
     war_write_le32(get_registry + 8, wl_registry_id);
     ssize_t written = write(fd, get_registry, 12);
-    call_terry_davis("written size: %lu", written);
+    call_king_terry("written size: %lu", written);
     dump_bytes("written", get_registry, 12);
     assert(written == 12);
     new_id = wl_registry_id + 1;
@@ -854,10 +854,10 @@ void* war_window_render(void* args) {
     capture_wav->fname_size = strlen(capture_wav->fname);
     capture_wav->memfd = memfd_create(capture_wav->fname, MFD_CLOEXEC);
     if (capture_wav->memfd < 0) {
-        call_terry_davis("memfd failed to open: %s", capture_wav->fname);
+        call_king_terry("memfd failed to open: %s", capture_wav->fname);
     }
     if (ftruncate(capture_wav->memfd, capture_wav->memfd_capacity) == -1) {
-        call_terry_davis("memfd ftruncate failed: %s", capture_wav->fname);
+        call_king_terry("memfd ftruncate failed: %s", capture_wav->fname);
     }
     capture_wav->file = mmap(NULL,
                              capture_wav->memfd_capacity,
@@ -866,7 +866,7 @@ void* war_window_render(void* args) {
                              capture_wav->memfd,
                              0);
     if (capture_wav->file == MAP_FAILED) {
-        call_terry_davis("mmap failed: %s", capture_wav->fname);
+        call_king_terry("mmap failed: %s", capture_wav->fname);
     }
     war_riff_header init_riff_header = (war_riff_header){
         .chunk_id = "RIFF",
@@ -1060,7 +1060,7 @@ skip_play:
         if (ctx_wr->now - ctx_capture->last_read_time >= 1000000) {
             atomic_store(&atomics->capture_reader_rate,
                          (double)ctx_capture->read_count);
-            // call_terry_davis("capture_reader_rate: %.2f Hz",
+            // call_king_terry("capture_reader_rate: %.2f Hz",
             //              atomic_load(&atomics->capture_reader_rate));
             ctx_capture->read_count = 0;
             ctx_capture->last_read_time = ctx_wr->now;
@@ -1359,9 +1359,8 @@ skip_capture:
                 cache->memfd[cache_idx] = memfd_create(
                     map_wav->fname + idx * map_wav->name_limit, MFD_CLOEXEC);
                 if (cache->memfd[cache_idx] < 0) {
-                    call_terry_davis("memfd_create failed: %s",
-                                     map_wav->fname +
-                                         idx * map_wav->name_limit);
+                    call_king_terry("memfd_create failed: %s",
+                                    map_wav->fname + idx * map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     goto war_label_command_processed;
@@ -1373,9 +1372,8 @@ skip_capture:
                                               cache->memfd[cache_idx],
                                               0);
                 if (cache->file[cache_idx] == MAP_FAILED) {
-                    call_terry_davis("mmap failed: %s",
-                                     map_wav->fname +
-                                         idx * map_wav->name_limit);
+                    call_king_terry("mmap failed: %s",
+                                    map_wav->fname + idx * map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1386,9 +1384,8 @@ skip_capture:
                          O_RDWR | O_CREAT | O_TRUNC,
                          0644);
                 if (cache->fd[cache_idx] == -1) {
-                    call_terry_davis("fd failed to open: %s",
-                                     map_wav->fname +
-                                         idx * map_wav->name_limit);
+                    call_king_terry("fd failed to open: %s",
+                                    map_wav->fname + idx * map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1401,9 +1398,8 @@ skip_capture:
                 cache->fd_size[cache_idx] = capture_wav->memfd_size;
                 if (ftruncate(cache->fd[cache_idx],
                               cache->fd_size[cache_idx]) == -1) {
-                    call_terry_davis("ftruncate failed: %s",
-                                     map_wav->fname +
-                                         idx * map_wav->name_limit);
+                    call_king_terry("ftruncate failed: %s",
+                                    map_wav->fname + idx * map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1421,9 +1417,8 @@ skip_capture:
                                                 &offset_1,
                                                 cache->memfd_size[cache_idx]);
                 if (bytes_copied != (ssize_t)cache->memfd_size[cache_idx]) {
-                    call_terry_davis("sendfile failed: %s",
-                                     map_wav->fname +
-                                         idx * map_wav->name_limit);
+                    call_king_terry("sendfile failed: %s",
+                                    map_wav->fname + idx * map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1441,9 +1436,8 @@ skip_capture:
                                         &offset_2,
                                         cache->memfd_size[cache_idx]);
                 if (bytes_copied != (ssize_t)cache->memfd_size[cache_idx]) {
-                    call_terry_davis("sendfile failed: %s",
-                                     map_wav->fname +
-                                         idx * map_wav->name_limit);
+                    call_king_terry("sendfile failed: %s",
+                                    map_wav->fname + idx * map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1502,8 +1496,8 @@ skip_capture:
                 memset(ctx_fsm->cwd, 0, ctx_fsm->name_limit);
                 getcwd(ctx_fsm->cwd, ctx_fsm->name_limit);
                 ctx_fsm->cwd_size = strlen(ctx_fsm->cwd);
-                call_terry_davis("changed working directory to %s",
-                                 ctx_fsm->cwd);
+                call_king_terry("changed working directory to %s",
+                                ctx_fsm->cwd);
                 goto war_label_command_processed;
             } else if (strncmp(ctx_command->text, "e", 1) == 0) {
                 if (ctx_command->text[1] != ' ' &&
@@ -1541,9 +1535,9 @@ skip_capture:
                         break;
                     }
                 }
-                call_terry_davis("file_path: %s", ctx_fsm->current_file_path);
+                call_king_terry("file_path: %s", ctx_fsm->current_file_path);
             } else if (strcmp(ctx_command->text, "pwd") == 0) {
-                call_terry_davis("pwd");
+                call_king_terry("pwd");
                 // reset without resettign status bar
                 memset(ctx_command->text, 0, ctx_command->capacity);
                 ctx_command->text_size = 0;
@@ -1562,10 +1556,10 @@ skip_capture:
                 memcpy(ctx_status->middle, ctx_fsm->cwd, ctx_fsm->cwd_size);
                 goto war_label_skip_command_processed;
             } else if (strcmp(ctx_command->text, "q!") == 0) {
-                call_terry_davis("q!");
+                call_king_terry("q!");
                 goto xdg_toplevel_close;
             } else if (strcmp(ctx_command->text, "q") == 0) {
-                call_terry_davis("q");
+                call_king_terry("q");
                 goto xdg_toplevel_close;
             }
         war_label_command_processed:
@@ -1736,9 +1730,9 @@ cmd_timeout_done:
     //---------------------------------------------------------------------
     int ret = poll(&pfd, 1, 0);
     assert(ret >= 0);
-    // if (ret == 0) { call_terry_davis("timeout"); }
+    // if (ret == 0) { call_king_terry("timeout"); }
     if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        call_terry_davis("wayland socket error or hangup: %s", strerror(errno));
+        call_king_terry("wayland socket error or hangup: %s", strerror(errno));
         goto end_wr;
     }
     if (pfd.revents & POLLIN) {
@@ -1768,7 +1762,7 @@ cmd_timeout_done:
                 opcode >=
                     (uint32_t)atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES)) {
                 // COMMENT CONCERN: INVALID OBJECT/OP 27 TIMES!
-                // call_terry_davis(
+                // call_king_terry(
                 //    "invalid object/op: id=%u, op=%u", object_id,
                 //    opcode);
                 goto wayland_done;
@@ -1780,8 +1774,8 @@ cmd_timeout_done:
             goto wayland_default;
         wl_registry_global:
             dump_bytes("global event", msg_buffer + msg_buffer_offset, size);
-            call_terry_davis("iname: %s",
-                             (const char*)msg_buffer + msg_buffer_offset + 16);
+            call_king_terry("iname: %s",
+                            (const char*)msg_buffer + msg_buffer_offset + 16);
 
             const char* iname = (const char*)msg_buffer + msg_buffer_offset +
                                 16; // COMMENT OPTIMIZE: perfect hash
@@ -1985,7 +1979,7 @@ cmd_timeout_done:
                 war_write_le16(create_surface + 6, 12);
                 war_write_le32(create_surface + 8, new_id);
                 dump_bytes("create_surface request", create_surface, 12);
-                call_terry_davis("bound: wl_surface");
+                call_king_terry("bound: wl_surface");
                 ssize_t create_surface_written = write(fd, create_surface, 12);
                 assert(create_surface_written == 12);
                 wl_surface_id = new_id;
@@ -2010,7 +2004,7 @@ cmd_timeout_done:
                 war_write_le16(create_region + 6, 12);
                 war_write_le32(create_region + 8, new_id);
                 dump_bytes("create_region request", create_region, 12);
-                call_terry_davis("bound: wl_region");
+                call_king_terry("bound: wl_region");
                 ssize_t create_region_written = write(fd, create_region, 12);
                 assert(create_region_written == 12);
                 wl_region_id = new_id;
@@ -2042,7 +2036,7 @@ cmd_timeout_done:
                 dump_bytes("zwp_linux_dmabuf_v1::get_surface_feedback request",
                            get_surface_feedback,
                            16);
-                call_terry_davis("bound: xdg_surface");
+                call_king_terry("bound: xdg_surface");
                 ssize_t get_surface_feedback_written =
                     write(fd, get_surface_feedback, 16);
                 assert(get_surface_feedback_written == 16);
@@ -2079,7 +2073,7 @@ cmd_timeout_done:
                 war_write_le32(get_xdg_surface + 8, new_id);
                 war_write_le32(get_xdg_surface + 12, wl_surface_id);
                 dump_bytes("get_xdg_surface request", get_xdg_surface, 16);
-                call_terry_davis("bound: xdg_surface");
+                call_king_terry("bound: xdg_surface");
                 ssize_t get_xdg_surface_written =
                     write(fd, get_xdg_surface, 16);
                 assert(get_xdg_surface_written == 16);
@@ -2094,7 +2088,7 @@ cmd_timeout_done:
                 war_write_le16(get_toplevel + 6, 12);
                 war_write_le32(get_toplevel + 8, new_id);
                 dump_bytes("get_xdg_toplevel request", get_toplevel, 12);
-                call_terry_davis("bound: xdg_toplevel");
+                call_king_terry("bound: xdg_toplevel");
                 ssize_t get_toplevel_written = write(fd, get_toplevel, 12);
                 assert(get_toplevel_written == 12);
                 xdg_toplevel_id = new_id;
@@ -2124,7 +2118,7 @@ cmd_timeout_done:
                 dump_bytes("get_toplevel_decoration request",
                            get_toplevel_decoration,
                            16);
-                call_terry_davis("bound: zxdg_toplevel_decoration_v1");
+                call_king_terry("bound: zxdg_toplevel_decoration_v1");
                 ssize_t get_toplevel_decoration_written =
                     write(fd, get_toplevel_decoration, 16);
                 assert(get_toplevel_decoration_written == 16);
@@ -2198,6 +2192,21 @@ cmd_timeout_done:
             vkCmdBindPipeline(ctx_vk->cmd_buffer,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               ctx_vk->quad_pipeline);
+            // background
+            war_make_quad(quad_vertices,
+                          quad_indices,
+                          &quad_vertices_count,
+                          &quad_indices_count,
+                          (float[3]){ctx_wr->left_col,
+                                     ctx_wr->bottom_row,
+                                     ctx_wr->z_layers[LAYER_BACKGROUND]},
+                          (float[2]){(float)ctx_wr->viewport_cols + 1,
+                                     (float)ctx_wr->viewport_rows + 1},
+                          ctx_wr->dark_gray_hex,
+                          0,
+                          0,
+                          (float[2]){0.0f, 0.0f},
+                          0);
             uint32_t cursor_color = ctx_wr->color_cursor;
             float alpha_factor = ctx_wr->alpha_scale_cursor;
             uint8_t color_alpha =
@@ -2276,7 +2285,7 @@ cmd_timeout_done:
                     0,
                     0,
                     (float[2]){0.0f, 0.0f},
-                    QUAD_GRID);
+                    QUAD_GRID | QUAD_OUTLINE);
             } else if (ctx_fsm->current_mode == ctx_fsm->MODE_VIEWS) {
                 // draw views
                 uint32_t offset_col = ctx_wr->left_col +
@@ -2714,12 +2723,12 @@ cmd_timeout_done:
                                    1,
                                    &ctx_vk->quads_vertex_buffer,
                                    quad_vertices_offsets);
-            //VkDeviceSize quad_instances_offsets[2] = {0};
-            //vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-            //                       1,
-            //                       1,
-            //                       &ctx_vk->quads_instance_buffer,
-            //                       quad_instances_offsets);
+            // VkDeviceSize quad_instances_offsets[2] = {0};
+            // vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
+            //                        1,
+            //                        1,
+            //                        &ctx_vk->quads_instance_buffer,
+            //                        quad_instances_offsets);
             VkDeviceSize quad_indices_offset = 0;
             vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
                                  ctx_vk->quads_index_buffer,
@@ -2778,12 +2787,12 @@ cmd_timeout_done:
                                    1,
                                    &ctx_vk->quads_vertex_buffer,
                                    transparent_quad_vertices_offsets);
-            //VkDeviceSize transparent_quad_instances_offsets[2] = {0};
-            //vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-            //                       1,
-            //                       1,
-            //                       &ctx_vk->quads_instance_buffer,
-            //                       transparent_quad_instances_offsets);
+            // VkDeviceSize transparent_quad_instances_offsets[2] = {0};
+            // vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
+            //                        1,
+            //                        1,
+            //                        &ctx_vk->quads_instance_buffer,
+            //                        transparent_quad_instances_offsets);
             VkDeviceSize transparent_quad_indices_offset =
                 quad_indices_count * sizeof(uint32_t);
             vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
@@ -2988,12 +2997,12 @@ cmd_timeout_done:
                                    1,
                                    &ctx_vk->text_vertex_buffer,
                                    text_vertices_offsets);
-            //VkDeviceSize text_instances_offsets[2] = {0};
-            //vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-            //                       1,
-            //                       1,
-            //                       &ctx_vk->text_instance_buffer,
-            //                       text_instances_offsets);
+            // VkDeviceSize text_instances_offsets[2] = {0};
+            // vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
+            //                        1,
+            //                        1,
+            //                        &ctx_vk->text_instance_buffer,
+            //                        text_instances_offsets);
             VkDeviceSize text_indices_offset = 0;
             vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
                                  ctx_vk->text_index_buffer,
@@ -3033,7 +3042,81 @@ cmd_timeout_done:
             //    ctx_fsm->previous_mode != ctx_fsm->MODE_WAV) {
             //    goto war_label_end_render_pass;
             //}
-
+            //-----------------------------------------------------------------
+            // NSGT VISUAL PIPELINE
+            //-----------------------------------------------------------------
+            vkCmdBindPipeline(ctx_vk->cmd_buffer,
+                              VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              ctx_vk->nsgt_visual_pipeline);
+            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    ctx_vk->nsgt_visual_pipeline_layout,
+                                    0,
+                                    1,
+                                    &ctx_vk->nsgt_visual_descriptor_set,
+                                    0,
+                                    NULL);
+            war_nsgt_vertex nsgt_visual_quad_vertices[4] = {
+                {{0.0f, 0.0f},
+                 {-0.5f, -0.5f, ctx_wr->z_layers[LAYER_NOTES]}}, // bottom-left
+                {{1.0f, 0.0f},
+                 {0.5f, -0.5f, ctx_wr->z_layers[LAYER_NOTES]}}, // bottom-right
+                {{1.0f, 1.0f},
+                 {0.5f, 0.5f, ctx_wr->z_layers[LAYER_NOTES]}}, // top-right
+                {{0.0f, 1.0f},
+                 {-0.5f, 0.5f, ctx_wr->z_layers[LAYER_NOTES]}}, // top-left
+            };
+            uint32_t nsgt_visual_quad_vertices_count = 4;
+            uint32_t nsgt_visual_quad_indices[6] = {0, 1, 2, 2, 3, 0};
+            uint32_t nsgt_visual_quad_indices_count = 6;
+            memcpy(ctx_vk->nsgt_map_vertex,
+                   nsgt_visual_quad_vertices,
+                   sizeof(war_nsgt_vertex) * nsgt_visual_quad_vertices_count);
+            memcpy(ctx_vk->nsgt_map_index,
+                   nsgt_visual_quad_indices,
+                   sizeof(uint32_t) * nsgt_visual_quad_indices_count);
+            VkMappedMemoryRange nsgt_visual_flush_ranges[2] = {
+                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                 .memory = ctx_vk->nsgt_vertex_buffer_memory,
+                 .offset = 0,
+                 .size = war_align64(sizeof(war_nsgt_vertex) *
+                                     nsgt_visual_quad_vertices_count)},
+                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                 .memory = ctx_vk->nsgt_index_buffer_memory,
+                 .offset = 0,
+                 .size = war_align64(sizeof(uint32_t) *
+                                     nsgt_visual_quad_indices_count)}};
+            vkFlushMappedMemoryRanges(
+                ctx_vk->device, 2, nsgt_visual_flush_ranges);
+            VkDeviceSize nsgt_visual_quad_vertices_offsets[2] = {0};
+            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
+                                   0,
+                                   1,
+                                   &ctx_vk->nsgt_vertex_buffer,
+                                   nsgt_visual_quad_vertices_offsets);
+            VkDeviceSize nsgt_visual_quad_indices_offset = 0;
+            vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
+                                 ctx_vk->nsgt_index_buffer,
+                                 nsgt_visual_quad_indices_offset,
+                                 VK_INDEX_TYPE_UINT32);
+            war_nsgt_visual_push_constants nsgt_visual_push_constants = {
+                .channel = 0,
+                .blend = 0,
+                .color_l = {0.0, 0.0, 0.0},
+                .color_r = {0.0, 0.0, 0.0},
+                .time_offset = 0.0,
+                .freq_scale = 0.0,
+                .time_scale = 0.0,
+            };
+            vkCmdPushConstants(ctx_vk->cmd_buffer,
+                               ctx_vk->nsgt_visual_pipeline_layout,
+                               VK_SHADER_STAGE_VERTEX_BIT |
+                                   VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0,
+                               sizeof(war_nsgt_visual_push_constants),
+                               &nsgt_visual_push_constants);
+            vkCmdDrawIndexed(
+                ctx_vk->cmd_buffer, nsgt_visual_quad_indices_count, 1, 0, 0, 0);
             //---------------------------------------------------------
             //   END RENDER PASS
             //---------------------------------------------------------
@@ -3128,7 +3211,7 @@ cmd_timeout_done:
                 // dump_bytes("wp_viewporter::get_viewport request",
                 //            get_viewport,
                 //            16);
-                call_terry_davis("bound: wp_viewport");
+                call_king_terry("bound: wp_viewport");
                 ssize_t get_viewport_written = write(fd, get_viewport, 16);
                 assert(get_viewport_written == 16);
                 wp_viewport_id = new_id;
@@ -3192,7 +3275,7 @@ cmd_timeout_done:
                 uint32_t state = *(uint32_t*)(states_ptr + i * 4);
                 if (state == 2) { // XDG_TOPLEVEL_STATE_FULLSCREEN
                     ctx_wr->fullscreen = 1;
-                    // call_terry_davis("1 fullscreen");
+                    // call_king_terry("1 fullscreen");
                     break;
                 }
             }
@@ -3307,7 +3390,7 @@ cmd_timeout_done:
             war_write_le32(create_params + 8, new_id);
             dump_bytes(
                 "zwp_linux_dmabuf_v1_create_params request", create_params, 12);
-            call_terry_davis("bound: zwp_linux_buffer_params_v1");
+            call_king_terry("bound: zwp_linux_buffer_params_v1");
             ssize_t create_params_written = write(fd, create_params, 12);
             assert(create_params_written == 12);
             zwp_linux_buffer_params_v1_id = new_id;
@@ -3375,7 +3458,7 @@ cmd_timeout_done:
             dump_bytes("zwp_linux_buffer_params_v1::create_immed request",
                        create_immed,
                        28);
-            call_terry_davis("bound: wl_buffer");
+            call_king_terry("bound: wl_buffer");
             ssize_t create_immed_written = write(fd, create_immed, 28);
             assert(create_immed_written == 28);
             wl_buffer_id = new_id;
@@ -3608,7 +3691,7 @@ cmd_timeout_done:
             uint32_t capabilities =
                 war_read_le32(msg_buffer + msg_buffer_offset + 8);
             if (capabilities & wl_seat_keyboard) {
-                call_terry_davis("keyboard detected");
+                call_king_terry("keyboard detected");
                 assert(size == 12);
                 uint8_t get_keyboard[12];
                 war_write_le32(get_keyboard, wl_seat_id);
@@ -3616,9 +3699,9 @@ cmd_timeout_done:
                 war_write_le16(get_keyboard + 6, 12);
                 war_write_le32(get_keyboard + 8, new_id);
                 dump_bytes("get_keyboard request", get_keyboard, 12);
-                call_terry_davis("bound: wl_keyboard",
-                                 (const char*)msg_buffer + msg_buffer_offset +
-                                     12);
+                call_king_terry("bound: wl_keyboard",
+                                (const char*)msg_buffer + msg_buffer_offset +
+                                    12);
                 ssize_t get_keyboard_written = write(fd, get_keyboard, 12);
                 assert(get_keyboard_written == 12);
                 wl_keyboard_id = new_id;
@@ -3643,7 +3726,7 @@ cmd_timeout_done:
                 new_id++;
             }
             if (capabilities & wl_seat_pointer) {
-                call_terry_davis("pointer detected");
+                call_king_terry("pointer detected");
                 assert(size == 12);
                 uint8_t get_pointer[12];
                 war_write_le32(get_pointer, wl_seat_id);
@@ -3651,7 +3734,7 @@ cmd_timeout_done:
                 war_write_le16(get_pointer + 6, 12);
                 war_write_le32(get_pointer + 8, new_id);
                 dump_bytes("get_pointer request", get_pointer, 12);
-                call_terry_davis("bound: wl_pointer");
+                call_king_terry("bound: wl_pointer");
                 ssize_t get_pointer_written = write(fd, get_pointer, 12);
                 assert(get_pointer_written == 12);
                 wl_pointer_id = new_id;
@@ -3691,7 +3774,7 @@ cmd_timeout_done:
                 new_id++;
             }
             if (capabilities & wl_seat_touch) {
-                call_terry_davis("touch detected");
+                call_king_terry("touch detected");
                 assert(size == 12);
                 uint8_t get_touch[12];
                 war_write_le32(get_touch, wl_seat_id);
@@ -3699,7 +3782,7 @@ cmd_timeout_done:
                 war_write_le16(get_touch + 6, 12);
                 war_write_le32(get_touch + 8, new_id);
                 dump_bytes("get_touch request", get_touch, 12);
-                call_terry_davis("bound: wl_touch");
+                call_king_terry("bound: wl_touch");
                 ssize_t get_touch_written = write(fd, get_touch, 12);
                 assert(get_touch_written == 12);
                 wl_touch_id = new_id;
@@ -3730,8 +3813,8 @@ cmd_timeout_done:
         wl_seat_name:
             dump_bytes(
                 "wl_seat_name event", msg_buffer + msg_buffer_offset, size);
-            call_terry_davis("seat: %s",
-                             (const char*)msg_buffer + msg_buffer_offset + 12);
+            call_king_terry("seat: %s",
+                            (const char*)msg_buffer + msg_buffer_offset + 12);
             goto wayland_done;
         wl_keyboard_keymap: {
             dump_bytes("wl_keyboard_keymap event", msg_buffer, size);
@@ -3790,12 +3873,12 @@ cmd_timeout_done:
             //-----------------------------------------------------------------
             lua_getglobal(ctx_lua->L, "war");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_terry_davis("war not a table");
+                call_king_terry("war not a table");
                 lua_pop(ctx_lua->L, 1);
             }
             lua_getfield(ctx_lua->L, -1, "modes");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_terry_davis("modes not a field");
+                call_king_terry("modes not a field");
                 lua_pop(ctx_lua->L, 2);
             }
             lua_pushnil(ctx_lua->L);
@@ -3815,7 +3898,7 @@ cmd_timeout_done:
                 } else if (strcmp(mode_name, "wav") == 0) {
                     ctx_fsm->MODE_WAV = mode_value;
                 }
-                call_terry_davis("mode: %s, value: %i", mode_name, mode_value);
+                call_king_terry("mode: %s, value: %i", mode_name, mode_value);
                 lua_pop(ctx_lua->L, 1);
             }
             lua_pop(ctx_lua->L, 2);
@@ -3824,12 +3907,12 @@ cmd_timeout_done:
             //-----------------------------------------------------------------
             lua_getglobal(ctx_lua->L, "war");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_terry_davis("war not a table");
+                call_king_terry("war not a table");
                 lua_pop(ctx_lua->L, 1);
             }
             lua_getfield(ctx_lua->L, -1, "function_types");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_terry_davis("function_types not a field");
+                call_king_terry("function_types not a field");
                 lua_pop(ctx_lua->L, 2);
             }
             lua_pushnil(ctx_lua->L);
@@ -3843,7 +3926,7 @@ cmd_timeout_done:
                 } else if (strcmp(type_name, "lua") == 0) {
                     ctx_fsm->FUNCTION_LUA = type_value;
                 }
-                call_terry_davis("type: %s, value: %i", type_name, type_value);
+                call_king_terry("type: %s, value: %i", type_name, type_value);
                 lua_pop(ctx_lua->L, 1);
             }
             lua_pop(ctx_lua->L, 2);
@@ -3877,7 +3960,7 @@ cmd_timeout_done:
 
             lua_getglobal(ctx_lua->L, "war_flattened");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_terry_davis("war_flattened not a table");
+                call_king_terry("war_flattened not a table");
                 lua_pop(ctx_lua->L, 1);
                 goto wayland_done;
             }
@@ -3922,7 +4005,7 @@ cmd_timeout_done:
                                 next_state = next_state_counter++;
                             } else {
                                 next_state = max_states - 1;
-                                call_terry_davis("fsm state overflow");
+                                call_king_terry("fsm state overflow");
                             }
                             ctx_fsm->next_state[idx3d] = next_state;
                         }
@@ -3931,8 +4014,8 @@ cmd_timeout_done:
                         }
                         current_state = next_state;
                     } else {
-                        call_terry_davis("invalid key token: %s",
-                                         token ? token : "(nil)");
+                        call_king_terry("invalid key token: %s",
+                                        token ? token : "(nil)");
                     }
                     lua_pop(ctx_lua->L, 1);
                 }
@@ -4506,7 +4589,7 @@ static void war_capture(void* userdata) {
     if (now - *capture_last_write_time >= 1000000) {
         atomic_store(&atomics->capture_writer_rate,
                      (double)*capture_write_count);
-        // call_terry_davis("capture_writer_rate: %.2f Hz",
+        // call_king_terry("capture_writer_rate: %.2f Hz",
         //              atomic_load(&atomics->capture_writer_rate));
         *capture_write_count = 0;
         *capture_last_write_time = now;
@@ -4556,7 +4639,7 @@ void* war_audio(void* args) {
         war_get_pool_a_size(pool_a, ctx_lua, "src/lua/war_main.lua");
     pool_a->pool_size = ALIGN_UP(pool_a->pool_size, pool_a->pool_alignment);
     pool_a->pool_size += pool_a->pool_alignment * 10;
-    call_terry_davis("pool_a hack size: %zu", pool_a->pool_size);
+    call_king_terry("pool_a hack size: %zu", pool_a->pool_size);
     int pool_result = posix_memalign(
         &pool_a->pool, pool_a->pool_alignment, pool_a->pool_size);
     memset(pool_a->pool, 0, pool_a->pool_size);
@@ -4565,7 +4648,7 @@ void* war_audio(void* args) {
     struct sched_param param = {
         .sched_priority = atomic_load(&ctx_lua->A_SCHED_FIFO_PRIORITY)};
     if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
-        call_terry_davis("AUDIO THREAD ERROR WITH SCHEDULING FIFO");
+        call_king_terry("AUDIO THREAD ERROR WITH SCHEDULING FIFO");
         perror("pthread_setschedparam");
     }
     //-------------------------------------------------------------------------
@@ -4625,7 +4708,7 @@ void* war_audio(void* args) {
                                                NULL,
                                                &ctx_pw->play_events,
                                                ctx_pw->play_data);
-    if (!ctx_pw->play_stream) { call_terry_davis("play_stream init issue"); }
+    if (!ctx_pw->play_stream) { call_king_terry("play_stream init issue"); }
     int pw_stream_result = pw_stream_connect(ctx_pw->play_stream,
                                              PW_DIRECTION_OUTPUT,
                                              PW_ID_ANY,
@@ -4635,7 +4718,7 @@ void* war_audio(void* args) {
                                              &ctx_pw->play_params,
                                              1);
     if (pw_stream_result < 0) {
-        call_terry_davis("play stream connection error");
+        call_king_terry("play stream connection error");
     }
     ctx_pw->capture_info = (struct spa_audio_info_raw){
         .format = SPA_AUDIO_FORMAT_F32_LE,
@@ -4661,7 +4744,7 @@ void* war_audio(void* args) {
                                                   &ctx_pw->capture_events,
                                                   ctx_pw->capture_data);
     if (!ctx_pw->capture_stream) {
-        call_terry_davis("capture_stream init issue");
+        call_king_terry("capture_stream init issue");
     }
     pw_stream_result = pw_stream_connect(ctx_pw->capture_stream,
                                          PW_DIRECTION_INPUT,
@@ -4672,7 +4755,7 @@ void* war_audio(void* args) {
                                          &ctx_pw->capture_params,
                                          1);
     if (pw_stream_result < 0) {
-        call_terry_davis("capture stream connection error");
+        call_king_terry("capture stream connection error");
     }
     while (pw_stream_get_state(ctx_pw->capture_stream, NULL) !=
            PW_STREAM_STATE_PAUSED) {
