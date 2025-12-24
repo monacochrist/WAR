@@ -2153,6 +2153,13 @@ cmd_timeout_done:
             //-----------------------------------------------------------------
             // NSGT COMPUTE
             //-----------------------------------------------------------------
+            if (ctx_fsm->current_mode != ctx_fsm->MODE_WAV ||
+                ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE ||
+                ctx_fsm->previous_mode != ctx_fsm->MODE_WAV ||
+                ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE ||
+                capture_wav->memfd_size <= 44) {
+                goto war_label_render_pass;
+            }
             VkCommandBufferBeginInfo nsgt_begin_info = {
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -2226,9 +2233,7 @@ cmd_timeout_done:
                                  NULL);
             result = vkEndCommandBuffer(ctx_vk->nsgt_cmd_buffer);
             assert(result == VK_SUCCESS);
-            // ------------------------------
-            // SUBMIT NSGT COMPUTE AND WAIT
-            // ------------------------------
+            // submit nsgt compute and wait
             VkSubmitInfo nsgt_submit_info = {
                 .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
                 .commandBufferCount = 1,
@@ -2243,9 +2248,7 @@ cmd_timeout_done:
             result = vkWaitForFences(
                 ctx_vk->device, 1, &ctx_vk->nsgt_fence, VK_TRUE, UINT64_MAX);
             assert(result == VK_SUCCESS);
-            // ------------------------------
-            // CPU READBACK
-            // ------------------------------
+            // cpu readback
             // At this point, ctx_vk->nsgt_map_l / ctx_vk->nsgt_map_r /
             // ctx_vk->nsgt_diff contain the latest compute results and can be
             // stored in CPU undo tree
