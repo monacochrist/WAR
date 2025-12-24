@@ -2138,24 +2138,27 @@ cmd_timeout_done:
             dump_bytes("global_rm event", msg_buffer + msg_buffer_offset, size);
             goto wayland_done;
         wl_callback_done: {
+            VkResult result = vkWaitForFences(
+                ctx_vk->device,
+                1,
+                &ctx_vk->in_flight_fences[ctx_vk->current_frame],
+                VK_TRUE,
+                UINT64_MAX);
+            assert(result == VK_SUCCESS);
+            result =
+                vkResetFences(ctx_vk->device,
+                              1,
+                              &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+            assert(result == VK_SUCCESS);
             //-----------------------------------------------------------------
-            // NSGT PIPELINE
+            // NSGT COMPUTE
             //-----------------------------------------------------------------
-            if ((ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
-                 ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
-                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE &&
-                 ctx_fsm->previous_mode != ctx_fsm->MODE_WAV) ||
-                capture_wav->memfd_size <= 44) {
-                goto war_label_render_pass;
-            }
-            VkResult result;
-            result = vkWaitForFences(
-                ctx_vk->device, 1, &ctx_vk->nsgt_fence, VK_TRUE, UINT64_MAX);
             VkCommandBufferBeginInfo nsgt_begin_info = {
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             };
-            result = vkBeginCommandBuffer(ctx_vk->cmd_buffer, &nsgt_begin_info);
+            result =
+                vkBeginCommandBuffer(ctx_vk->nsgt_cmd_buffer, &nsgt_begin_info);
             assert(result == VK_SUCCESS);
             float* wav_samples = (float*)(capture_wav->file + 44);
             size_t num_samples = (capture_wav->memfd_size - 44) / sizeof(float);
@@ -2169,20 +2172,20 @@ cmd_timeout_done:
                 staging_r[i] = wav_samples[2 * i + 1];
             }
             VkBufferCopy copy_region = {0, 0, ctx_vk->nsgt_buffer_capacity};
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+            vkCmdCopyBuffer(ctx_vk->nsgt_cmd_buffer,
                             ctx_vk->nsgt_l_staging,
                             ctx_vk->nsgt_l_buffer,
                             1,
                             &copy_region);
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+            vkCmdCopyBuffer(ctx_vk->nsgt_cmd_buffer,
                             ctx_vk->nsgt_r_staging,
                             ctx_vk->nsgt_r_buffer,
                             1,
                             &copy_region);
-            vkCmdBindPipeline(ctx_vk->cmd_buffer,
+            vkCmdBindPipeline(ctx_vk->nsgt_cmd_buffer,
                               VK_PIPELINE_BIND_POINT_COMPUTE,
                               ctx_vk->nsgt_pipeline);
-            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
+            vkCmdBindDescriptorSets(ctx_vk->nsgt_cmd_buffer,
                                     VK_PIPELINE_BIND_POINT_COMPUTE,
                                     ctx_vk->nsgt_pipeline_layout,
                                     0,
@@ -2196,59 +2199,72 @@ cmd_timeout_done:
                                                            .bin_end = 0,
                                                            .frame_start = 0,
                                                            .frame_end = 0,
-                                                           .param1 = 0.0,
-                                                           .param2 = 0.0};
-            vkCmdPushConstants(ctx_vk->cmd_buffer,
+                                                           .param1 = 0.0f,
+                                                           .param2 = 0.0f};
+            vkCmdPushConstants(ctx_vk->nsgt_cmd_buffer,
                                ctx_vk->nsgt_pipeline_layout,
-                               VK_SHADER_STAGE_VERTEX_BIT |
-                                   VK_SHADER_STAGE_FRAGMENT_BIT,
+                               VK_SHADER_STAGE_COMPUTE_BIT,
                                0,
                                sizeof(war_nsgt_push_constants),
                                &nsgt_push_constants);
-            vkCmdDispatch(ctx_vk->cmd_buffer, 0, 0, 0);
-            VkMemoryBarrier nsgt_barrier = {
+            vkCmdDispatch(ctx_vk->nsgt_cmd_buffer, 0, 0, 0);
+            VkMemoryBarrier memory_barrier = {
                 .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                 .srcAccessMask =
                     VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-                .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
-                                 VK_ACCESS_SHADER_READ_BIT};
-            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
+                .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+            vkCmdPipelineBarrier(ctx_vk->nsgt_cmd_buffer,
                                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
                                      VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
-                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_HOST_BIT,
                                  0,
                                  1,
-                                 &nsgt_barrier,
+                                 &memory_barrier,
                                  0,
                                  NULL,
                                  0,
                                  NULL);
+            result = vkEndCommandBuffer(ctx_vk->nsgt_cmd_buffer);
+            assert(result == VK_SUCCESS);
+            // ------------------------------
+            // SUBMIT NSGT COMPUTE AND WAIT
+            // ------------------------------
+            VkSubmitInfo nsgt_submit_info = {
+                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .commandBufferCount = 1,
+                .pCommandBuffers = &ctx_vk->nsgt_cmd_buffer,
+            };
+            result = vkResetFences(ctx_vk->device, 1, &ctx_vk->nsgt_fence);
+            assert(result == VK_SUCCESS);
+            result = vkQueueSubmit(
+                ctx_vk->nsgt_queue, 1, &nsgt_submit_info, ctx_vk->nsgt_fence);
+            assert(result == VK_SUCCESS);
+            // Wait until compute finishes
+            result = vkWaitForFences(
+                ctx_vk->device, 1, &ctx_vk->nsgt_fence, VK_TRUE, UINT64_MAX);
+            assert(result == VK_SUCCESS);
+            // ------------------------------
+            // CPU READBACK
+            // ------------------------------
+            // At this point, ctx_vk->nsgt_map_l / ctx_vk->nsgt_map_r /
+            // ctx_vk->nsgt_diff contain the latest compute results and can be
+            // stored in CPU undo tree
+            float* cpu_l = (float*)ctx_vk->nsgt_map_l;
+            float* cpu_r = (float*)ctx_vk->nsgt_map_r;
+            float* cpu_diff =
+                (float*)
+                    ctx_vk->nsgt_map_diff; // if you have a mapped diff buffer
+            // copy to your undo history here
+            // save_to_undo(cpu_l, cpu_r, cpu_diff, num_frames);
         war_label_render_pass:
             //-------------------------------------------------------------
             //  RENDER PASS
             //-------------------------------------------------------------
-            // dump_bytes("wl_callback::wayland_done event",
-            //           msg_buffer + msg_buffer_offset,
-            //           size);
-            assert(ctx_vk->current_frame == 0);
-            result = vkWaitForFences(
-                ctx_vk->device,
-                1,
-                &ctx_vk->in_flight_fences[ctx_vk->current_frame],
-                VK_TRUE,
-                UINT64_MAX);
-            assert(result == VK_SUCCESS);
-            result =
-                vkResetFences(ctx_vk->device,
-                              1,
-                              &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
-            assert(result == VK_SUCCESS);
-            VkCommandBufferBeginInfo begin_info = {
+            VkCommandBufferBeginInfo gfx_begin_info = {
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             };
-            result = vkBeginCommandBuffer(ctx_vk->cmd_buffer, &begin_info);
+            result = vkBeginCommandBuffer(ctx_vk->cmd_buffer, &gfx_begin_info);
             assert(result == VK_SUCCESS);
             VkClearValue clear_values[2];
             clear_values[0].color =
@@ -3202,7 +3218,7 @@ cmd_timeout_done:
             vkCmdEndRenderPass(ctx_vk->cmd_buffer);
             result = vkEndCommandBuffer(ctx_vk->cmd_buffer);
             assert(result == VK_SUCCESS);
-            VkSubmitInfo submit_info = {
+            VkSubmitInfo gfx_submit_info = {
                 .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
                 .commandBufferCount = 1,
                 .pCommandBuffers = &ctx_vk->cmd_buffer,
@@ -3214,7 +3230,7 @@ cmd_timeout_done:
             result =
                 vkQueueSubmit(ctx_vk->queue,
                               1,
-                              &submit_info,
+                              &gfx_submit_info,
                               ctx_vk->in_flight_fences[ctx_vk->current_frame]);
             assert(result == VK_SUCCESS);
             goto wayland_done;
