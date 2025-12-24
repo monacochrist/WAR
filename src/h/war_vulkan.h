@@ -179,32 +179,72 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     vkGetPhysicalDeviceQueueFamilyProperties(
         ctx_vk->physical_device, &queue_family_count, queue_families);
     uint32_t graphics_family_index = UINT32_MAX;
+    ctx_vk->nsgt_queue_family_index = UINT32_MAX;
     for (uint32_t i = 0; i < queue_family_count; i++) {
         if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             graphics_family_index = i;
-            break;
+        } else if (queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+            ctx_vk->nsgt_queue_family_index = i;
         }
     }
     assert(graphics_family_index != UINT32_MAX);
     ctx_vk->queue_family_index = graphics_family_index;
+    ctx_vk->no_nsgt_queue = 0;
+    if (ctx_vk->nsgt_queue_family_index == UINT32_MAX) {
+        ctx_vk->nsgt_queue_family_index = ctx_vk->queue_family_index;
+        ctx_vk->no_nsgt_queue = 1;
+        call_king_terry("no nsgt queue");
+    }
+    //-------------------------------------------------------------------------
+    // ALWAYS USING SAME TO PREVENT CROSS SYNC
+    //-------------------------------------------------------------------------
+    ctx_vk->nsgt_queue_family_index = ctx_vk->queue_family_index;
+    ctx_vk->no_nsgt_queue = 1;
     float queue_priority = 1.0f;
-    VkDeviceQueueCreateInfo queue_info = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = ctx_vk->queue_family_index,
-        .queueCount = 1,
-        .pQueuePriorities = &queue_priority,
-    };
-    VkDeviceCreateInfo device_info = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queue_info,
-        .enabledExtensionCount = 4,
-        .ppEnabledExtensionNames = device_extensions,
-    };
+    VkDeviceCreateInfo device_info;
+    VkDeviceQueueCreateInfo* queue_infos;
+    if (ctx_vk->no_nsgt_queue) {
+        queue_infos = (VkDeviceQueueCreateInfo[1]){
+            (VkDeviceQueueCreateInfo){
+                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = ctx_vk->queue_family_index,
+                .queueCount = 1,
+                .pQueuePriorities = &queue_priority,
+            },
+        };
+        device_info = (VkDeviceCreateInfo){
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .queueCreateInfoCount = 1,
+            .pQueueCreateInfos = queue_infos,
+            .enabledExtensionCount = 4,
+            .ppEnabledExtensionNames = device_extensions,
+        };
+    } else {
+        queue_infos = (VkDeviceQueueCreateInfo[2]){
+            {
+                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = ctx_vk->queue_family_index,
+                .queueCount = 1,
+                .pQueuePriorities = &queue_priority,
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = ctx_vk->nsgt_queue_family_index,
+                .queueCount = 1,
+                .pQueuePriorities = &queue_priority,
+            },
+        };
+        device_info = (VkDeviceCreateInfo){
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .queueCreateInfoCount = 2,
+            .pQueueCreateInfos = queue_infos,
+            .enabledExtensionCount = 4,
+            .ppEnabledExtensionNames = device_extensions,
+        };
+    }
     result = vkCreateDevice(
         ctx_vk->physical_device, &device_info, NULL, &ctx_vk->device);
     assert(result == VK_SUCCESS);
-
     VkFormat quad_depth_format = VK_FORMAT_D32_SFLOAT;
 
     VkImageCreateInfo quad_depth_image_info = {
@@ -283,9 +323,15 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
     };
-
     vkGetDeviceQueue(
         ctx_vk->device, ctx_vk->queue_family_index, 0, &ctx_vk->queue);
+    ctx_vk->nsgt_queue = ctx_vk->queue;
+    if (!ctx_vk->no_nsgt_queue) {
+        vkGetDeviceQueue(ctx_vk->device,
+                         ctx_vk->nsgt_queue_family_index,
+                         0,
+                         &ctx_vk->nsgt_queue);
+    }
     VkCommandPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .queueFamilyIndex = ctx_vk->queue_family_index,
@@ -2226,6 +2272,23 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     result = vkCreateFence(
         ctx_vk->device, &nsgt_fence_info, NULL, &ctx_vk->nsgt_fence);
     assert(result == VK_SUCCESS);
+    VkCommandPoolCreateInfo nsgt_command_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = ctx_vk->nsgt_queue_family_index,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+    };
+    result = vkCreateCommandPool(
+        ctx_vk->device, &nsgt_command_pool_info, NULL, &ctx_vk->nsgt_cmd_pool);
+    assert(result == VK_SUCCESS);
+    VkCommandBufferAllocateInfo nsgt_command_buffer_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = ctx_vk->nsgt_cmd_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    vkAllocateCommandBuffers(ctx_vk->device,
+                             &nsgt_command_buffer_allocate_info,
+                             &ctx_vk->nsgt_cmd_buffer);
     //-------------------------------------------------------------------------
     // NSGT VISUAL PIPELINE
     //-------------------------------------------------------------------------

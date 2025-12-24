@@ -22,5 +22,38 @@
 
 #version 450
 
+layout(local_size_x = 64) in;
+
+layout(binding = 0) buffer LBuffer { float l_data[]; };
+layout(binding = 1) buffer RBuffer { float r_data[]; };
+layout(binding = 2) buffer DiffBuffer { float diff[]; }; // optional undo
+
+layout(push_constant) uniform PushConstants {
+    int operation_type;
+    int channel;
+    int bin_start;
+    int bin_end;
+    int frame_start;
+    int frame_end;
+    float param1;
+    float param2;
+} pc;
+
 void main() {
+    uint idx = gl_GlobalInvocationID.x;
+
+    // bounds check
+    if(idx >= (pc.frame_end - pc.frame_start) * (pc.bin_end - pc.bin_start))
+        return;
+
+    // Example: simple gain on selected channel
+    if(pc.channel == 0) l_data[idx] *= pc.param1;
+    else if(pc.channel == 1) r_data[idx] *= pc.param1;
+    else {
+        l_data[idx] *= pc.param1;
+        r_data[idx] *= pc.param1;
+    }
+
+    // Optionally write undo diff
+    // diff[idx] = ...;
 }

@@ -1110,6 +1110,10 @@ typedef struct war_vulkan_context {
     //-------------------------------------------------------------------------
     VkPipeline nsgt_pipeline;
     VkPipelineLayout nsgt_pipeline_layout;
+    VkQueue nsgt_queue;
+    uint32_t nsgt_queue_family_index;
+    VkCommandPool nsgt_cmd_pool;
+    VkCommandBuffer nsgt_cmd_buffer;
     VkShaderModule nsgt_compute_shader;
     VkBuffer nsgt_l_buffer;
     VkDeviceMemory nsgt_l_memory;
@@ -1135,6 +1139,7 @@ typedef struct war_vulkan_context {
     VkDeviceSize nsgt_diff_buffer_capacity;
     uint32_t nsgt_bin_capacity;
     uint32_t nsgt_frame_capacity;
+    uint8_t no_nsgt_queue;
     //-------------------------------------------------------------------------
     // NSGT VISUAL PIPELINE
     //-------------------------------------------------------------------------

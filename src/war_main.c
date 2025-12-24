@@ -2138,27 +2138,117 @@ cmd_timeout_done:
             dump_bytes("global_rm event", msg_buffer + msg_buffer_offset, size);
             goto wayland_done;
         wl_callback_done: {
+            //-----------------------------------------------------------------
+            // NSGT PIPELINE
+            //-----------------------------------------------------------------
+            if ((ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
+                 ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE &&
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_WAV) ||
+                capture_wav->memfd_size <= 44) {
+                goto war_label_render_pass;
+            }
+            VkResult result;
+            result = vkWaitForFences(
+                ctx_vk->device, 1, &ctx_vk->nsgt_fence, VK_TRUE, UINT64_MAX);
+            VkCommandBufferBeginInfo nsgt_begin_info = {
+                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            };
+            result = vkBeginCommandBuffer(ctx_vk->cmd_buffer, &nsgt_begin_info);
+            assert(result == VK_SUCCESS);
+            float* wav_samples = (float*)(capture_wav->file + 44);
+            size_t num_samples = (capture_wav->memfd_size - 44) / sizeof(float);
+            size_t num_frames = num_samples / 2;
+            float* staging_l = (float*)ctx_vk->nsgt_map_l;
+            float* staging_r = (float*)ctx_vk->nsgt_map_r;
+            memset(staging_l, 0, ctx_vk->nsgt_buffer_capacity);
+            memset(staging_r, 0, ctx_vk->nsgt_buffer_capacity);
+            for (size_t i = 0; i < num_frames; i++) {
+                staging_l[i] = wav_samples[2 * i];
+                staging_r[i] = wav_samples[2 * i + 1];
+            }
+            VkBufferCopy copy_region = {0, 0, ctx_vk->nsgt_buffer_capacity};
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_vk->nsgt_l_staging,
+                            ctx_vk->nsgt_l_buffer,
+                            1,
+                            &copy_region);
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_vk->nsgt_r_staging,
+                            ctx_vk->nsgt_r_buffer,
+                            1,
+                            &copy_region);
+            vkCmdBindPipeline(ctx_vk->cmd_buffer,
+                              VK_PIPELINE_BIND_POINT_COMPUTE,
+                              ctx_vk->nsgt_pipeline);
+            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
+                                    VK_PIPELINE_BIND_POINT_COMPUTE,
+                                    ctx_vk->nsgt_pipeline_layout,
+                                    0,
+                                    1,
+                                    &ctx_vk->nsgt_descriptor_set,
+                                    0,
+                                    NULL);
+            war_nsgt_push_constants nsgt_push_constants = {.operation_type = 0,
+                                                           .channel = 0,
+                                                           .bin_start = 0,
+                                                           .bin_end = 0,
+                                                           .frame_start = 0,
+                                                           .frame_end = 0,
+                                                           .param1 = 0.0,
+                                                           .param2 = 0.0};
+            vkCmdPushConstants(ctx_vk->cmd_buffer,
+                               ctx_vk->nsgt_pipeline_layout,
+                               VK_SHADER_STAGE_VERTEX_BIT |
+                                   VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0,
+                               sizeof(war_nsgt_push_constants),
+                               &nsgt_push_constants);
+            vkCmdDispatch(ctx_vk->cmd_buffer, 0, 0, 0);
+            VkMemoryBarrier nsgt_barrier = {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask =
+                    VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                                 VK_ACCESS_SHADER_READ_BIT};
+            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                     VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0,
+                                 1,
+                                 &nsgt_barrier,
+                                 0,
+                                 NULL,
+                                 0,
+                                 NULL);
+        war_label_render_pass:
             //-------------------------------------------------------------
-            // RENDERING WITH VULKAN
+            //  RENDER PASS
             //-------------------------------------------------------------
             // dump_bytes("wl_callback::wayland_done event",
             //           msg_buffer + msg_buffer_offset,
             //           size);
             assert(ctx_vk->current_frame == 0);
-            vkWaitForFences(ctx_vk->device,
-                            1,
-                            &ctx_vk->in_flight_fences[ctx_vk->current_frame],
-                            VK_TRUE,
-                            UINT64_MAX);
-            vkResetFences(ctx_vk->device,
-                          1,
-                          &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+            result = vkWaitForFences(
+                ctx_vk->device,
+                1,
+                &ctx_vk->in_flight_fences[ctx_vk->current_frame],
+                VK_TRUE,
+                UINT64_MAX);
+            assert(result == VK_SUCCESS);
+            result =
+                vkResetFences(ctx_vk->device,
+                              1,
+                              &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+            assert(result == VK_SUCCESS);
             VkCommandBufferBeginInfo begin_info = {
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             };
-            VkResult result =
-                vkBeginCommandBuffer(ctx_vk->cmd_buffer, &begin_info);
+            result = vkBeginCommandBuffer(ctx_vk->cmd_buffer, &begin_info);
             assert(result == VK_SUCCESS);
             VkClearValue clear_values[2];
             clear_values[0].color =
@@ -2833,9 +2923,7 @@ cmd_timeout_done:
                                     &ctx_vk->font_descriptor_set,
                                     0,
                                     NULL);
-            //---------------------------------------------------------
-            // DRAW STATUS BAR TEXT
-            //---------------------------------------------------------
+            // draw status bar text
             uint32_t status_cols = (uint32_t)fminf(ctx_wr->viewport_cols,
                                                    (float)ctx_status->capacity);
             for (uint32_t col = 0; col < status_cols; col++) {
@@ -3034,15 +3122,6 @@ cmd_timeout_done:
             vkCmdDrawIndexed(
                 ctx_vk->cmd_buffer, text_indices_count, 1, 0, 0, 0);
             //-----------------------------------------------------------------
-            // NSGT PIPELINE
-            //-----------------------------------------------------------------
-            // if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
-            //    ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
-            //    ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE &&
-            //    ctx_fsm->previous_mode != ctx_fsm->MODE_WAV) {
-            //    goto war_label_end_render_pass;
-            //}
-            //-----------------------------------------------------------------
             // NSGT VISUAL PIPELINE
             //-----------------------------------------------------------------
             vkCmdBindPipeline(ctx_vk->cmd_buffer,
@@ -3120,7 +3199,6 @@ cmd_timeout_done:
             //---------------------------------------------------------
             //   END RENDER PASS
             //---------------------------------------------------------
-        war_label_end_render_pass:
             vkCmdEndRenderPass(ctx_vk->cmd_buffer);
             result = vkEndCommandBuffer(ctx_vk->cmd_buffer);
             assert(result == VK_SUCCESS);
@@ -3139,15 +3217,6 @@ cmd_timeout_done:
                               &submit_info,
                               ctx_vk->in_flight_fences[ctx_vk->current_frame]);
             assert(result == VK_SUCCESS);
-            // war_wayland_holy_trinity(fd,
-            //                          wl_surface_id,
-            //                          wl_buffer_id,
-            //                          0,
-            //                          0,
-            //                          0,
-            //                          0,
-            //                          physical_width,
-            //                          physical_height);
             goto wayland_done;
         }
         wl_display_error:
