@@ -108,6 +108,7 @@ ctx_lua = {
     ROLL_POSITION_X_Y                   = 0,
     -- pool
     POOL_ALIGNMENT                      = 256,
+    VK_ALIGNMENT                        = 256,
     -- cmd
     CMD_COUNT                           = 1,
     -- pc

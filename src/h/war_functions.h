@@ -46,8 +46,6 @@
 
 #define ALIGN32(p) (uint8_t*)(((uintptr_t)(p) + 31) & ~((uintptr_t)31))
 
-#define ALIGN_UP(x, align) (((x) + ((align) - 1)) & ~((align) - 1))
-
 #define obj_op_index(obj, op) ((obj) * max_opcodes + (op))
 
 #define STR(x) #x
@@ -139,6 +137,7 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(VK_NSGT_FRAME_CAPACITY)
     LOAD_INT(VK_NSGT_DIFF_CAPACITY)
     LOAD_INT(VK_NSGT_VISUAL_QUAD_CAPACITY)
+    LOAD_INT(VK_ALIGNMENT)
     // pool
     LOAD_INT(POOL_ALIGNMENT)
     // cmd
@@ -443,7 +442,8 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
 }
 
 static inline void* war_pool_alloc(war_pool* pool, size_t size) {
-    size = ALIGN_UP(size, pool->pool_alignment);
+    size =
+        ((size) + ((pool->pool_alignment) - 1)) & ~((pool->pool_alignment) - 1);
     if (pool->pool_ptr + size > (uint8_t*)pool->pool + pool->pool_size) {
         call_king_terry("war_pool_alloc not big enough! %zu bytes", size);
         abort();
@@ -451,6 +451,33 @@ static inline void* war_pool_alloc(war_pool* pool, size_t size) {
     void* ptr = pool->pool_ptr;
     pool->pool_ptr += size;
     return ptr;
+}
+
+static inline VkDeviceSize war_vulkan_align_size_up(VkDeviceSize size,
+                                                    VkDeviceSize alignment,
+                                                    VkDeviceSize capacity) {
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        call_king_terry("ERROR: alignment is not power-of-2");
+        return 0;
+    }
+    VkDeviceSize aligned = (size + alignment - 1) & ~(alignment - 1);
+    if (aligned > capacity) { aligned = capacity; }
+    return aligned;
+}
+
+static inline VkDeviceSize war_vulkan_align_offset_down(VkDeviceSize offset,
+                                                        VkDeviceSize alignment,
+                                                        VkDeviceSize capacity) {
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        call_king_terry("ERROR: alignment is not power-of-2");
+        return 0;
+    }
+    VkDeviceSize aligned = offset & ~(alignment - 1);
+    if (aligned > capacity) {
+        call_king_terry("ERROR: aligned offset exceeds capacity");
+        return 0;
+    }
+    return aligned;
 }
 
 static inline void war_layer_flux(war_window_render_context* ctx_wr,
@@ -849,10 +876,6 @@ war_clamp_uint32(uint32_t a, uint32_t min_value, uint32_t max_value) {
     a = a < min_value ? min_value : a;
     a = a > max_value ? max_value : a;
     return a;
-}
-
-static inline uint64_t war_align64(uint64_t value) {
-    return (value + 63) & ~63ULL;
 }
 
 static inline void war_command_reset(war_command_context* ctx_command,
@@ -1757,13 +1780,15 @@ static inline uint8_t war_vulkan_get_shader_module(
     return 1;
 }
 
-static inline uint8_t war_vulkan_create_buffer(VkDevice device,
-                                               VkPhysicalDevice physical_device,
-                                               VkDeviceSize capacity,
-                                               VkBufferUsageFlags usage,
-                                               VkMemoryPropertyFlags properties,
-                                               VkBuffer* buffer,
-                                               VkDeviceMemory* memory) {
+static inline uint8_t
+war_vulkan_create_buffer(VkDevice device,
+                         VkPhysicalDevice physical_device,
+                         VkDeviceSize capacity,
+                         VkBufferUsageFlags usage,
+                         VkMemoryPropertyFlags properties,
+                         VkBuffer* buffer,
+                         VkDeviceMemory* memory,
+                         VkMemoryRequirements* buffer_memory_requirements) {
     call_king_terry("war_vulkan_create_buffer");
     VkBufferCreateInfo bufferInfo = {0};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1773,16 +1798,15 @@ static inline uint8_t war_vulkan_create_buffer(VkDevice device,
     if (vkCreateBuffer(device, &bufferInfo, NULL, buffer) != VK_SUCCESS) {
         return 0;
     }
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(device, *buffer, &memRequirements);
+    vkGetBufferMemoryRequirements(device, *buffer, buffer_memory_requirements);
     VkMemoryAllocateInfo allocInfo = {0};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.allocationSize = buffer_memory_requirements->size;
     // Find suitable memory type
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physical_device, &memProperties);
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        if ((memRequirements.memoryTypeBits & (1 << i)) &&
+        if ((buffer_memory_requirements->memoryTypeBits & (1 << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & properties) ==
                 properties) {
             allocInfo.memoryTypeIndex = i;

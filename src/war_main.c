@@ -217,9 +217,9 @@ void* war_window_render(void* args) {
     pool_wr->pool_alignment = atomic_load(&ctx_lua->POOL_ALIGNMENT);
     pool_wr->pool_size =
         war_get_pool_wr_size(pool_wr, ctx_lua, "src/lua/war_main.lua");
-    pool_wr->pool_size += pool_wr->pool_alignment * 2000;
-    call_king_terry("pool_wr hack size: %zu", pool_wr->pool_size);
-    pool_wr->pool_size = ALIGN_UP(pool_wr->pool_size, pool_wr->pool_alignment);
+    pool_wr->pool_size =
+        ((pool_wr->pool_size * 1) + ((pool_wr->pool_alignment) - 1)) &
+        ~((pool_wr->pool_alignment) - 1);
     int pool_result = posix_memalign(
         &pool_wr->pool, pool_wr->pool_alignment, pool_wr->pool_size);
     assert(pool_result == 0 && pool_wr->pool);
@@ -810,7 +810,6 @@ void* war_window_render(void* args) {
     uint32_t* text_indices =
         war_pool_alloc(pool_wr, sizeof(uint32_t) * text_quads_indices_max);
     uint32_t text_indices_count = 0;
-    // nsgt
     //-------------------------------------------------------------------------
     // RENDERING FPS
     //-------------------------------------------------------------------------
@@ -2150,125 +2149,70 @@ cmd_timeout_done:
                               1,
                               &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
             assert(result == VK_SUCCESS);
-            //-----------------------------------------------------------------
-            // NSGT COMPUTE
-            //-----------------------------------------------------------------
-            if (ctx_fsm->current_mode != ctx_fsm->MODE_WAV ||
-                ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE ||
-                ctx_fsm->previous_mode != ctx_fsm->MODE_WAV ||
-                ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE ||
-                capture_wav->memfd_size <= 44) {
-                goto war_label_render_pass;
-            }
-            VkCommandBufferBeginInfo nsgt_begin_info = {
+            VkCommandBufferBeginInfo cmd_buffer_begin_info = {
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             };
-            result =
-                vkBeginCommandBuffer(ctx_vk->nsgt_cmd_buffer, &nsgt_begin_info);
+            result = vkBeginCommandBuffer(ctx_vk->cmd_buffer,
+                                          &cmd_buffer_begin_info);
             assert(result == VK_SUCCESS);
-            float* wav_samples = (float*)(capture_wav->file + 44);
-            size_t num_samples = (capture_wav->memfd_size - 44) / sizeof(float);
-            size_t num_frames = num_samples / 2;
-            float* staging_l = (float*)ctx_vk->nsgt_map_l;
-            float* staging_r = (float*)ctx_vk->nsgt_map_r;
-            memset(staging_l, 0, ctx_vk->nsgt_buffer_capacity);
-            memset(staging_r, 0, ctx_vk->nsgt_buffer_capacity);
-            for (size_t i = 0; i < num_frames; i++) {
-                staging_l[i] = wav_samples[2 * i];
-                staging_r[i] = wav_samples[2 * i + 1];
+            //-----------------------------------------------------------------
+            // NSGT COMPUTE PIPELINE
+            //-----------------------------------------------------------------
+            if ((ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
+                 ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE) ||
+                capture_wav->memfd_size <= 44) {
+                goto war_label_render_pass;
             }
-            VkBufferCopy copy_region = {0, 0, ctx_vk->nsgt_buffer_capacity};
-            vkCmdCopyBuffer(ctx_vk->nsgt_cmd_buffer,
-                            ctx_vk->nsgt_l_staging,
-                            ctx_vk->nsgt_l_buffer,
-                            1,
-                            &copy_region);
-            vkCmdCopyBuffer(ctx_vk->nsgt_cmd_buffer,
-                            ctx_vk->nsgt_r_staging,
-                            ctx_vk->nsgt_r_buffer,
-                            1,
-                            &copy_region);
-            vkCmdBindPipeline(ctx_vk->nsgt_cmd_buffer,
+            vkCmdBindPipeline(ctx_vk->cmd_buffer,
                               VK_PIPELINE_BIND_POINT_COMPUTE,
-                              ctx_vk->nsgt_pipeline);
-            vkCmdBindDescriptorSets(ctx_vk->nsgt_cmd_buffer,
+                              ctx_vk->nsgt_compute_pipeline);
+            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
                                     VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    ctx_vk->nsgt_pipeline_layout,
+                                    ctx_vk->nsgt_compute_pipeline_layout,
                                     0,
                                     1,
-                                    &ctx_vk->nsgt_descriptor_set,
+                                    &ctx_vk->nsgt_compute_descriptor_set,
                                     0,
                                     NULL);
-            war_nsgt_push_constants nsgt_push_constants = {.operation_type = 0,
-                                                           .channel = 0,
-                                                           .bin_start = 0,
-                                                           .bin_end = 0,
-                                                           .frame_start = 0,
-                                                           .frame_end = 0,
-                                                           .param1 = 0.0f,
-                                                           .param2 = 0.0f};
-            vkCmdPushConstants(ctx_vk->nsgt_cmd_buffer,
-                               ctx_vk->nsgt_pipeline_layout,
-                               VK_SHADER_STAGE_COMPUTE_BIT,
-                               0,
-                               sizeof(war_nsgt_push_constants),
-                               &nsgt_push_constants);
-            vkCmdDispatch(ctx_vk->nsgt_cmd_buffer, 0, 0, 0);
-            VkMemoryBarrier memory_barrier = {
-                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                .srcAccessMask =
-                    VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-                .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-            vkCmdPipelineBarrier(ctx_vk->nsgt_cmd_buffer,
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                                     VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_HOST_BIT,
+            vkCmdDispatch(ctx_vk->cmd_buffer, 0, 0, 0);
+            VkBufferMemoryBarrier nsgt_compute_buffer_barriers[2] = {
+                {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                 .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                                  VK_ACCESS_SHADER_READ_BIT,
+                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                 .buffer = ctx_vk->nsgt_compute_l_buffer,
+                 .offset = 0,
+                 .size = VK_WHOLE_SIZE},
+                {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                 .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                                  VK_ACCESS_SHADER_READ_BIT,
+                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                 .buffer = ctx_vk->nsgt_compute_r_buffer,
+                 .offset = 0,
+                 .size = VK_WHOLE_SIZE},
+            };
+            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                                  0,
-                                 1,
-                                 &memory_barrier,
                                  0,
                                  NULL,
+                                 2,
+                                 nsgt_compute_buffer_barriers,
                                  0,
                                  NULL);
-            result = vkEndCommandBuffer(ctx_vk->nsgt_cmd_buffer);
-            assert(result == VK_SUCCESS);
-            // submit nsgt compute and wait
-            VkSubmitInfo nsgt_submit_info = {
-                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .commandBufferCount = 1,
-                .pCommandBuffers = &ctx_vk->nsgt_cmd_buffer,
-            };
-            result = vkResetFences(ctx_vk->device, 1, &ctx_vk->nsgt_fence);
-            assert(result == VK_SUCCESS);
-            result = vkQueueSubmit(
-                ctx_vk->nsgt_queue, 1, &nsgt_submit_info, ctx_vk->nsgt_fence);
-            assert(result == VK_SUCCESS);
-            // Wait until compute finishes
-            result = vkWaitForFences(
-                ctx_vk->device, 1, &ctx_vk->nsgt_fence, VK_TRUE, UINT64_MAX);
-            assert(result == VK_SUCCESS);
-            // cpu readback
-            // At this point, ctx_vk->nsgt_map_l / ctx_vk->nsgt_map_r /
-            // ctx_vk->nsgt_diff contain the latest compute results and can be
-            // stored in CPU undo tree
-            float* cpu_l = (float*)ctx_vk->nsgt_map_l;
-            float* cpu_r = (float*)ctx_vk->nsgt_map_r;
-            float* cpu_diff =
-                (float*)
-                    ctx_vk->nsgt_map_diff; // if you have a mapped diff buffer
-            // copy to your undo history here
-            // save_to_undo(cpu_l, cpu_r, cpu_diff, num_frames);
         war_label_render_pass:
             //-------------------------------------------------------------
             //  RENDER PASS
             //-------------------------------------------------------------
-            VkCommandBufferBeginInfo gfx_begin_info = {
-                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-            };
-            result = vkBeginCommandBuffer(ctx_vk->cmd_buffer, &gfx_begin_info);
-            assert(result == VK_SUCCESS);
             VkClearValue clear_values[2];
             clear_values[0].color =
                 (VkClearColorValue){{0.1569f, 0.1569f, 0.1569f, 1.0f}};
@@ -2819,12 +2763,17 @@ cmd_timeout_done:
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->quads_vertex_buffer_memory,
                  .offset = 0,
-                 .size = war_align64(sizeof(war_quad_vertex) *
-                                     quad_vertices_count)},
+                 .size = war_vulkan_align_size_up(
+                     sizeof(war_quad_vertex) * quad_vertices_count,
+                     ctx_vk->quads_vertex_buffer_memory_requirements.alignment,
+                     sizeof(war_quad_vertex) * quads_vertices_max)},
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->quads_index_buffer_memory,
                  .offset = 0,
-                 .size = war_align64(sizeof(uint32_t) * quad_indices_count)}};
+                 .size = war_vulkan_align_size_up(
+                     sizeof(uint32_t) * quad_indices_count,
+                     ctx_vk->quads_index_buffer_memory_requirements.alignment,
+                     sizeof(uint32_t) * quads_indices_max)}};
             vkFlushMappedMemoryRanges(ctx_vk->device, 2, quad_flush_ranges);
             VkDeviceSize quad_vertices_offsets[2] = {0};
             vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
@@ -2875,18 +2824,37 @@ cmd_timeout_done:
                        quad_indices_count * sizeof(uint32_t),
                    transparent_quad_indices,
                    sizeof(uint32_t) * transparent_quad_indices_count);
+            VkDeviceSize aligned_flush_ranges_transparent_quad_vertex_offset =
+                war_vulkan_align_offset_down(
+                    sizeof(war_quad_vertex) * quad_vertices_count,
+                    ctx_vk->quads_vertex_buffer_memory_requirements.alignment,
+                    sizeof(war_quad_vertex) * quads_vertices_max);
+            VkDeviceSize aligned_flush_ranges_transparent_quad_vertex_size =
+                war_vulkan_align_size_up(
+                    sizeof(war_quad_vertex) * transparent_quad_vertices_count,
+                    ctx_vk->quads_vertex_buffer_memory_requirements.alignment,
+                    sizeof(war_quad_vertex) * quads_vertices_max -
+                        aligned_flush_ranges_transparent_quad_vertex_offset);
+            VkDeviceSize aligned_flush_ranges_transparent_quad_index_offset =
+                war_vulkan_align_offset_down(
+                    sizeof(uint32_t) * quad_indices_count,
+                    ctx_vk->quads_index_buffer_memory_requirements.alignment,
+                    sizeof(uint32_t) * quads_indices_max);
+            VkDeviceSize aligned_flush_ranges_transparent_quad_index_size =
+                war_vulkan_align_size_up(
+                    sizeof(uint32_t) * transparent_quad_indices_count,
+                    ctx_vk->quads_index_buffer_memory_requirements.alignment,
+                    sizeof(uint32_t) * quads_indices_max -
+                        aligned_flush_ranges_transparent_quad_index_offset);
             VkMappedMemoryRange transparent_quad_flush_ranges[2] = {
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->quads_vertex_buffer_memory,
-                 .offset =
-                     war_align64(sizeof(war_quad_vertex) * quad_vertices_count),
-                 .size = war_align64(sizeof(war_quad_vertex) *
-                                     transparent_quad_vertices_count)},
+                 .offset = aligned_flush_ranges_transparent_quad_vertex_offset,
+                 .size = aligned_flush_ranges_transparent_quad_vertex_size},
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->quads_index_buffer_memory,
-                 .offset = war_align64(sizeof(uint32_t) * quad_indices_count),
-                 .size = war_align64(sizeof(uint32_t) *
-                                     transparent_quad_indices_count)}};
+                 .offset = aligned_flush_ranges_transparent_quad_index_offset,
+                 .size = aligned_flush_ranges_transparent_quad_index_size}};
             vkFlushMappedMemoryRanges(
                 ctx_vk->device, 2, transparent_quad_flush_ranges);
             VkDeviceSize transparent_quad_vertices_offsets[2] = {
@@ -3091,12 +3059,17 @@ cmd_timeout_done:
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->text_vertex_buffer_memory,
                  .offset = 0,
-                 .size = war_align64(sizeof(war_text_vertex) *
-                                     text_vertices_count)},
+                 .size = war_vulkan_align_size_up(
+                     sizeof(war_text_vertex) * text_vertices_count,
+                     ctx_vk->text_vertex_buffer_memory_requirements.alignment,
+                     sizeof(war_text_vertex) * text_quads_vertices_max)},
                 {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                  .memory = ctx_vk->text_index_buffer_memory,
                  .offset = 0,
-                 .size = war_align64(sizeof(uint32_t) * text_indices_count)}};
+                 .size = war_vulkan_align_size_up(
+                     sizeof(uint32_t) * text_indices_count,
+                     ctx_vk->text_index_buffer_memory_requirements.alignment,
+                     sizeof(uint32_t) * text_quads_indices_max)}};
             vkFlushMappedMemoryRanges(ctx_vk->device, 2, text_flush_ranges);
             VkDeviceSize text_vertices_offsets[2] = {0};
             vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
@@ -3143,85 +3116,21 @@ cmd_timeout_done:
             //-----------------------------------------------------------------
             // NSGT VISUAL PIPELINE
             //-----------------------------------------------------------------
-            vkCmdBindPipeline(ctx_vk->cmd_buffer,
-                              VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              ctx_vk->nsgt_visual_pipeline);
-            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
-                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    ctx_vk->nsgt_visual_pipeline_layout,
-                                    0,
-                                    1,
-                                    &ctx_vk->nsgt_visual_descriptor_set,
-                                    0,
-                                    NULL);
-            war_nsgt_vertex nsgt_visual_quad_vertices[4] = {
-                {{0.0f, 0.0f},
-                 {-0.5f, -0.5f, ctx_wr->z_layers[LAYER_NOTES]}}, // bottom-left
-                {{1.0f, 0.0f},
-                 {0.5f, -0.5f, ctx_wr->z_layers[LAYER_NOTES]}}, // bottom-right
-                {{1.0f, 1.0f},
-                 {0.5f, 0.5f, ctx_wr->z_layers[LAYER_NOTES]}}, // top-right
-                {{0.0f, 1.0f},
-                 {-0.5f, 0.5f, ctx_wr->z_layers[LAYER_NOTES]}}, // top-left
-            };
-            uint32_t nsgt_visual_quad_vertices_count = 4;
-            uint32_t nsgt_visual_quad_indices[6] = {0, 1, 2, 2, 3, 0};
-            uint32_t nsgt_visual_quad_indices_count = 6;
-            memcpy(ctx_vk->nsgt_map_vertex,
-                   nsgt_visual_quad_vertices,
-                   sizeof(war_nsgt_vertex) * nsgt_visual_quad_vertices_count);
-            memcpy(ctx_vk->nsgt_map_index,
-                   nsgt_visual_quad_indices,
-                   sizeof(uint32_t) * nsgt_visual_quad_indices_count);
-            VkMappedMemoryRange nsgt_visual_flush_ranges[2] = {
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->nsgt_vertex_buffer_memory,
-                 .offset = 0,
-                 .size = war_align64(sizeof(war_nsgt_vertex) *
-                                     nsgt_visual_quad_vertices_count)},
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->nsgt_index_buffer_memory,
-                 .offset = 0,
-                 .size = war_align64(sizeof(uint32_t) *
-                                     nsgt_visual_quad_indices_count)}};
-            vkFlushMappedMemoryRanges(
-                ctx_vk->device, 2, nsgt_visual_flush_ranges);
-            VkDeviceSize nsgt_visual_quad_vertices_offsets[2] = {0};
-            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-                                   0,
-                                   1,
-                                   &ctx_vk->nsgt_vertex_buffer,
-                                   nsgt_visual_quad_vertices_offsets);
-            VkDeviceSize nsgt_visual_quad_indices_offset = 0;
-            vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
-                                 ctx_vk->nsgt_index_buffer,
-                                 nsgt_visual_quad_indices_offset,
-                                 VK_INDEX_TYPE_UINT32);
-            war_nsgt_visual_push_constants nsgt_visual_push_constants = {
-                .channel = 0,
-                .blend = 0,
-                .color_l = {0.0, 0.0, 0.0},
-                .color_r = {0.0, 0.0, 0.0},
-                .time_offset = 0.0,
-                .freq_scale = 0.0,
-                .time_scale = 0.0,
-            };
-            vkCmdPushConstants(ctx_vk->cmd_buffer,
-                               ctx_vk->nsgt_visual_pipeline_layout,
-                               VK_SHADER_STAGE_VERTEX_BIT |
-                                   VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0,
-                               sizeof(war_nsgt_visual_push_constants),
-                               &nsgt_visual_push_constants);
-            vkCmdDrawIndexed(
-                ctx_vk->cmd_buffer, nsgt_visual_quad_indices_count, 1, 0, 0, 0);
+            if ((ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
+                 ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE) ||
+                capture_wav->memfd_size <= 44) {
+                goto war_label_end_render_pass;
+            }
+        war_label_end_render_pass:
             //---------------------------------------------------------
             //   END RENDER PASS
             //---------------------------------------------------------
             vkCmdEndRenderPass(ctx_vk->cmd_buffer);
             result = vkEndCommandBuffer(ctx_vk->cmd_buffer);
             assert(result == VK_SUCCESS);
-            VkSubmitInfo gfx_submit_info = {
+            VkSubmitInfo submit_info = {
                 .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
                 .commandBufferCount = 1,
                 .pCommandBuffers = &ctx_vk->cmd_buffer,
@@ -3233,7 +3142,7 @@ cmd_timeout_done:
             result =
                 vkQueueSubmit(ctx_vk->queue,
                               1,
-                              &gfx_submit_info,
+                              &submit_info,
                               ctx_vk->in_flight_fences[ctx_vk->current_frame]);
             assert(result == VK_SUCCESS);
             goto wayland_done;
@@ -4725,9 +4634,9 @@ void* war_audio(void* args) {
     pool_a->pool_alignment = atomic_load(&ctx_lua->POOL_ALIGNMENT);
     pool_a->pool_size =
         war_get_pool_a_size(pool_a, ctx_lua, "src/lua/war_main.lua");
-    pool_a->pool_size = ALIGN_UP(pool_a->pool_size, pool_a->pool_alignment);
-    pool_a->pool_size += pool_a->pool_alignment * 10;
-    call_king_terry("pool_a hack size: %zu", pool_a->pool_size);
+    pool_a->pool_size =
+        ((pool_a->pool_size * 3) + ((pool_a->pool_alignment) - 1)) &
+        ~((pool_a->pool_alignment) - 1);
     int pool_result = posix_memalign(
         &pool_a->pool, pool_a->pool_alignment, pool_a->pool_size);
     memset(pool_a->pool, 0, pool_a->pool_size);
