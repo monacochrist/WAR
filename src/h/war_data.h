@@ -1150,12 +1150,12 @@ typedef struct war_vulkan_context {
     VkDeviceMemory nsgt_compute_r_memory_previous;
     VkDescriptorBufferInfo nsgt_compute_r_previous_buffer_info;
     // l staging
-    VkBuffer nsgt_compute_l_staging;
+    VkBuffer nsgt_compute_l_staging_buffer;
     VkMemoryRequirements nsgt_compute_l_staging_memory_requirements;
     VkDeviceMemory nsgt_compute_l_staging_memory;
     void* nsgt_compute_map_l;
     // r staging
-    VkBuffer nsgt_compute_r_staging;
+    VkBuffer nsgt_compute_r_staging_buffer;
     VkMemoryRequirements nsgt_compute_r_staging_memory_requirements;
     VkDeviceMemory nsgt_compute_r_staging_memory;
     void* nsgt_compute_map_r;

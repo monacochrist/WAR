@@ -2213,7 +2213,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                                            ctx_vk->nsgt_compute_frame_capacity *
                                            sizeof(float);
     ctx_vk->nsgt_compute_diff_buffer_capacity =
-        atomic_load(&ctx_lua->VK_NSGT_DIFF_CAPACITY);
+        atomic_load(&ctx_lua->VK_NSGT_DIFF_CAPACITY) * sizeof(uint32_t);
     // l
     fn_result = war_vulkan_create_buffer(
         ctx_vk->device,
@@ -2271,7 +2271,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
             VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_compute_l_staging,
+        &ctx_vk->nsgt_compute_l_staging_buffer,
         &ctx_vk->nsgt_compute_l_staging_memory,
         &ctx_vk->nsgt_compute_l_staging_memory_requirements);
     assert(fn_result);
@@ -2284,7 +2284,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
             VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_compute_r_staging,
+        &ctx_vk->nsgt_compute_r_staging_buffer,
         &ctx_vk->nsgt_compute_r_staging_memory,
         &ctx_vk->nsgt_compute_r_staging_memory_requirements);
     assert(fn_result);
@@ -2293,11 +2293,11 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         ctx_vk->device,
         ctx_vk->physical_device,
         ctx_vk->nsgt_compute_diff_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         &ctx_vk->nsgt_compute_undo_diff_buffer,
-        &ctx_vk->nsgt_compute_undo_diff_staging_memory,
+        &ctx_vk->nsgt_compute_undo_diff_memory,
         &ctx_vk->nsgt_compute_undo_diff_buffer_memory_requirements);
     assert(fn_result);
     // redo
@@ -2305,12 +2305,38 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         ctx_vk->device,
         ctx_vk->physical_device,
         ctx_vk->nsgt_compute_diff_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        &ctx_vk->nsgt_compute_redo_diff_buffer,
+        &ctx_vk->nsgt_compute_redo_diff_memory,
+        &ctx_vk->nsgt_compute_redo_diff_buffer_memory_requirements);
+    assert(fn_result);
+    // undo staging
+    fn_result = war_vulkan_create_buffer(
+        ctx_vk->device,
+        ctx_vk->physical_device,
+        ctx_vk->nsgt_compute_diff_buffer_capacity,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_compute_redo_diff_buffer,
+        &ctx_vk->nsgt_compute_undo_diff_staging_buffer,
+        &ctx_vk->nsgt_compute_undo_diff_staging_memory,
+        &ctx_vk->nsgt_compute_undo_diff_staging_buffer_memory_requirements);
+    assert(fn_result);
+    // redo staging
+    fn_result = war_vulkan_create_buffer(
+        ctx_vk->device,
+        ctx_vk->physical_device,
+        ctx_vk->nsgt_compute_diff_buffer_capacity,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &ctx_vk->nsgt_compute_redo_diff_staging_buffer,
         &ctx_vk->nsgt_compute_redo_diff_staging_memory,
-        &ctx_vk->nsgt_compute_redo_diff_buffer_memory_requirements);
+        &ctx_vk->nsgt_compute_redo_diff_staging_buffer_memory_requirements);
     assert(fn_result);
     ctx_vk->nsgt_compute_map_l = war_pool_alloc(pool_wr, sizeof(void*));
     ctx_vk->nsgt_compute_map_r = war_pool_alloc(pool_wr, sizeof(void*));
@@ -2355,12 +2381,12 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         .range = ctx_vk->nsgt_compute_buffer_capacity,
     };
     ctx_vk->nsgt_compute_l_previous_buffer_info = (VkDescriptorBufferInfo){
-        .buffer = ctx_vk->nsgt_compute_l_buffer,
+        .buffer = ctx_vk->nsgt_compute_l_buffer_previous,
         .offset = 0,
         .range = ctx_vk->nsgt_compute_buffer_capacity,
     };
     ctx_vk->nsgt_compute_r_previous_buffer_info = (VkDescriptorBufferInfo){
-        .buffer = ctx_vk->nsgt_compute_r_buffer,
+        .buffer = ctx_vk->nsgt_compute_r_buffer_previous,
         .offset = 0,
         .range = ctx_vk->nsgt_compute_buffer_capacity,
     };
@@ -2431,7 +2457,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         },
     };
     vkUpdateDescriptorSets(
-        ctx_vk->device, 4, nsgt_write_descriptor_set, 0, NULL);
+        ctx_vk->device, 6, nsgt_write_descriptor_set, 0, NULL);
     VkFenceCreateInfo nsgt_fence_info = {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .flags = 0,

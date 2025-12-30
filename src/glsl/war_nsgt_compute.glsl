@@ -22,12 +22,43 @@
 
 #version 450
 
-layout(binding = 0) buffer LBuffer {
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer buf0 {
     float data[];
-};
+} l_buffer;
+
+layout(std430, binding = 1) buffer buf1 {
+    float data[];
+} r_buffer;
+
+layout(std430, binding = 2) buffer buf2 {
+    float data[];
+} l_previous_buffer;
+
+layout(std430, binding = 3) buffer buf3 {
+    float data[];
+} r_previous_buffer;
+
+layout(std430, binding = 4) buffer buf4 {
+    uint data[];
+} undo_buffer;
+
+layout(std430, binding = 5) buffer buf5 {
+    uint data[];
+} redo_buffer;
 
 void main() {
-    uint idx = 13;
-    // Simple test: just write the index as a float
-    data[idx] = float(idx);
+    l_buffer.data[13] = 13;
+    r_buffer.data[13] = 13;
+    l_previous_buffer.data[13] = 13;
+    r_previous_buffer.data[13] = 13;
+    undo_buffer.data[13] = 13;
+    redo_buffer.data[13] = 13;
+    l_buffer.data[0] = 13;
+    r_buffer.data[0] = 13;
+    l_previous_buffer.data[0] = 13;
+    r_previous_buffer.data[0] = 13;
+    undo_buffer.data[0] = 13;
+    redo_buffer.data[0] = 13;
 }
