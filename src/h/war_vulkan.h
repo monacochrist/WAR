@@ -201,74 +201,34 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     vkGetPhysicalDeviceQueueFamilyProperties(
         ctx_vk->physical_device, &queue_family_count, queue_families);
     uint32_t graphics_family_index = UINT32_MAX;
-    ctx_vk->nsgt_compute_queue_family_index = UINT32_MAX;
     for (uint32_t i = 0; i < queue_family_count; i++) {
         if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             graphics_family_index = i;
-        } else if (queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
-            ctx_vk->nsgt_compute_queue_family_index = i;
         }
     }
     assert(graphics_family_index != UINT32_MAX);
-    ctx_vk->queue_family_index = graphics_family_index;
-    ctx_vk->no_nsgt_compute_queue = 0;
-    if (ctx_vk->nsgt_compute_queue_family_index == UINT32_MAX) {
-        ctx_vk->nsgt_compute_queue_family_index = ctx_vk->queue_family_index;
-        ctx_vk->no_nsgt_compute_queue = 1;
-        call_king_terry("no nsgt queue");
-    }
-    //-------------------------------------------------------------------------
-    // ALWAYS USING SAME TO PREVENT CROSS SYNC
-    //-------------------------------------------------------------------------
-    ctx_vk->nsgt_compute_queue_family_index = ctx_vk->queue_family_index;
-    ctx_vk->no_nsgt_compute_queue = 1;
     float queue_priority = 1.0f;
     VkDeviceCreateInfo device_info;
     VkDeviceQueueCreateInfo* queue_infos;
-    if (ctx_vk->no_nsgt_compute_queue) {
-        queue_infos = (VkDeviceQueueCreateInfo[1]){
-            (VkDeviceQueueCreateInfo){
-                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .queueFamilyIndex = ctx_vk->queue_family_index,
-                .queueCount = 1,
-                .pQueuePriorities = &queue_priority,
-            },
-        };
-        device_info = (VkDeviceCreateInfo){
-            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .queueCreateInfoCount = 1,
-            .pQueueCreateInfos = queue_infos,
-            .enabledExtensionCount = 4,
-            .ppEnabledExtensionNames = device_extensions,
-        };
-    } else {
-        queue_infos = (VkDeviceQueueCreateInfo[2]){
-            {
-                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .queueFamilyIndex = ctx_vk->queue_family_index,
-                .queueCount = 1,
-                .pQueuePriorities = &queue_priority,
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .queueFamilyIndex = ctx_vk->nsgt_compute_queue_family_index,
-                .queueCount = 1,
-                .pQueuePriorities = &queue_priority,
-            },
-        };
-        device_info = (VkDeviceCreateInfo){
-            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .queueCreateInfoCount = 2,
-            .pQueueCreateInfos = queue_infos,
-            .enabledExtensionCount = 4,
-            .ppEnabledExtensionNames = device_extensions,
-        };
-    }
+    queue_infos = (VkDeviceQueueCreateInfo[1]){
+        (VkDeviceQueueCreateInfo){
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = ctx_vk->queue_family_index,
+            .queueCount = 1,
+            .pQueuePriorities = &queue_priority,
+        },
+    };
+    device_info = (VkDeviceCreateInfo){
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = queue_infos,
+        .enabledExtensionCount = 4,
+        .ppEnabledExtensionNames = device_extensions,
+    };
     result = vkCreateDevice(
         ctx_vk->physical_device, &device_info, NULL, &ctx_vk->device);
     assert(result == VK_SUCCESS);
     VkFormat quad_depth_format = VK_FORMAT_D32_SFLOAT;
-
     VkImageCreateInfo quad_depth_image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
@@ -347,13 +307,6 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     };
     vkGetDeviceQueue(
         ctx_vk->device, ctx_vk->queue_family_index, 0, &ctx_vk->queue);
-    ctx_vk->nsgt_compute_queue = ctx_vk->queue;
-    if (!ctx_vk->no_nsgt_compute_queue) {
-        vkGetDeviceQueue(ctx_vk->device,
-                         ctx_vk->nsgt_compute_queue_family_index,
-                         0,
-                         &ctx_vk->nsgt_compute_queue);
-    }
     VkCommandPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .queueFamilyIndex = ctx_vk->queue_family_index,
@@ -2085,409 +2038,10 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                                        NULL,
                                        &ctx_vk->transparent_quad_pipeline);
     assert(result == VK_SUCCESS);
-    //-------------------------------------------------------------------------
-    // NSGT COMPUTE PIPELINE
-    //-------------------------------------------------------------------------
-    uint8_t fn_result =
-        war_vulkan_get_shader_module(ctx_vk->device,
-                                     &ctx_vk->nsgt_compute_shader,
-                                     "build/spv/war_nsgt_compute.spv");
-    assert(fn_result);
-    VkDescriptorSetLayoutBinding* nsgt_bindings =
-        (VkDescriptorSetLayoutBinding[6]){
-            // L buffer
-            {0,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             1,
-             VK_SHADER_STAGE_COMPUTE_BIT,
-             NULL},
-            // R buffer
-            {1,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             1,
-             VK_SHADER_STAGE_COMPUTE_BIT,
-             NULL},
-            // L buffer previous
-            {2,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             1,
-             VK_SHADER_STAGE_COMPUTE_BIT,
-             NULL},
-            // R buffer previous
-            {3,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             1,
-             VK_SHADER_STAGE_COMPUTE_BIT,
-             NULL},
-            // undo buffer
-            {4,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             1,
-             VK_SHADER_STAGE_COMPUTE_BIT,
-             NULL},
-            // redo buffer
-            {5,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             1,
-             VK_SHADER_STAGE_COMPUTE_BIT,
-             NULL},
-        };
-    VkDescriptorSetLayoutCreateInfo nsgt_layout_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 6,
-        .pBindings = nsgt_bindings,
-    };
-    result = vkCreateDescriptorSetLayout(
-        ctx_vk->device,
-        &nsgt_layout_info,
-        NULL,
-        &ctx_vk->nsgt_compute_descriptor_set_layout);
-    assert(result == VK_SUCCESS);
-    VkPushConstantRange nsgt_push_constant_range = {
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        .offset = 0,
-        .size = sizeof(war_nsgt_push_constants), // todo add
-    };
-    VkPipelineLayoutCreateInfo nsgt_pipeline_layout_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &ctx_vk->nsgt_compute_descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &nsgt_push_constant_range,
-    };
-    result = vkCreatePipelineLayout(ctx_vk->device,
-                                    &nsgt_pipeline_layout_info,
-                                    NULL,
-                                    &ctx_vk->nsgt_compute_pipeline_layout);
-    assert(result == VK_SUCCESS);
-    VkComputePipelineCreateInfo nsgt_pipeline_info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage =
-            (VkPipelineShaderStageCreateInfo){
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = ctx_vk->nsgt_compute_shader,
-                .pName = "main",
-            },
-        .layout = ctx_vk->nsgt_compute_pipeline_layout,
-    };
-    result = vkCreateComputePipelines(ctx_vk->device,
-                                      VK_NULL_HANDLE,
-                                      1,
-                                      &nsgt_pipeline_info,
-                                      NULL,
-                                      &ctx_vk->nsgt_compute_pipeline);
-    assert(result == VK_SUCCESS);
-    VkDescriptorPoolSize nsgt_descriptor_pool_sizes[1] = {
-        (VkDescriptorPoolSize){
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 6,
-        },
-    };
-    VkDescriptorPoolCreateInfo nsgt_descriptor_pool_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = 1,
-        .pPoolSizes = nsgt_descriptor_pool_sizes,
-        .maxSets = 1,
-    };
-    result = vkCreateDescriptorPool(ctx_vk->device,
-                                    &nsgt_descriptor_pool_info,
-                                    NULL,
-                                    &ctx_vk->nsgt_compute_descriptor_pool);
-    assert(result == VK_SUCCESS);
-    VkDescriptorSetAllocateInfo nsgt_descriptor_set_alloc_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = ctx_vk->nsgt_compute_descriptor_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &ctx_vk->nsgt_compute_descriptor_set_layout,
-    };
-    result = vkAllocateDescriptorSets(ctx_vk->device,
-                                      &nsgt_descriptor_set_alloc_info,
-                                      &ctx_vk->nsgt_compute_descriptor_set);
-    assert(result == VK_SUCCESS);
-    ctx_vk->nsgt_compute_bin_capacity =
-        atomic_load(&ctx_lua->VK_NSGT_BIN_CAPACITY); // 1024
-    ctx_vk->nsgt_compute_frame_capacity =
-        atomic_load(&ctx_lua->VK_NSGT_FRAME_CAPACITY); // 512
-    ctx_vk->nsgt_compute_buffer_capacity = ctx_vk->nsgt_compute_bin_capacity *
-                                           ctx_vk->nsgt_compute_frame_capacity *
-                                           sizeof(float);
-    ctx_vk->nsgt_compute_diff_buffer_capacity =
-        atomic_load(&ctx_lua->VK_NSGT_DIFF_CAPACITY) * sizeof(uint32_t);
-    // l
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        &ctx_vk->nsgt_compute_l_buffer,
-        &ctx_vk->nsgt_compute_l_memory,
-        &ctx_vk->nsgt_compute_l_buffer_memory_requirements);
-    assert(fn_result);
-    // l previous
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        &ctx_vk->nsgt_compute_l_buffer_previous,
-        &ctx_vk->nsgt_compute_l_memory_previous,
-        &ctx_vk->nsgt_compute_l_buffer_previous_memory_requirements);
-    assert(fn_result);
-    // r
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        &ctx_vk->nsgt_compute_r_buffer,
-        &ctx_vk->nsgt_compute_r_memory,
-        &ctx_vk->nsgt_compute_r_buffer_memory_requirements);
-    assert(fn_result);
-    // r previous
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        &ctx_vk->nsgt_compute_r_buffer_previous,
-        &ctx_vk->nsgt_compute_r_memory_previous,
-        &ctx_vk->nsgt_compute_r_buffer_previous_memory_requirements);
-    assert(fn_result);
-    // l staging
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_compute_l_staging_buffer,
-        &ctx_vk->nsgt_compute_l_staging_memory,
-        &ctx_vk->nsgt_compute_l_staging_memory_requirements);
-    assert(fn_result);
-    // r staging
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_compute_r_staging_buffer,
-        &ctx_vk->nsgt_compute_r_staging_memory,
-        &ctx_vk->nsgt_compute_r_staging_memory_requirements);
-    assert(fn_result);
-    // undo
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_diff_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        &ctx_vk->nsgt_compute_undo_diff_buffer,
-        &ctx_vk->nsgt_compute_undo_diff_memory,
-        &ctx_vk->nsgt_compute_undo_diff_buffer_memory_requirements);
-    assert(fn_result);
-    // redo
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_diff_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        &ctx_vk->nsgt_compute_redo_diff_buffer,
-        &ctx_vk->nsgt_compute_redo_diff_memory,
-        &ctx_vk->nsgt_compute_redo_diff_buffer_memory_requirements);
-    assert(fn_result);
-    // undo staging
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_diff_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_compute_undo_diff_staging_buffer,
-        &ctx_vk->nsgt_compute_undo_diff_staging_memory,
-        &ctx_vk->nsgt_compute_undo_diff_staging_buffer_memory_requirements);
-    assert(fn_result);
-    // redo staging
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_compute_diff_buffer_capacity,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_compute_redo_diff_staging_buffer,
-        &ctx_vk->nsgt_compute_redo_diff_staging_memory,
-        &ctx_vk->nsgt_compute_redo_diff_staging_buffer_memory_requirements);
-    assert(fn_result);
-    ctx_vk->nsgt_compute_map_l = war_pool_alloc(pool_wr, sizeof(void*));
-    ctx_vk->nsgt_compute_map_r = war_pool_alloc(pool_wr, sizeof(void*));
-    ctx_vk->nsgt_compute_map_undo_diff = war_pool_alloc(pool_wr, sizeof(void*));
-    ctx_vk->nsgt_compute_map_redo_diff = war_pool_alloc(pool_wr, sizeof(void*));
-    result = vkMapMemory(ctx_vk->device,
-                         ctx_vk->nsgt_compute_l_staging_memory,
-                         0,
-                         VK_WHOLE_SIZE,
-                         0,
-                         &ctx_vk->nsgt_compute_map_l);
-    assert(result == VK_SUCCESS);
-    result = vkMapMemory(ctx_vk->device,
-                         ctx_vk->nsgt_compute_r_staging_memory,
-                         0,
-                         VK_WHOLE_SIZE,
-                         0,
-                         &ctx_vk->nsgt_compute_map_r);
-    assert(result == VK_SUCCESS);
-    result = vkMapMemory(ctx_vk->device,
-                         ctx_vk->nsgt_compute_undo_diff_staging_memory,
-                         0,
-                         VK_WHOLE_SIZE,
-                         0,
-                         &ctx_vk->nsgt_compute_map_undo_diff);
-    assert(result == VK_SUCCESS);
-    result = vkMapMemory(ctx_vk->device,
-                         ctx_vk->nsgt_compute_redo_diff_staging_memory,
-                         0,
-                         VK_WHOLE_SIZE,
-                         0,
-                         &ctx_vk->nsgt_compute_map_redo_diff);
-    assert(result == VK_SUCCESS);
-    ctx_vk->nsgt_compute_l_buffer_info = (VkDescriptorBufferInfo){
-        .buffer = ctx_vk->nsgt_compute_l_buffer,
-        .offset = 0,
-        .range = ctx_vk->nsgt_compute_buffer_capacity,
-    };
-    ctx_vk->nsgt_compute_r_buffer_info = (VkDescriptorBufferInfo){
-        .buffer = ctx_vk->nsgt_compute_r_buffer,
-        .offset = 0,
-        .range = ctx_vk->nsgt_compute_buffer_capacity,
-    };
-    ctx_vk->nsgt_compute_l_previous_buffer_info = (VkDescriptorBufferInfo){
-        .buffer = ctx_vk->nsgt_compute_l_buffer_previous,
-        .offset = 0,
-        .range = ctx_vk->nsgt_compute_buffer_capacity,
-    };
-    ctx_vk->nsgt_compute_r_previous_buffer_info = (VkDescriptorBufferInfo){
-        .buffer = ctx_vk->nsgt_compute_r_buffer_previous,
-        .offset = 0,
-        .range = ctx_vk->nsgt_compute_buffer_capacity,
-    };
-    ctx_vk->nsgt_compute_undo_diff_buffer_info = (VkDescriptorBufferInfo){
-        .buffer = ctx_vk->nsgt_compute_undo_diff_buffer,
-        .offset = 0,
-        .range = ctx_vk->nsgt_compute_diff_buffer_capacity,
-    };
-    ctx_vk->nsgt_compute_redo_diff_buffer_info = (VkDescriptorBufferInfo){
-        .buffer = ctx_vk->nsgt_compute_redo_diff_buffer,
-        .offset = 0,
-        .range = ctx_vk->nsgt_compute_diff_buffer_capacity,
-    };
-    VkWriteDescriptorSet nsgt_write_descriptor_set[6] = {
-        // l
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = ctx_vk->nsgt_compute_descriptor_set,
-            .dstBinding = 0,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &ctx_vk->nsgt_compute_l_buffer_info,
-        },
-        // r
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = ctx_vk->nsgt_compute_descriptor_set,
-            .dstBinding = 1,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &ctx_vk->nsgt_compute_r_buffer_info,
-        },
-        // l previous
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = ctx_vk->nsgt_compute_descriptor_set,
-            .dstBinding = 2,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &ctx_vk->nsgt_compute_l_previous_buffer_info,
-        },
-        // r previous
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = ctx_vk->nsgt_compute_descriptor_set,
-            .dstBinding = 3,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &ctx_vk->nsgt_compute_r_previous_buffer_info,
-        },
-        // undo diff
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = ctx_vk->nsgt_compute_descriptor_set,
-            .dstBinding = 4,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &ctx_vk->nsgt_compute_undo_diff_buffer_info,
-        },
-        // redo diff
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = ctx_vk->nsgt_compute_descriptor_set,
-            .dstBinding = 5,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &ctx_vk->nsgt_compute_redo_diff_buffer_info,
-        },
-    };
-    vkUpdateDescriptorSets(
-        ctx_vk->device, 6, nsgt_write_descriptor_set, 0, NULL);
-    VkFenceCreateInfo nsgt_fence_info = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .flags = 0,
-    };
-    result = vkCreateFence(
-        ctx_vk->device, &nsgt_fence_info, NULL, &ctx_vk->nsgt_compute_fence);
-    assert(result == VK_SUCCESS);
-    // VkCommandPoolCreateInfo nsgt_command_pool_info = {
-    //     .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-    //     .queueFamilyIndex = ctx_vk->nsgt_compute_queue_family_index,
-    //     .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-    // };
-    // result = vkCreateCommandPool(ctx_vk->device,
-    //                              &nsgt_command_pool_info,
-    //                              NULL,
-    //                              &ctx_vk->nsgt_compute_cmd_pool);
-    // assert(result == VK_SUCCESS);
-    // VkCommandBufferAllocateInfo nsgt_command_buffer_allocate_info = {
-    //     .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-    //     .commandPool = ctx_vk->nsgt_compute_cmd_pool,
-    //     .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-    //     .commandBufferCount = 1,
-    // };
-    // vkAllocateCommandBuffers(ctx_vk->device,
-    //                          &nsgt_command_buffer_allocate_info,
-    //                          &ctx_vk->nsgt_compute_cmd_buffer);
-    //-------------------------------------------------------------------------
-    //  NSGT VISUAL PIPELINE
-    //-------------------------------------------------------------------------
-    fn_result = war_vulkan_get_shader_module(ctx_vk->device,
+    ////-------------------------------------------------------------------------
+    ////  NSGT VISUAL PIPELINE
+    ////-------------------------------------------------------------------------
+    uint8_t fn_result = war_vulkan_get_shader_module(ctx_vk->device,
                                              &ctx_vk->nsgt_visual_vertex_shader,
                                              "build/spv/war_nsgt_vertex.spv");
     assert(fn_result);
@@ -2746,7 +2300,6 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     //-------------------------------------------------------------------------
     // END
     //-------------------------------------------------------------------------
-    ctx_vk->current_frame = 0;
     free(instance_extensions_properties);
     free(device_extensions_properties);
     free(all_attrs);

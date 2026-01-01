@@ -418,6 +418,8 @@ typedef struct war_lua_context {
     _Atomic int VK_NSGT_DIFF_CAPACITY;
     _Atomic int VK_NSGT_VISUAL_QUAD_CAPACITY;
     _Atomic int VK_ALIGNMENT;
+    _Atomic int VK_NSGT_COMPUTE_BUFFER_COUNT;
+    _Atomic int VK_NSGT_VISUAL_BUFFER_COUNT;
     // misc
     _Atomic float DEFAULT_ALPHA_SCALE;
     _Atomic float DEFAULT_CURSOR_ALPHA_SCALE;
@@ -1000,7 +1002,7 @@ typedef struct war_quad_push_constants {
 } war_quad_push_constants;
 
 // compute
-typedef struct war_nsgt_push_constants {
+typedef struct war_vulkan_nsgt_compute_push_constants {
     int operation_type;
     int channel;
     int bin_start;
@@ -1009,10 +1011,10 @@ typedef struct war_nsgt_push_constants {
     int frame_end;
     float param1;
     float param2;
-} war_nsgt_push_constants;
+} war_vulkan_nsgt_compute_push_constants;
 
 // visual
-typedef struct war_nsgt_visual_push_constants {
+typedef struct war_vulkan_nsgt_visual_push_constants {
     int channel;
     int blend;
     int _pad1[2];
@@ -1025,17 +1027,90 @@ typedef struct war_nsgt_visual_push_constants {
     int num_frames;
     int bin_capacity;
     int frame_capacity;
-} war_nsgt_visual_push_constants;
+} war_vulkan_nsgt_visual_push_constants;
 
-typedef struct war_nsgt_vertex {
+typedef struct war_vulkan_nsgt_visual_vertex {
     float uv[2];
     float pos[3];
-} war_nsgt_vertex;
+} war_vulkan_nsgt_visual_vertex;
 
-enum {
-    WAR_ENUM_VULKAN_ALIGN_SIZE_UP = 1,
-    WAR_ENUM_VULKAN_ALIGN_OFFSET_DOWN = 2,
-};
+typedef struct war_vulkan_nsgt_compute_context {
+    // pipeline
+    VkPipeline pipeline;
+    VkPipelineLayout pipeline_layout;
+    // shaders
+    VkShaderModule compute_shader;
+    // buffers
+    uint32_t idx_l_stage;
+    uint32_t idx_r_stage;
+    uint32_t idx_l;
+    uint32_t idx_r;
+    uint32_t idx_l_nsgt_temp;
+    uint32_t idx_r_nsgt_temp;
+    uint32_t idx_l_nsgt;
+    uint32_t idx_r_nsgt;
+    uint32_t idx_l_magnitude;
+    uint32_t idx_r_magnitude;
+    VkMemoryPropertyFlags* memory_property_flags;
+    VkBufferUsageFlags* usage_flags;
+    VkBuffer* buffer;
+    VkMemoryRequirements* memory_requirements;
+    VkDeviceMemory* device_memory;
+    void** map;
+    VkDeviceSize* capacity;
+    VkDeviceSize buffer_count;
+    // descriptor set
+    VkShaderStageFlags* shader_stage_flags;
+    VkDescriptorBufferInfo* descriptor_buffer_info;
+    VkDescriptorSetLayoutBinding* descriptor_set_layout_binding;
+    VkWriteDescriptorSet* write_descriptor_set;
+    VkDescriptorSet descriptor_set;
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorPool descriptor_pool;
+    VkDeviceSize descriptor_count;
+    // capacities
+    VkDeviceSize bin_capacity;
+    VkDeviceSize frame_capacity;
+    VkDeviceSize sample_rate;
+    VkDeviceSize sample_duration;
+    VkDeviceSize channel_count;
+    VkDeviceSize wav_channel_capacity;
+    VkDeviceSize nsgt_channel_capacity;
+    VkDeviceSize magnitude_channel_capacity;
+} war_vulkan_nsgt_compute_context;
+
+typedef struct war_vulkan_nsgt_visual_context {
+    // pipeline
+    VkPipeline pipeline;
+    VkPipelineLayout pipeline_layout;
+    // shaders
+    VkShaderModule vertex_shader;
+    VkShaderModule fragment_shader;
+    // buffers
+    uint32_t idx_vertex;
+    uint32_t idx_index;
+    VkMemoryPropertyFlags* memory_property_flags;
+    VkBufferUsageFlags* usage_flags;
+    VkBuffer* buffer;
+    VkMemoryRequirements* memory_requirements;
+    VkDeviceMemory* device_memory;
+    void** map;
+    VkDeviceSize* capacity;
+    VkDeviceSize buffer_count;
+    // descriptor set
+    VkShaderStageFlags* shader_stage_flags;
+    VkDescriptorBufferInfo* descriptor_buffer_info;
+    VkDescriptorSetLayoutBinding* descriptor_set_layout_binding;
+    VkWriteDescriptorSet* write_descriptor_set;
+    VkDescriptorSet descriptor_set;
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorPool descriptor_pool;
+    VkDeviceSize descriptor_count;
+    // capacities
+    VkDeviceSize quad_capacity;
+    VkDeviceSize vertex_capacity;
+    VkDeviceSize index_capacity;
+} war_vulkan_nsgt_visual_context;
 
 typedef struct war_vulkan_context {
     //-------------------------------------------------------------------------
@@ -1119,102 +1194,6 @@ typedef struct war_vulkan_context {
     void* text_instance_buffer_mapped;
     void* text_index_buffer_mapped;
     int glyph_count;
-    //-------------------------------------------------------------------------
-    // NSGT COMPUTE PIPELINE
-    //-------------------------------------------------------------------------
-    VkPipeline nsgt_compute_pipeline;
-    VkPipelineLayout nsgt_compute_pipeline_layout;
-    VkQueue nsgt_compute_queue;
-    uint32_t nsgt_compute_queue_family_index;
-    VkCommandPool nsgt_compute_cmd_pool;
-    VkCommandBuffer nsgt_compute_cmd_buffer;
-    VkShaderModule nsgt_compute_shader;
-    // l
-    VkBuffer nsgt_compute_l_buffer;
-    VkMemoryRequirements nsgt_compute_l_buffer_memory_requirements;
-    VkDeviceMemory nsgt_compute_l_memory;
-    VkDescriptorBufferInfo nsgt_compute_l_buffer_info;
-    // l previous
-    VkBuffer nsgt_compute_l_buffer_previous;
-    VkMemoryRequirements nsgt_compute_l_buffer_previous_memory_requirements;
-    VkDeviceMemory nsgt_compute_l_memory_previous;
-    VkDescriptorBufferInfo nsgt_compute_l_previous_buffer_info;
-    // r
-    VkBuffer nsgt_compute_r_buffer;
-    VkMemoryRequirements nsgt_compute_r_buffer_memory_requirements;
-    VkDeviceMemory nsgt_compute_r_memory;
-    VkDescriptorBufferInfo nsgt_compute_r_buffer_info;
-    // r previous
-    VkBuffer nsgt_compute_r_buffer_previous;
-    VkMemoryRequirements nsgt_compute_r_buffer_previous_memory_requirements;
-    VkDeviceMemory nsgt_compute_r_memory_previous;
-    VkDescriptorBufferInfo nsgt_compute_r_previous_buffer_info;
-    // l staging
-    VkBuffer nsgt_compute_l_staging_buffer;
-    VkMemoryRequirements nsgt_compute_l_staging_memory_requirements;
-    VkDeviceMemory nsgt_compute_l_staging_memory;
-    void* nsgt_compute_map_l;
-    // r staging
-    VkBuffer nsgt_compute_r_staging_buffer;
-    VkMemoryRequirements nsgt_compute_r_staging_memory_requirements;
-    VkDeviceMemory nsgt_compute_r_staging_memory;
-    void* nsgt_compute_map_r;
-    // undo
-    VkBuffer nsgt_compute_undo_diff_buffer;
-    VkMemoryRequirements nsgt_compute_undo_diff_buffer_memory_requirements;
-    VkDeviceMemory nsgt_compute_undo_diff_memory;
-    VkDescriptorBufferInfo nsgt_compute_undo_diff_buffer_info;
-    // redo
-    VkBuffer nsgt_compute_redo_diff_buffer;
-    VkMemoryRequirements nsgt_compute_redo_diff_buffer_memory_requirements;
-    VkDeviceMemory nsgt_compute_redo_diff_memory;
-    VkDescriptorBufferInfo nsgt_compute_redo_diff_buffer_info;
-    // undo staging
-    VkBuffer nsgt_compute_undo_diff_staging_buffer;
-    VkMemoryRequirements
-        nsgt_compute_undo_diff_staging_buffer_memory_requirements;
-    VkDeviceMemory nsgt_compute_undo_diff_staging_memory;
-    void* nsgt_compute_map_undo_diff;
-    // redo staging
-    VkBuffer nsgt_compute_redo_diff_staging_buffer;
-    VkMemoryRequirements
-        nsgt_compute_redo_diff_staging_buffer_memory_requirements;
-    VkDeviceMemory nsgt_compute_redo_diff_staging_memory;
-    void* nsgt_compute_map_redo_diff;
-    // descriptor set
-    VkDescriptorSet nsgt_compute_descriptor_set;
-    VkDescriptorSetLayout nsgt_compute_descriptor_set_layout;
-    VkDescriptorPool nsgt_compute_descriptor_pool;
-    // fence
-    VkFence nsgt_compute_fence;
-    // capacities
-    VkDeviceSize nsgt_compute_buffer_capacity;
-    VkDeviceSize nsgt_compute_diff_buffer_capacity;
-    uint32_t nsgt_compute_bin_capacity;
-    uint32_t nsgt_compute_frame_capacity;
-    // flag
-    uint8_t no_nsgt_compute_queue;
-    //-------------------------------------------------------------------------
-    // NSGT VISUAL PIPELINE
-    //-------------------------------------------------------------------------
-    VkPipeline nsgt_visual_pipeline;
-    VkPipelineLayout nsgt_visual_pipeline_layout;
-    VkShaderModule nsgt_visual_vertex_shader;
-    VkShaderModule nsgt_visual_fragment_shader;
-    VkBuffer nsgt_visual_vertex_buffer;
-    VkMemoryRequirements nsgt_visual_vertex_buffer_memory_requirements;
-    VkDeviceMemory nsgt_visual_vertex_buffer_memory;
-    void* nsgt_visual_map_vertex;
-    VkBuffer nsgt_visual_index_buffer;
-    VkMemoryRequirements nsgt_visual_index_buffer_memory_requirements;
-    VkDeviceMemory nsgt_visual_index_buffer_memory;
-    void* nsgt_visual_map_index;
-    VkDescriptorSet nsgt_visual_descriptor_set;
-    VkDescriptorSetLayout nsgt_visual_descriptor_set_layout;
-    VkDescriptorPool nsgt_visual_descriptor_pool;
-    uint32_t nsgt_visual_quad_capacity;
-    uint32_t nsgt_visual_vertex_buffer_capacity;
-    uint32_t nsgt_visual_index_buffer_capacity;
     //-------------------------------------------------------------------------
     // MISC
     //-------------------------------------------------------------------------

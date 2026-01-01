@@ -235,8 +235,17 @@ void* war_window_render(void* args) {
     const uint32_t stride = physical_width * 4;
     war_vulkan_context* ctx_vk =
         war_pool_alloc(pool_wr, sizeof(war_vulkan_context));
+    war_vulkan_nsgt_compute_context* ctx_nsgt_compute =
+        war_pool_alloc(pool_wr, sizeof(war_vulkan_nsgt_compute_context));
+    war_vulkan_nsgt_visual_context* ctx_nsgt_visual =
+        war_pool_alloc(pool_wr, sizeof(war_vulkan_nsgt_visual_context));
     war_vulkan_init(ctx_vk, ctx_lua, pool_wr, physical_width, physical_height);
     assert(ctx_vk->dmabuf_fd >= 0);
+    war_vulkan_nsgt_compute_init(ctx_nsgt_compute,
+                                 pool_wr,
+                                 ctx_lua,
+                                 ctx_vk->device,
+                                 ctx_vk->physical_device);
     //-------------------------------------------------------------------------
     // COLOR CONTEXT
     //-------------------------------------------------------------------------
@@ -2172,140 +2181,140 @@ cmd_timeout_done:
             //    capture_wav->memfd_size <= 44) {
             //    goto war_label_render_pass;
             //}
-            vkCmdBindPipeline(ctx_vk->cmd_buffer,
-                              VK_PIPELINE_BIND_POINT_COMPUTE,
-                              ctx_vk->nsgt_compute_pipeline);
-            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
-                                    VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    ctx_vk->nsgt_compute_pipeline_layout,
-                                    0,
-                                    1,
-                                    &ctx_vk->nsgt_compute_descriptor_set,
-                                    0,
-                                    NULL);
-            uint32_t nsgt_compute_total_sample_elements =
-                ctx_vk->nsgt_compute_bin_capacity *
-                ctx_vk->nsgt_compute_frame_capacity;
-            VkDeviceSize nsgt_compute_diff_buffer_size =
-                ctx_vk->nsgt_compute_diff_buffer_capacity;
-            uint32_t nsgt_compute_threads_per_group = 64; // local size?
-            uint32_t nsgt_compute_group_count_x =
-                (nsgt_compute_total_sample_elements +
-                 nsgt_compute_threads_per_group - 1) /
-                nsgt_compute_threads_per_group;
-            call_king_terry("nsgt dispatch bins=%u frames=%u groups=%u",
-                            ctx_vk->nsgt_compute_bin_capacity,
-                            ctx_vk->nsgt_compute_frame_capacity,
-                            nsgt_compute_group_count_x);
-            vkCmdDispatch(ctx_vk->cmd_buffer, nsgt_compute_group_count_x, 1, 1);
-            VkBufferMemoryBarrier nsgt_compute_buffer_barriers[6] = {
-                {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                 .dstAccessMask =
-                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .buffer = ctx_vk->nsgt_compute_l_buffer,
-                 .offset = 0,
-                 .size = VK_WHOLE_SIZE},
-                {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                 .dstAccessMask =
-                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .buffer = ctx_vk->nsgt_compute_r_buffer,
-                 .offset = 0,
-                 .size = VK_WHOLE_SIZE},
-                {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                 .dstAccessMask =
-                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .buffer = ctx_vk->nsgt_compute_l_buffer_previous,
-                 .offset = 0,
-                 .size = VK_WHOLE_SIZE},
-                {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                 .dstAccessMask =
-                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .buffer = ctx_vk->nsgt_compute_r_buffer_previous,
-                 .offset = 0,
-                 .size = VK_WHOLE_SIZE},
-                {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                 .dstAccessMask =
-                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .buffer = ctx_vk->nsgt_compute_undo_diff_buffer,
-                 .offset = 0,
-                 .size = VK_WHOLE_SIZE},
-                {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-                 .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                 .dstAccessMask =
-                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                 .buffer = ctx_vk->nsgt_compute_redo_diff_buffer,
-                 .offset = 0,
-                 .size = VK_WHOLE_SIZE},
-            };
-            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-                                     VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 0,
-                                 0,
-                                 NULL,
-                                 6,
-                                 nsgt_compute_buffer_barriers,
-                                 0,
-                                 NULL);
-            VkBufferCopy nsgt_compute_copy_l_buffer = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = nsgt_compute_total_sample_elements * sizeof(float),
-            };
-            VkBufferCopy nsgt_compute_copy_r_buffer = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = nsgt_compute_total_sample_elements * sizeof(float),
-            };
-            VkBufferCopy nsgt_compute_copy_undo_buffer = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = nsgt_compute_diff_buffer_size,
-            };
-            VkBufferCopy nsgt_compute_copy_redo_buffer = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = nsgt_compute_diff_buffer_size,
-            };
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_vk->nsgt_compute_l_buffer,
-                            ctx_vk->nsgt_compute_l_staging_buffer,
-                            1,
-                            &nsgt_compute_copy_l_buffer);
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_vk->nsgt_compute_r_buffer,
-                            ctx_vk->nsgt_compute_r_staging_buffer,
-                            1,
-                            &nsgt_compute_copy_r_buffer);
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_vk->nsgt_compute_undo_diff_buffer,
-                            ctx_vk->nsgt_compute_undo_diff_staging_buffer,
-                            1,
-                            &nsgt_compute_copy_undo_buffer);
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_vk->nsgt_compute_redo_diff_buffer,
-                            ctx_vk->nsgt_compute_redo_diff_staging_buffer,
-                            1,
-                            &nsgt_compute_copy_redo_buffer);
+            // vkCmdBindPipeline(ctx_vk->cmd_buffer,
+            //                  VK_PIPELINE_BIND_POINT_COMPUTE,
+            //                  ctx_vk->nsgt_compute_pipeline);
+            // vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
+            //                        VK_PIPELINE_BIND_POINT_COMPUTE,
+            //                        ctx_vk->nsgt_compute_pipeline_layout,
+            //                        0,
+            //                        1,
+            //                        &ctx_vk->nsgt_compute_descriptor_set,
+            //                        0,
+            //                        NULL);
+            // uint32_t nsgt_compute_total_sample_elements =
+            //    ctx_vk->nsgt_compute_bin_capacity *
+            //    ctx_vk->nsgt_compute_frame_capacity;
+            // VkDeviceSize nsgt_compute_diff_buffer_size =
+            //    ctx_vk->nsgt_compute_diff_buffer_capacity;
+            // uint32_t nsgt_compute_threads_per_group = 64; // local size?
+            // uint32_t nsgt_compute_group_count_x =
+            //    (nsgt_compute_total_sample_elements +
+            //     nsgt_compute_threads_per_group - 1) /
+            //    nsgt_compute_threads_per_group;
+            // call_king_terry("nsgt dispatch bins=%u frames=%u groups=%u",
+            //                ctx_vk->nsgt_compute_bin_capacity,
+            //                ctx_vk->nsgt_compute_frame_capacity,
+            //                nsgt_compute_group_count_x);
+            // vkCmdDispatch(ctx_vk->cmd_buffer, nsgt_compute_group_count_x, 1,
+            // 1); VkBufferMemoryBarrier nsgt_compute_buffer_barriers[6] = {
+            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            //     .dstAccessMask =
+            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .buffer = ctx_vk->nsgt_compute_l_buffer,
+            //     .offset = 0,
+            //     .size = VK_WHOLE_SIZE},
+            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            //     .dstAccessMask =
+            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .buffer = ctx_vk->nsgt_compute_r_buffer,
+            //     .offset = 0,
+            //     .size = VK_WHOLE_SIZE},
+            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            //     .dstAccessMask =
+            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .buffer = ctx_vk->nsgt_compute_l_buffer_previous,
+            //     .offset = 0,
+            //     .size = VK_WHOLE_SIZE},
+            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            //     .dstAccessMask =
+            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .buffer = ctx_vk->nsgt_compute_r_buffer_previous,
+            //     .offset = 0,
+            //     .size = VK_WHOLE_SIZE},
+            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            //     .dstAccessMask =
+            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .buffer = ctx_vk->nsgt_compute_undo_diff_buffer,
+            //     .offset = 0,
+            //     .size = VK_WHOLE_SIZE},
+            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            //     .dstAccessMask =
+            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
+            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            //     .buffer = ctx_vk->nsgt_compute_redo_diff_buffer,
+            //     .offset = 0,
+            //     .size = VK_WHOLE_SIZE},
+            //};
+            // vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
+            //                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            //                     VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+            //                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+            //                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+            //                     0,
+            //                     0,
+            //                     NULL,
+            //                     6,
+            //                     nsgt_compute_buffer_barriers,
+            //                     0,
+            //                     NULL);
+            // VkBufferCopy nsgt_compute_copy_l_buffer = {
+            //    .srcOffset = 0,
+            //    .dstOffset = 0,
+            //    .size = nsgt_compute_total_sample_elements * sizeof(float),
+            //};
+            // VkBufferCopy nsgt_compute_copy_r_buffer = {
+            //    .srcOffset = 0,
+            //    .dstOffset = 0,
+            //    .size = nsgt_compute_total_sample_elements * sizeof(float),
+            //};
+            // VkBufferCopy nsgt_compute_copy_undo_buffer = {
+            //    .srcOffset = 0,
+            //    .dstOffset = 0,
+            //    .size = nsgt_compute_diff_buffer_size,
+            //};
+            // VkBufferCopy nsgt_compute_copy_redo_buffer = {
+            //    .srcOffset = 0,
+            //    .dstOffset = 0,
+            //    .size = nsgt_compute_diff_buffer_size,
+            //};
+            // vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+            //                ctx_vk->nsgt_compute_l_buffer,
+            //                ctx_vk->nsgt_compute_l_staging_buffer,
+            //                1,
+            //                &nsgt_compute_copy_l_buffer);
+            // vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+            //                ctx_vk->nsgt_compute_r_buffer,
+            //                ctx_vk->nsgt_compute_r_staging_buffer,
+            //                1,
+            //                &nsgt_compute_copy_r_buffer);
+            // vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+            //                ctx_vk->nsgt_compute_undo_diff_buffer,
+            //                ctx_vk->nsgt_compute_undo_diff_staging_buffer,
+            //                1,
+            //                &nsgt_compute_copy_undo_buffer);
+            // vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+            //                ctx_vk->nsgt_compute_redo_diff_buffer,
+            //                ctx_vk->nsgt_compute_redo_diff_staging_buffer,
+            //                1,
+            //                &nsgt_compute_copy_redo_buffer);
         war_label_render_pass:
             //-------------------------------------------------------------
             //  RENDER PASS
@@ -3273,24 +3282,24 @@ cmd_timeout_done:
             //    vkInvalidateMappedMemoryRanges(ctx_vk->device, 4,
             //    nsgt_ranges);
             // assert(result == VK_SUCCESS);
-            float* l_buffer_data = (float*)(ctx_vk->nsgt_compute_map_l);
-            float* r_buffer_data = (float*)(ctx_vk->nsgt_compute_map_r);
-            uint32_t* undo_diff_buffer_data =
-                (uint32_t*)(ctx_vk->nsgt_compute_map_undo_diff);
-            uint32_t* redo_diff_buffer_data =
-                (uint32_t*)(ctx_vk->nsgt_compute_map_redo_diff);
-            call_king_terry("l_buffer_data[0]: %f", l_buffer_data[0]);
-            call_king_terry("l_buffer_data[13]: %f", l_buffer_data[13]);
-            call_king_terry("r_buffer_data[0]: %f", r_buffer_data[0]);
-            call_king_terry("r_buffer_data[13]: %f", r_buffer_data[13]);
-            call_king_terry("undo_diff_buffer_data[0]: %u",
-                            undo_diff_buffer_data[0]);
-            call_king_terry("undo_diff_buffer_data[13]: %u",
-                            undo_diff_buffer_data[13]);
-            call_king_terry("redo_diff_buffer_data[0]: %u",
-                            redo_diff_buffer_data[0]);
-            call_king_terry("redo_diff_buffer_data[13]: %u",
-                            redo_diff_buffer_data[13]);
+            // float* l_buffer_data = (float*)(ctx_vk->nsgt_compute_map_l);
+            // float* r_buffer_data = (float*)(ctx_vk->nsgt_compute_map_r);
+            // uint32_t* undo_diff_buffer_data =
+            //    (uint32_t*)(ctx_vk->nsgt_compute_map_undo_diff);
+            // uint32_t* redo_diff_buffer_data =
+            //    (uint32_t*)(ctx_vk->nsgt_compute_map_redo_diff);
+            // call_king_terry("l_buffer_data[0]: %f", l_buffer_data[0]);
+            // call_king_terry("l_buffer_data[13]: %f", l_buffer_data[13]);
+            // call_king_terry("r_buffer_data[0]: %f", r_buffer_data[0]);
+            // call_king_terry("r_buffer_data[13]: %f", r_buffer_data[13]);
+            // call_king_terry("undo_diff_buffer_data[0]: %u",
+            //                undo_diff_buffer_data[0]);
+            // call_king_terry("undo_diff_buffer_data[13]: %u",
+            //                undo_diff_buffer_data[13]);
+            // call_king_terry("redo_diff_buffer_data[0]: %u",
+            //                redo_diff_buffer_data[0]);
+            // call_king_terry("redo_diff_buffer_data[13]: %u",
+            //                redo_diff_buffer_data[13]);
             goto wayland_done;
         }
         wl_display_error:
