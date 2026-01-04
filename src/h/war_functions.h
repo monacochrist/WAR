@@ -133,13 +133,17 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(VK_ATLAS_WIDTH)
     LOAD_INT(VK_GLYPH_COUNT)
     LOAD_INT(VK_MAX_FRAMES)
+    LOAD_INT(VK_ALIGNMENT)
+    // compute
     LOAD_INT(VK_NSGT_BIN_CAPACITY)
     LOAD_INT(VK_NSGT_FRAME_CAPACITY)
-    LOAD_INT(VK_NSGT_DIFF_CAPACITY)
+    LOAD_INT(VK_NSGT_COMPUTE_RESOURCE_COUNT)
+    LOAD_INT(VK_NSGT_FREQUENCY_MIN)
+    LOAD_INT(VK_NSGT_FREQUENCY_MAX)
+    LOAD_INT(VK_NSGT_WINDOW_LENGTH_MIN)
+    // nsgt visual
     LOAD_INT(VK_NSGT_VISUAL_QUAD_CAPACITY)
-    LOAD_INT(VK_ALIGNMENT)
-    LOAD_INT(VK_NSGT_COMPUTE_BUFFER_COUNT)
-    LOAD_INT(VK_NSGT_VISUAL_BUFFER_COUNT)
+    LOAD_INT(VK_NSGT_VISUAL_RESOURCE_COUNT)
     // pool
     LOAD_INT(POOL_ALIGNMENT)
     // cmd
@@ -178,6 +182,9 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_FLOAT(DEFAULT_WINDOWED_CURSOR_ALPHA_SCALE)
     LOAD_FLOAT(DEFAULT_WINDOWED_ALPHA_SCALE)
     LOAD_FLOAT(WR_COLOR_STEP)
+    // vk nsgt
+    LOAD_FLOAT(VK_NSGT_ALPHA)
+    LOAD_FLOAT(VK_NSGT_SHAPE_FACTOR)
 
 #undef LOAD_FLOAT
 
@@ -388,20 +395,36 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(war_status_context);
             else if (strcmp(type, "war_capture_context") == 0)
                 type_size = sizeof(war_capture_context);
+            else if (strcmp(type, "VkMappedMemoryRange") == 0)
+                type_size = sizeof(VkMappedMemoryRange);
+            else if (strcmp(type, "VkBufferMemoryBarrier") == 0)
+                type_size = sizeof(VkBufferMemoryBarrier);
+            else if (strcmp(type, "VkImageMemoryBarrier") == 0)
+                type_size = sizeof(VkImageMemoryBarrier);
             else if (strcmp(type, "war_command_context") == 0)
                 type_size = sizeof(war_command_context);
             else if (strcmp(type, "war_play_context") == 0)
                 type_size = sizeof(war_play_context);
             else if (strcmp(type, "war_audio_context") == 0)
                 type_size = sizeof(war_audio_context);
-            else if (strcmp(type, "war_vulkan_nsgt_compute_context") == 0)
-                type_size = sizeof(war_vulkan_nsgt_compute_context);
-            else if (strcmp(type, "war_vulkan_nsgt_visual_context") == 0)
-                type_size = sizeof(war_vulkan_nsgt_visual_context);
+            else if (strcmp(type, "war_nsgt_context") == 0)
+                type_size = sizeof(war_nsgt_context);
             else if (strcmp(type, "VkMemoryPropertyFlags") == 0)
                 type_size = sizeof(VkMemoryPropertyFlags);
             else if (strcmp(type, "VkDescriptorBufferInfo") == 0)
                 type_size = sizeof(VkDescriptorBufferInfo);
+            else if (strcmp(type, "VkDescriptorImageInfo") == 0)
+                type_size = sizeof(VkDescriptorImageInfo);
+            else if (strcmp(type, "VkImage") == 0)
+                type_size = sizeof(VkImage);
+            else if (strcmp(type, "VkImageView") == 0)
+                type_size = sizeof(VkImageView);
+            else if (strcmp(type, "VkFormat") == 0)
+                type_size = sizeof(VkFormat);
+            else if (strcmp(type, "VkExtent3D") == 0)
+                type_size = sizeof(VkExtent3D);
+            else if (strcmp(type, "VkImageUsageFlags") == 0)
+                type_size = sizeof(VkImageUsageFlags);
             else if (strcmp(type, "VkBufferUsageFlags") == 0)
                 type_size = sizeof(VkBufferUsageFlags);
             else if (strcmp(type, "VkBuffer") == 0)
@@ -1781,624 +1804,6 @@ war_get_ext(const char* file_name, char* ext, uint32_t name_limit) {
     memcpy(ext, ext_start, copy_len);
     ext[copy_len] = '\0';
     return copy_len;
-}
-
-static inline uint8_t war_vulkan_get_shader_module(
-    VkDevice device, VkShaderModule* shader_module, const char* path) {
-    call_king_terry("war_vulkan_get_shader_module");
-    FILE* file = fopen(path, "rb");
-    fseek(file, 0, SEEK_END);
-    size_t size = ftell(file);
-    rewind(file);
-    char* code = malloc(size);
-    fread(code, 1, size, file);
-    fclose(file);
-    VkShaderModuleCreateInfo create_info = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = size,
-        .pCode = (uint32_t*)code};
-    if (vkCreateShaderModule(device, &create_info, NULL, shader_module) !=
-        VK_SUCCESS) {
-        call_king_terry("Failed to create shader module: %s", path);
-        return 0;
-    }
-    free(code);
-    return 1;
-}
-
-static inline void
-war_vulkan_nsgt_compute_init(war_vulkan_nsgt_compute_context* ctx_nsgt_compute,
-                             war_pool* pool_wr,
-                             war_lua_context* ctx_lua,
-                             VkDevice device,
-                             VkPhysicalDevice physical_device) {
-    call_king_terry("war_vulkan_nsgt_compute_init");
-    ctx_nsgt_compute->buffer_count =
-        atomic_load(&ctx_lua->VK_NSGT_COMPUTE_BUFFER_COUNT);
-    ctx_nsgt_compute->bin_capacity =
-        atomic_load(&ctx_lua->VK_NSGT_BIN_CAPACITY);
-    ctx_nsgt_compute->frame_capacity =
-        atomic_load(&ctx_lua->VK_NSGT_FRAME_CAPACITY);
-    ctx_nsgt_compute->sample_rate = atomic_load(&ctx_lua->A_SAMPLE_RATE);
-    ctx_nsgt_compute->sample_duration =
-        atomic_load(&ctx_lua->A_SAMPLE_DURATION);
-    ctx_nsgt_compute->channel_count = atomic_load(&ctx_lua->A_CHANNEL_COUNT);
-    ctx_nsgt_compute->wav_channel_capacity = ctx_nsgt_compute->sample_rate *
-                                             ctx_nsgt_compute->sample_duration *
-                                             sizeof(float);
-    ctx_nsgt_compute->nsgt_channel_capacity = ctx_nsgt_compute->bin_capacity *
-                                              ctx_nsgt_compute->frame_capacity *
-                                              sizeof(float) * 2;
-    ctx_nsgt_compute->magnitude_channel_capacity =
-        ctx_nsgt_compute->bin_capacity * ctx_nsgt_compute->frame_capacity *
-        sizeof(float);
-    ctx_nsgt_compute->memory_property_flags = war_pool_alloc(
-        pool_wr,
-        sizeof(VkMemoryPropertyFlags) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->usage_flags = war_pool_alloc(
-        pool_wr, sizeof(VkBufferUsageFlags) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->buffer = war_pool_alloc(
-        pool_wr, sizeof(VkBuffer) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->memory_requirements = war_pool_alloc(
-        pool_wr, sizeof(VkMemoryRequirements) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->device_memory = war_pool_alloc(
-        pool_wr, sizeof(VkDeviceMemory) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->map =
-        war_pool_alloc(pool_wr, sizeof(void*) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->capacity = war_pool_alloc(
-        pool_wr, sizeof(VkDeviceSize) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->descriptor_buffer_info = war_pool_alloc(
-        pool_wr,
-        sizeof(VkDescriptorBufferInfo) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->shader_stage_flags = war_pool_alloc(
-        pool_wr, sizeof(VkShaderStageFlags) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->descriptor_set_layout_binding = war_pool_alloc(
-        pool_wr,
-        sizeof(VkDescriptorSetLayoutBinding) * ctx_nsgt_compute->buffer_count);
-    ctx_nsgt_compute->write_descriptor_set = war_pool_alloc(
-        pool_wr, sizeof(VkWriteDescriptorSet) * ctx_nsgt_compute->buffer_count);
-    //-------------------------------------------------------------------------
-    // CONFIG
-    //-------------------------------------------------------------------------
-    // device local
-    ctx_nsgt_compute->idx_l = 0;
-    ctx_nsgt_compute->idx_r = 1;
-    ctx_nsgt_compute->idx_l_nsgt_temp = 2;
-    ctx_nsgt_compute->idx_r_nsgt_temp = 3;
-    ctx_nsgt_compute->idx_l_nsgt = 4;
-    ctx_nsgt_compute->idx_r_nsgt = 5;
-    ctx_nsgt_compute->idx_l_magnitude = 6;
-    ctx_nsgt_compute->idx_r_magnitude = 7;
-    // stage
-    ctx_nsgt_compute->idx_l_stage = ctx_nsgt_compute->buffer_count - 1;
-    ctx_nsgt_compute->idx_r_stage = ctx_nsgt_compute->buffer_count - 2;
-    // l
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_l] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_l] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->shader_stage_flags[ctx_nsgt_compute->idx_l] =
-        VK_SHADER_STAGE_COMPUTE_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_l] =
-        ctx_nsgt_compute->wav_channel_capacity;
-    // r
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_r] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_r] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->shader_stage_flags[ctx_nsgt_compute->idx_r] =
-        VK_SHADER_STAGE_COMPUTE_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_r] =
-        ctx_nsgt_compute->wav_channel_capacity;
-    // l_nsgt_temp
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_l_nsgt_temp] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_l_nsgt_temp] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->shader_stage_flags[ctx_nsgt_compute->idx_l_nsgt_temp] =
-        VK_SHADER_STAGE_COMPUTE_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_l_nsgt_temp] =
-        ctx_nsgt_compute->nsgt_channel_capacity;
-    // r_nsgt_temp
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_r_nsgt_temp] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_r_nsgt_temp] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->shader_stage_flags[ctx_nsgt_compute->idx_r_nsgt_temp] =
-        VK_SHADER_STAGE_COMPUTE_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_r_nsgt_temp] =
-        ctx_nsgt_compute->nsgt_channel_capacity;
-    // l_nsgt
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_l_nsgt] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_l_nsgt] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->shader_stage_flags[ctx_nsgt_compute->idx_l_nsgt] =
-        VK_SHADER_STAGE_COMPUTE_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_l_nsgt] =
-        ctx_nsgt_compute->nsgt_channel_capacity;
-    // r_nsgt
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_r_nsgt] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_r_nsgt] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->shader_stage_flags[ctx_nsgt_compute->idx_r_nsgt] =
-        VK_SHADER_STAGE_COMPUTE_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_r_nsgt] =
-        ctx_nsgt_compute->nsgt_channel_capacity;
-    // l_magnitude
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_l_magnitude] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_l_magnitude] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->shader_stage_flags[ctx_nsgt_compute->idx_l_magnitude] =
-        VK_SHADER_STAGE_COMPUTE_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_l_magnitude] =
-        ctx_nsgt_compute->magnitude_channel_capacity;
-    // r_magnitude
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_r_magnitude] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_r_magnitude] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->shader_stage_flags[ctx_nsgt_compute->idx_r_magnitude] =
-        VK_SHADER_STAGE_COMPUTE_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_r_magnitude] =
-        ctx_nsgt_compute->magnitude_channel_capacity;
-    // l_stage
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_l_stage] =
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_l_stage] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_l_stage] =
-        ctx_nsgt_compute->wav_channel_capacity;
-    // r_stage
-    ctx_nsgt_compute->memory_property_flags[ctx_nsgt_compute->idx_r_stage] =
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-    ctx_nsgt_compute->usage_flags[ctx_nsgt_compute->idx_r_stage] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_compute->capacity[ctx_nsgt_compute->idx_r_stage] =
-        ctx_nsgt_compute->wav_channel_capacity;
-    VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(physical_device,
-                                        &physical_device_memory_properties);
-    ctx_nsgt_compute->descriptor_count = 0;
-    VkResult result;
-    for (VkDeviceSize i = 0; i < ctx_nsgt_compute->buffer_count; i++) {
-        VkMemoryPropertyFlags memory_property_flags =
-            ctx_nsgt_compute->memory_property_flags[i];
-        uint8_t device_local =
-            (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
-        VkBufferCreateInfo buffer_create_info = {0};
-        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_create_info.size = ctx_nsgt_compute->capacity[i];
-        buffer_create_info.usage = ctx_nsgt_compute->usage_flags[i];
-        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        result = vkCreateBuffer(
-            device, &buffer_create_info, NULL, &ctx_nsgt_compute->buffer[i]);
-        assert(result == VK_SUCCESS);
-        vkGetBufferMemoryRequirements(
-            device,
-            ctx_nsgt_compute->buffer[i],
-            &ctx_nsgt_compute->memory_requirements[i]);
-        uint32_t memory_type_index = UINT32_MAX;
-        VkMemoryRequirements memory_requirements =
-            ctx_nsgt_compute->memory_requirements[i];
-        for (uint32_t j = 0;
-             j < physical_device_memory_properties.memoryTypeCount;
-             j++) {
-            if ((memory_requirements.memoryTypeBits & (1 << j)) &&
-                (physical_device_memory_properties.memoryTypes[j]
-                     .propertyFlags &
-                 ctx_nsgt_compute->memory_property_flags[i]) ==
-                    ctx_nsgt_compute->memory_property_flags[i]) {
-                memory_type_index = j;
-                break;
-            }
-        }
-        assert(memory_type_index != UINT32_MAX);
-        VkMemoryAllocateInfo memory_allocate_info = {0};
-        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocate_info.allocationSize = memory_requirements.size;
-        memory_allocate_info.memoryTypeIndex = memory_type_index;
-        result = vkAllocateMemory(device,
-                                  &memory_allocate_info,
-                                  NULL,
-                                  &ctx_nsgt_compute->device_memory[i]);
-        assert(result == VK_SUCCESS);
-        result = vkBindBufferMemory(device,
-                                    ctx_nsgt_compute->buffer[i],
-                                    ctx_nsgt_compute->device_memory[i],
-                                    0);
-        assert(result == VK_SUCCESS);
-        if (!device_local) {
-            result = vkMapMemory(device,
-                                 ctx_nsgt_compute->device_memory[i],
-                                 0,
-                                 ctx_nsgt_compute->capacity[i],
-                                 0,
-                                 &ctx_nsgt_compute->map[i]);
-            assert(result == VK_SUCCESS);
-            continue;
-        }
-        VkDescriptorBufferInfo* descriptor_buffer_info =
-            ctx_nsgt_compute->descriptor_buffer_info;
-        descriptor_buffer_info[ctx_nsgt_compute->descriptor_count].buffer =
-            ctx_nsgt_compute->buffer[ctx_nsgt_compute->descriptor_count];
-        descriptor_buffer_info[ctx_nsgt_compute->descriptor_count].offset = 0;
-        descriptor_buffer_info[ctx_nsgt_compute->descriptor_count].range =
-            ctx_nsgt_compute->capacity[ctx_nsgt_compute->descriptor_count];
-        VkShaderStageFlags* shader_stage_flags =
-            ctx_nsgt_compute->shader_stage_flags;
-        VkDescriptorSetLayoutBinding* descriptor_set_layout_binding =
-            ctx_nsgt_compute->descriptor_set_layout_binding;
-        VkWriteDescriptorSet* write_descriptor_set =
-            ctx_nsgt_compute->write_descriptor_set;
-        descriptor_set_layout_binding[ctx_nsgt_compute->descriptor_count]
-            .binding = ctx_nsgt_compute->descriptor_count;
-        descriptor_set_layout_binding[ctx_nsgt_compute->descriptor_count]
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptor_set_layout_binding[ctx_nsgt_compute->descriptor_count]
-            .descriptorCount = 1;
-        descriptor_set_layout_binding[ctx_nsgt_compute->descriptor_count]
-            .stageFlags =
-            shader_stage_flags[ctx_nsgt_compute->descriptor_count];
-        write_descriptor_set[ctx_nsgt_compute->descriptor_count].sType =
-            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write_descriptor_set[ctx_nsgt_compute->descriptor_count].dstBinding =
-            ctx_nsgt_compute->descriptor_count;
-        write_descriptor_set[ctx_nsgt_compute->descriptor_count]
-            .descriptorCount = 1;
-        write_descriptor_set[ctx_nsgt_compute->descriptor_count]
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write_descriptor_set[ctx_nsgt_compute->descriptor_count].pBufferInfo =
-            &descriptor_buffer_info[ctx_nsgt_compute->descriptor_count];
-        ctx_nsgt_compute->descriptor_count++;
-    }
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = ctx_nsgt_compute->descriptor_count,
-        .pBindings = ctx_nsgt_compute->descriptor_set_layout_binding,
-    };
-    result =
-        vkCreateDescriptorSetLayout(device,
-                                    &descriptor_set_layout_create_info,
-                                    NULL,
-                                    &ctx_nsgt_compute->descriptor_set_layout);
-    assert(result == VK_SUCCESS);
-    VkDescriptorPoolSize descriptor_pool_size[1] = {
-        (VkDescriptorPoolSize){
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = ctx_nsgt_compute->descriptor_count,
-        },
-    };
-    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = 1,
-        .pPoolSizes = descriptor_pool_size,
-        .maxSets = 1,
-    };
-    result = vkCreateDescriptorPool(device,
-                                    &descriptor_pool_create_info,
-                                    NULL,
-                                    &ctx_nsgt_compute->descriptor_pool);
-    assert(result == VK_SUCCESS);
-    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = ctx_nsgt_compute->descriptor_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &ctx_nsgt_compute->descriptor_set_layout,
-    };
-    result = vkAllocateDescriptorSets(device,
-                                      &descriptor_set_allocate_info,
-                                      &ctx_nsgt_compute->descriptor_set);
-    assert(result == VK_SUCCESS);
-    for (VkDeviceSize i = 0; i < ctx_nsgt_compute->descriptor_count; i++) {
-        ctx_nsgt_compute->write_descriptor_set[i].dstSet =
-            ctx_nsgt_compute->descriptor_set;
-    }
-    vkUpdateDescriptorSets(device,
-                           ctx_nsgt_compute->descriptor_count,
-                           ctx_nsgt_compute->write_descriptor_set,
-                           0,
-                           NULL);
-    uint8_t fn_result =
-        war_vulkan_get_shader_module(device,
-                                     &ctx_nsgt_compute->compute_shader,
-                                     "build/spv/war_nsgt_compute.spv");
-    assert(fn_result);
-    VkPushConstantRange push_constant_range = {
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        .offset = 0,
-        .size = sizeof(war_vulkan_nsgt_compute_push_constants), // todo add
-    };
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &ctx_nsgt_compute->descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &push_constant_range,
-    };
-    result = vkCreatePipelineLayout(device,
-                                    &pipeline_layout_create_info,
-                                    NULL,
-                                    &ctx_nsgt_compute->pipeline_layout);
-    assert(result == VK_SUCCESS);
-    VkComputePipelineCreateInfo compute_pipeline_create_info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage =
-            (VkPipelineShaderStageCreateInfo){
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = ctx_nsgt_compute->compute_shader,
-                .pName = "main",
-            },
-        .layout = ctx_nsgt_compute->pipeline_layout,
-    };
-    result = vkCreateComputePipelines(device,
-                                      VK_NULL_HANDLE,
-                                      1,
-                                      &compute_pipeline_create_info,
-                                      NULL,
-                                      &ctx_nsgt_compute->pipeline);
-    assert(result == VK_SUCCESS);
-}
-
-static inline void
-war_vulkan_nsgt_visual_init(war_vulkan_nsgt_visual_context* ctx_nsgt_visual,
-                            war_pool* pool_wr,
-                            war_lua_context* ctx_lua,
-                            VkDevice device,
-                            VkPhysicalDevice physical_device) {
-    call_king_terry("war_vulkan_nsgt_compute_init");
-    ctx_nsgt_visual->buffer_count =
-        atomic_load(&ctx_lua->VK_NSGT_VISUAL_BUFFER_COUNT);
-    ctx_nsgt_visual->quad_capacity =
-        atomic_load(&ctx_lua->VK_NSGT_VISUAL_QUAD_CAPACITY);
-    ctx_nsgt_visual->vertex_capacity = ctx_nsgt_visual->quad_capacity * 4 *
-                                       sizeof(war_vulkan_nsgt_visual_vertex);
-    ctx_nsgt_visual->index_capacity =
-        ctx_nsgt_visual->quad_capacity * 6 * sizeof(uint32_t);
-    ctx_nsgt_visual->memory_property_flags = war_pool_alloc(
-        pool_wr, sizeof(VkMemoryPropertyFlags) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->usage_flags = war_pool_alloc(
-        pool_wr, sizeof(VkBufferUsageFlags) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->buffer = war_pool_alloc(
-        pool_wr, sizeof(VkBuffer) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->memory_requirements = war_pool_alloc(
-        pool_wr, sizeof(VkMemoryRequirements) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->device_memory = war_pool_alloc(
-        pool_wr, sizeof(VkDeviceMemory) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->map =
-        war_pool_alloc(pool_wr, sizeof(void*) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->capacity = war_pool_alloc(
-        pool_wr, sizeof(VkDeviceSize) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->descriptor_buffer_info = war_pool_alloc(
-        pool_wr,
-        sizeof(VkDescriptorBufferInfo) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->shader_stage_flags = war_pool_alloc(
-        pool_wr, sizeof(VkShaderStageFlags) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->descriptor_set_layout_binding = war_pool_alloc(
-        pool_wr,
-        sizeof(VkDescriptorSetLayoutBinding) * ctx_nsgt_visual->buffer_count);
-    ctx_nsgt_visual->write_descriptor_set = war_pool_alloc(
-        pool_wr, sizeof(VkWriteDescriptorSet) * ctx_nsgt_visual->buffer_count);
-    //-------------------------------------------------------------------------
-    // CONFIG
-    //-------------------------------------------------------------------------
-    // device local
-    ctx_nsgt_visual->idx_vertex = 0;
-    ctx_nsgt_visual->idx_index = 1;
-    // vertex
-    ctx_nsgt_visual->memory_property_flags[ctx_nsgt_visual->idx_vertex] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_visual->usage_flags[ctx_nsgt_visual->idx_vertex] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_visual->shader_stage_flags[ctx_nsgt_visual->idx_vertex] =
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    ctx_nsgt_visual->capacity[ctx_nsgt_visual->idx_vertex] =
-        ctx_nsgt_visual->vertex_capacity;
-    // index
-    ctx_nsgt_visual->memory_property_flags[ctx_nsgt_visual->idx_index] =
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    ctx_nsgt_visual->usage_flags[ctx_nsgt_visual->idx_index] =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    ctx_nsgt_visual->shader_stage_flags[ctx_nsgt_visual->idx_index] =
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    ctx_nsgt_visual->capacity[ctx_nsgt_visual->idx_index] =
-        ctx_nsgt_visual->index_capacity;
-    VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
-    vkGetPhysicalDeviceMemoryProperties(physical_device,
-                                        &physical_device_memory_properties);
-    ctx_nsgt_visual->descriptor_count = 0;
-    VkResult result;
-    for (VkDeviceSize i = 0; i < ctx_nsgt_visual->buffer_count; i++) {
-        VkMemoryPropertyFlags memory_property_flags =
-            ctx_nsgt_visual->memory_property_flags[i];
-        uint8_t device_local =
-            (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
-        VkBufferCreateInfo buffer_create_info = {0};
-        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_create_info.size = ctx_nsgt_visual->capacity[i];
-        buffer_create_info.usage = ctx_nsgt_visual->usage_flags[i];
-        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        result = vkCreateBuffer(
-            device, &buffer_create_info, NULL, &ctx_nsgt_visual->buffer[i]);
-        assert(result == VK_SUCCESS);
-        vkGetBufferMemoryRequirements(device,
-                                      ctx_nsgt_visual->buffer[i],
-                                      &ctx_nsgt_visual->memory_requirements[i]);
-        uint32_t memory_type_index = UINT32_MAX;
-        VkMemoryRequirements memory_requirements =
-            ctx_nsgt_visual->memory_requirements[i];
-        for (uint32_t j = 0;
-             j < physical_device_memory_properties.memoryTypeCount;
-             j++) {
-            if ((memory_requirements.memoryTypeBits & (1 << j)) &&
-                (physical_device_memory_properties.memoryTypes[j]
-                     .propertyFlags &
-                 ctx_nsgt_visual->memory_property_flags[i]) ==
-                    ctx_nsgt_visual->memory_property_flags[i]) {
-                memory_type_index = j;
-                break;
-            }
-        }
-        assert(memory_type_index != UINT32_MAX);
-        VkMemoryAllocateInfo memory_allocate_info = {0};
-        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocate_info.allocationSize = memory_requirements.size;
-        memory_allocate_info.memoryTypeIndex = memory_type_index;
-        result = vkAllocateMemory(device,
-                                  &memory_allocate_info,
-                                  NULL,
-                                  &ctx_nsgt_visual->device_memory[i]);
-        assert(result == VK_SUCCESS);
-        result = vkBindBufferMemory(device,
-                                    ctx_nsgt_visual->buffer[i],
-                                    ctx_nsgt_visual->device_memory[i],
-                                    0);
-        assert(result == VK_SUCCESS);
-        if (!device_local) {
-            result = vkMapMemory(device,
-                                 ctx_nsgt_visual->device_memory[i],
-                                 0,
-                                 ctx_nsgt_visual->capacity[i],
-                                 0,
-                                 &ctx_nsgt_visual->map[i]);
-            assert(result == VK_SUCCESS);
-            continue;
-        }
-        VkDescriptorBufferInfo* descriptor_buffer_info =
-            ctx_nsgt_visual->descriptor_buffer_info;
-        descriptor_buffer_info[ctx_nsgt_visual->descriptor_count].buffer =
-            ctx_nsgt_visual->buffer[ctx_nsgt_visual->descriptor_count];
-        descriptor_buffer_info[ctx_nsgt_visual->descriptor_count].offset = 0;
-        descriptor_buffer_info[ctx_nsgt_visual->descriptor_count].range =
-            ctx_nsgt_visual->capacity[ctx_nsgt_visual->descriptor_count];
-        VkShaderStageFlags* shader_stage_flags =
-            ctx_nsgt_visual->shader_stage_flags;
-        VkDescriptorSetLayoutBinding* descriptor_set_layout_binding =
-            ctx_nsgt_visual->descriptor_set_layout_binding;
-        VkWriteDescriptorSet* write_descriptor_set =
-            ctx_nsgt_visual->write_descriptor_set;
-        descriptor_set_layout_binding[ctx_nsgt_visual->descriptor_count]
-            .binding = ctx_nsgt_visual->descriptor_count;
-        descriptor_set_layout_binding[ctx_nsgt_visual->descriptor_count]
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptor_set_layout_binding[ctx_nsgt_visual->descriptor_count]
-            .descriptorCount = 1;
-        descriptor_set_layout_binding[ctx_nsgt_visual->descriptor_count]
-            .stageFlags = shader_stage_flags[ctx_nsgt_visual->descriptor_count];
-        write_descriptor_set[ctx_nsgt_visual->descriptor_count].sType =
-            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write_descriptor_set[ctx_nsgt_visual->descriptor_count].dstBinding =
-            ctx_nsgt_visual->descriptor_count;
-        write_descriptor_set[ctx_nsgt_visual->descriptor_count]
-            .descriptorCount = 1;
-        write_descriptor_set[ctx_nsgt_visual->descriptor_count].descriptorType =
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write_descriptor_set[ctx_nsgt_visual->descriptor_count].pBufferInfo =
-            &descriptor_buffer_info[ctx_nsgt_visual->descriptor_count];
-        ctx_nsgt_visual->descriptor_count++;
-    }
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = ctx_nsgt_visual->descriptor_count,
-        .pBindings = ctx_nsgt_visual->descriptor_set_layout_binding,
-    };
-    result =
-        vkCreateDescriptorSetLayout(device,
-                                    &descriptor_set_layout_create_info,
-                                    NULL,
-                                    &ctx_nsgt_visual->descriptor_set_layout);
-    assert(result == VK_SUCCESS);
-    VkDescriptorPoolSize descriptor_pool_size[1] = {
-        (VkDescriptorPoolSize){
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = ctx_nsgt_visual->descriptor_count,
-        },
-    };
-    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = 1,
-        .pPoolSizes = descriptor_pool_size,
-        .maxSets = 1,
-    };
-    result = vkCreateDescriptorPool(device,
-                                    &descriptor_pool_create_info,
-                                    NULL,
-                                    &ctx_nsgt_visual->descriptor_pool);
-    assert(result == VK_SUCCESS);
-    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = ctx_nsgt_visual->descriptor_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &ctx_nsgt_visual->descriptor_set_layout,
-    };
-    result = vkAllocateDescriptorSets(device,
-                                      &descriptor_set_allocate_info,
-                                      &ctx_nsgt_visual->descriptor_set);
-    assert(result == VK_SUCCESS);
-    for (VkDeviceSize i = 0; i < ctx_nsgt_visual->descriptor_count; i++) {
-        ctx_nsgt_visual->write_descriptor_set[i].dstSet =
-            ctx_nsgt_visual->descriptor_set;
-    }
-    vkUpdateDescriptorSets(device,
-                           ctx_nsgt_visual->descriptor_count,
-                           ctx_nsgt_visual->write_descriptor_set,
-                           0,
-                           NULL);
-    uint8_t fn_result =
-        war_vulkan_get_shader_module(device,
-                                     &ctx_nsgt_visual->compute_shader,
-                                     "build/spv/war_nsgt_compute.spv");
-    assert(fn_result);
-    VkPushConstantRange push_constant_range = {
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        .offset = 0,
-        .size = sizeof(war_vulkan_nsgt_compute_push_constants), // todo add
-    };
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &ctx_nsgt_visual->descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &push_constant_range,
-    };
-    result = vkCreatePipelineLayout(device,
-                                    &pipeline_layout_create_info,
-                                    NULL,
-                                    &ctx_nsgt_visual->pipeline_layout);
-    assert(result == VK_SUCCESS);
-    VkComputePipelineCreateInfo compute_pipeline_create_info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage =
-            (VkPipelineShaderStageCreateInfo){
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = ctx_nsgt_visual->compute_shader,
-                .pName = "main",
-            },
-        .layout = ctx_nsgt_visual->pipeline_layout,
-    };
-    result = vkCreateComputePipelines(device,
-                                      VK_NULL_HANDLE,
-                                      1,
-                                      &compute_pipeline_create_info,
-                                      NULL,
-                                      &ctx_nsgt_visual->pipeline);
-    assert(result == VK_SUCCESS);
 }
 
 #endif // WAR_FUNCTIONS_H

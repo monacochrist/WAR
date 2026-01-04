@@ -14,8 +14,8 @@ build.zig
 /build/
 .cache/
 
-# todo
-todo.md
+# todo or markdown
+*.md
 
 # music
 *.wav

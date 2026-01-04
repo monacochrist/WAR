@@ -22,5 +22,8 @@
 
 #version 450
 
+layout(r32f, binding = 16) uniform readonly image2D l_image;
+layout(r32f, binding = 17) uniform readonly image2D r_image;
+
 void main() {
 }

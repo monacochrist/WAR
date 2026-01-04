@@ -413,13 +413,21 @@ typedef struct war_lua_context {
     _Atomic float VK_FONT_PIXEL_HEIGHT;
     _Atomic int VK_MAX_FRAMES;
     _Atomic int VK_GLYPH_COUNT;
+    _Atomic int VK_NSGT_DIFF_CAPACITY;
+    _Atomic int VK_ALIGNMENT;
+    // nsgt compute
     _Atomic int VK_NSGT_BIN_CAPACITY;
     _Atomic int VK_NSGT_FRAME_CAPACITY;
-    _Atomic int VK_NSGT_DIFF_CAPACITY;
+    _Atomic int VK_NSGT_COMPUTE_RESOURCE_COUNT;
+    // nsgt visual
     _Atomic int VK_NSGT_VISUAL_QUAD_CAPACITY;
-    _Atomic int VK_ALIGNMENT;
-    _Atomic int VK_NSGT_COMPUTE_BUFFER_COUNT;
-    _Atomic int VK_NSGT_VISUAL_BUFFER_COUNT;
+    _Atomic int VK_NSGT_VISUAL_RESOURCE_COUNT;
+    _Atomic int VK_NSGT_FREQUENCY_MIN;
+    _Atomic int VK_NSGT_FREQUENCY_MAX;
+    _Atomic float VK_NSGT_ALPHA;
+    _Atomic float VK_NSGT_SHAPE_FACTOR;
+    _Atomic int VK_NSGT_WINDOW_LENGTH_MIN;
+
     // misc
     _Atomic float DEFAULT_ALPHA_SCALE;
     _Atomic float DEFAULT_CURSOR_ALPHA_SCALE;
@@ -946,7 +954,7 @@ typedef struct war_text_instance {
     uint32_t flags;
 } war_text_instance;
 
-typedef struct war_text_push_constants {
+typedef struct war_text_push_constant {
     float bottom_left[2];
     float physical_size[2];
     float cell_size[2];
@@ -961,7 +969,7 @@ typedef struct war_text_push_constants {
     float line_gap;
     float baseline;
     float font_height;
-} war_text_push_constants;
+} war_text_push_constant;
 
 typedef enum war_quad_flags {
     QUAD_LINE = 1 << 0,
@@ -988,7 +996,7 @@ typedef struct war_quad_instance {
     uint32_t flags;
 } war_quad_instance;
 
-typedef struct war_quad_push_constants {
+typedef struct war_quad_push_constant {
     float bottom_left[2];
     float physical_size[2];
     float cell_size[2];
@@ -999,10 +1007,9 @@ typedef struct war_quad_push_constants {
     float anchor_cell[2];
     float top_right[2];
     uint32_t _pad2[2];
-} war_quad_push_constants;
+} war_quad_push_constant;
 
-// compute
-typedef struct war_vulkan_nsgt_compute_push_constants {
+typedef struct war_nsgt_compute_push_constant {
     int operation_type;
     int channel;
     int bin_start;
@@ -1011,10 +1018,9 @@ typedef struct war_vulkan_nsgt_compute_push_constants {
     int frame_end;
     float param1;
     float param2;
-} war_vulkan_nsgt_compute_push_constants;
+} war_nsgt_compute_push_constant;
 
-// visual
-typedef struct war_vulkan_nsgt_visual_push_constants {
+typedef struct war_nsgt_graphics_push_constant {
     int channel;
     int blend;
     int _pad1[2];
@@ -1027,90 +1033,93 @@ typedef struct war_vulkan_nsgt_visual_push_constants {
     int num_frames;
     int bin_capacity;
     int frame_capacity;
-} war_vulkan_nsgt_visual_push_constants;
+} war_nsgt_graphics_push_constant;
 
-typedef struct war_vulkan_nsgt_visual_vertex {
-    float uv[2];
-    float pos[3];
-} war_vulkan_nsgt_visual_vertex;
-
-typedef struct war_vulkan_nsgt_compute_context {
+typedef struct war_nsgt_context {
     // pipeline
-    VkPipeline pipeline;
-    VkPipelineLayout pipeline_layout;
+    VkPipeline compute_pipeline;
+    VkPipelineLayout compute_pipeline_layout;
+    VkPipeline graphics_pipeline;
+    VkPipelineLayout graphics_pipeline_layout;
     // shaders
     VkShaderModule compute_shader;
-    // buffers
-    uint32_t idx_l_stage;
-    uint32_t idx_r_stage;
+    VkShaderModule vertex_shader;
+    VkShaderModule fragment_shader;
+    // resources
+    uint32_t idx_offset;
+    uint32_t idx_hop;
+    uint32_t idx_length;
+    uint32_t idx_window;
+    uint32_t idx_dual_window;
+    uint32_t idx_frequency;
     uint32_t idx_l;
     uint32_t idx_r;
     uint32_t idx_l_nsgt_temp;
     uint32_t idx_r_nsgt_temp;
     uint32_t idx_l_nsgt;
     uint32_t idx_r_nsgt;
+    uint32_t idx_l_magnitude_temp;
+    uint32_t idx_r_magnitude_temp;
     uint32_t idx_l_magnitude;
     uint32_t idx_r_magnitude;
+    uint32_t idx_l_image;
+    uint32_t idx_r_image;
+    uint32_t idx_l_stage;
+    uint32_t idx_r_stage;
+    uint32_t idx_offset_stage;
+    uint32_t idx_hop_stage;
+    uint32_t idx_length_stage;
+    uint32_t idx_window_stage;
+    uint32_t idx_dual_window_stage;
+    uint32_t idx_frequency_stage;
+    VkDeviceSize* capacity;
+    VkMemoryRequirements* memory_requirements;
+    void** map;
+    VkDeviceMemory* device_memory;
     VkMemoryPropertyFlags* memory_property_flags;
     VkBufferUsageFlags* usage_flags;
     VkBuffer* buffer;
-    VkMemoryRequirements* memory_requirements;
-    VkDeviceMemory* device_memory;
-    void** map;
-    VkDeviceSize* capacity;
-    VkDeviceSize buffer_count;
+    VkImage* image;
+    VkImageView* image_view;
+    VkFormat* format;
+    VkExtent3D* extent_3d;
+    VkImageUsageFlags* image_usage_flags;
+    VkDeviceSize resource_count;
     // descriptor set
     VkShaderStageFlags* shader_stage_flags;
     VkDescriptorBufferInfo* descriptor_buffer_info;
+    VkDescriptorImageInfo* descriptor_image_info;
     VkDescriptorSetLayoutBinding* descriptor_set_layout_binding;
     VkWriteDescriptorSet* write_descriptor_set;
     VkDescriptorSet descriptor_set;
     VkDescriptorSetLayout descriptor_set_layout;
     VkDescriptorPool descriptor_pool;
     VkDeviceSize descriptor_count;
-    // capacities
+    VkDeviceSize descriptor_image_count;
+    // logic
+    VkMappedMemoryRange* mapped_memory_range;
+    VkBufferMemoryBarrier* buffer_memory_barrier;
+    VkImageMemoryBarrier* image_memory_barrier;
+    // misc
+    float alpha;
+    float shape_factor;
+    uint32_t window_length_min;
     VkDeviceSize bin_capacity;
     VkDeviceSize frame_capacity;
     VkDeviceSize sample_rate;
     VkDeviceSize sample_duration;
+    VkDeviceSize frequency_min;
+    VkDeviceSize frequency_max;
     VkDeviceSize channel_count;
     VkDeviceSize wav_channel_capacity;
     VkDeviceSize nsgt_channel_capacity;
     VkDeviceSize magnitude_channel_capacity;
-} war_vulkan_nsgt_compute_context;
-
-typedef struct war_vulkan_nsgt_visual_context {
-    // pipeline
-    VkPipeline pipeline;
-    VkPipelineLayout pipeline_layout;
-    // shaders
-    VkShaderModule vertex_shader;
-    VkShaderModule fragment_shader;
-    // buffers
-    uint32_t idx_vertex;
-    uint32_t idx_index;
-    VkMemoryPropertyFlags* memory_property_flags;
-    VkBufferUsageFlags* usage_flags;
-    VkBuffer* buffer;
-    VkMemoryRequirements* memory_requirements;
-    VkDeviceMemory* device_memory;
-    void** map;
-    VkDeviceSize* capacity;
-    VkDeviceSize buffer_count;
-    // descriptor set
-    VkShaderStageFlags* shader_stage_flags;
-    VkDescriptorBufferInfo* descriptor_buffer_info;
-    VkDescriptorSetLayoutBinding* descriptor_set_layout_binding;
-    VkWriteDescriptorSet* write_descriptor_set;
-    VkDescriptorSet descriptor_set;
-    VkDescriptorSetLayout descriptor_set_layout;
-    VkDescriptorPool descriptor_pool;
-    VkDeviceSize descriptor_count;
-    // capacities
-    VkDeviceSize quad_capacity;
-    VkDeviceSize vertex_capacity;
-    VkDeviceSize index_capacity;
-} war_vulkan_nsgt_visual_context;
+    VkDeviceSize offset_capacity;
+    VkDeviceSize length_capacity;
+    VkDeviceSize window_capacity;
+    VkDeviceSize frequency_capacity;
+    VkDeviceSize hop_capacity;
+} war_nsgt_context;
 
 typedef struct war_vulkan_context {
     //-------------------------------------------------------------------------

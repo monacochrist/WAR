@@ -235,17 +235,16 @@ void* war_window_render(void* args) {
     const uint32_t stride = physical_width * 4;
     war_vulkan_context* ctx_vk =
         war_pool_alloc(pool_wr, sizeof(war_vulkan_context));
-    war_vulkan_nsgt_compute_context* ctx_nsgt_compute =
-        war_pool_alloc(pool_wr, sizeof(war_vulkan_nsgt_compute_context));
-    war_vulkan_nsgt_visual_context* ctx_nsgt_visual =
-        war_pool_alloc(pool_wr, sizeof(war_vulkan_nsgt_visual_context));
     war_vulkan_init(ctx_vk, ctx_lua, pool_wr, physical_width, physical_height);
     assert(ctx_vk->dmabuf_fd >= 0);
-    war_vulkan_nsgt_compute_init(ctx_nsgt_compute,
-                                 pool_wr,
-                                 ctx_lua,
-                                 ctx_vk->device,
-                                 ctx_vk->physical_device);
+    war_nsgt_context* ctx_nsgt =
+        war_pool_alloc(pool_wr, sizeof(war_nsgt_context));
+    war_nsgt_init(ctx_nsgt,
+                  pool_wr,
+                  ctx_lua,
+                  ctx_vk->device,
+                  ctx_vk->physical_device,
+                  ctx_vk->render_pass);
     //-------------------------------------------------------------------------
     // COLOR CONTEXT
     //-------------------------------------------------------------------------
@@ -2174,147 +2173,319 @@ cmd_timeout_done:
             //-----------------------------------------------------------------
             // NSGT COMPUTE PIPELINE
             //-----------------------------------------------------------------
-            // if ((ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
-            //     ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
-            //     ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
-            //     ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE) ||
-            //    capture_wav->memfd_size <= 44) {
-            //    goto war_label_render_pass;
-            //}
-            // vkCmdBindPipeline(ctx_vk->cmd_buffer,
-            //                  VK_PIPELINE_BIND_POINT_COMPUTE,
-            //                  ctx_vk->nsgt_compute_pipeline);
-            // vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
-            //                        VK_PIPELINE_BIND_POINT_COMPUTE,
-            //                        ctx_vk->nsgt_compute_pipeline_layout,
-            //                        0,
-            //                        1,
-            //                        &ctx_vk->nsgt_compute_descriptor_set,
-            //                        0,
-            //                        NULL);
-            // uint32_t nsgt_compute_total_sample_elements =
-            //    ctx_vk->nsgt_compute_bin_capacity *
-            //    ctx_vk->nsgt_compute_frame_capacity;
-            // VkDeviceSize nsgt_compute_diff_buffer_size =
-            //    ctx_vk->nsgt_compute_diff_buffer_capacity;
-            // uint32_t nsgt_compute_threads_per_group = 64; // local size?
-            // uint32_t nsgt_compute_group_count_x =
-            //    (nsgt_compute_total_sample_elements +
-            //     nsgt_compute_threads_per_group - 1) /
-            //    nsgt_compute_threads_per_group;
-            // call_king_terry("nsgt dispatch bins=%u frames=%u groups=%u",
-            //                ctx_vk->nsgt_compute_bin_capacity,
-            //                ctx_vk->nsgt_compute_frame_capacity,
-            //                nsgt_compute_group_count_x);
-            // vkCmdDispatch(ctx_vk->cmd_buffer, nsgt_compute_group_count_x, 1,
-            // 1); VkBufferMemoryBarrier nsgt_compute_buffer_barriers[6] = {
-            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-            //     .dstAccessMask =
-            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .buffer = ctx_vk->nsgt_compute_l_buffer,
-            //     .offset = 0,
-            //     .size = VK_WHOLE_SIZE},
-            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-            //     .dstAccessMask =
-            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .buffer = ctx_vk->nsgt_compute_r_buffer,
-            //     .offset = 0,
-            //     .size = VK_WHOLE_SIZE},
-            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-            //     .dstAccessMask =
-            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .buffer = ctx_vk->nsgt_compute_l_buffer_previous,
-            //     .offset = 0,
-            //     .size = VK_WHOLE_SIZE},
-            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-            //     .dstAccessMask =
-            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .buffer = ctx_vk->nsgt_compute_r_buffer_previous,
-            //     .offset = 0,
-            //     .size = VK_WHOLE_SIZE},
-            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-            //     .dstAccessMask =
-            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .buffer = ctx_vk->nsgt_compute_undo_diff_buffer,
-            //     .offset = 0,
-            //     .size = VK_WHOLE_SIZE},
-            //    {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            //     .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-            //     .dstAccessMask =
-            //         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-            //     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            //     .buffer = ctx_vk->nsgt_compute_redo_diff_buffer,
-            //     .offset = 0,
-            //     .size = VK_WHOLE_SIZE},
-            //};
-            // vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
-            //                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            //                     VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-            //                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-            //                         VK_PIPELINE_STAGE_TRANSFER_BIT,
-            //                     0,
-            //                     0,
-            //                     NULL,
-            //                     6,
-            //                     nsgt_compute_buffer_barriers,
-            //                     0,
-            //                     NULL);
-            // VkBufferCopy nsgt_compute_copy_l_buffer = {
-            //    .srcOffset = 0,
-            //    .dstOffset = 0,
-            //    .size = nsgt_compute_total_sample_elements * sizeof(float),
-            //};
-            // VkBufferCopy nsgt_compute_copy_r_buffer = {
-            //    .srcOffset = 0,
-            //    .dstOffset = 0,
-            //    .size = nsgt_compute_total_sample_elements * sizeof(float),
-            //};
-            // VkBufferCopy nsgt_compute_copy_undo_buffer = {
-            //    .srcOffset = 0,
-            //    .dstOffset = 0,
-            //    .size = nsgt_compute_diff_buffer_size,
-            //};
-            // VkBufferCopy nsgt_compute_copy_redo_buffer = {
-            //    .srcOffset = 0,
-            //    .dstOffset = 0,
-            //    .size = nsgt_compute_diff_buffer_size,
-            //};
-            // vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-            //                ctx_vk->nsgt_compute_l_buffer,
-            //                ctx_vk->nsgt_compute_l_staging_buffer,
-            //                1,
-            //                &nsgt_compute_copy_l_buffer);
-            // vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-            //                ctx_vk->nsgt_compute_r_buffer,
-            //                ctx_vk->nsgt_compute_r_staging_buffer,
-            //                1,
-            //                &nsgt_compute_copy_r_buffer);
-            // vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-            //                ctx_vk->nsgt_compute_undo_diff_buffer,
-            //                ctx_vk->nsgt_compute_undo_diff_staging_buffer,
-            //                1,
-            //                &nsgt_compute_copy_undo_buffer);
-            // vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-            //                ctx_vk->nsgt_compute_redo_diff_buffer,
-            //                ctx_vk->nsgt_compute_redo_diff_staging_buffer,
-            //                1,
-            //                &nsgt_compute_copy_redo_buffer);
+            if ((ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
+                 ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE) ||
+                capture_wav->memfd_size <= 44) {
+                goto war_label_render_pass;
+            }
+            VkBufferMemoryBarrier nsgt_compute_buffer_memory_barrier[8];
+            VkBufferCopy nsgt_compute_buffer_copy_offset = {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = ctx_nsgt->offset_capacity,
+            };
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_nsgt->buffer[ctx_nsgt->idx_offset_stage],
+                            ctx_nsgt->buffer[ctx_nsgt->idx_offset],
+                            1,
+                            &nsgt_compute_buffer_copy_offset);
+            nsgt_compute_buffer_memory_barrier[0].sType =
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            nsgt_compute_buffer_memory_barrier[0].pNext = NULL;
+            nsgt_compute_buffer_memory_barrier[0].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            nsgt_compute_buffer_memory_barrier[0].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_buffer_memory_barrier[0].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[0].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[0].buffer =
+                ctx_nsgt->buffer[ctx_nsgt->idx_offset];
+            nsgt_compute_buffer_memory_barrier[0].offset = 0;
+            nsgt_compute_buffer_memory_barrier[0].size = VK_WHOLE_SIZE;
+            // hop
+            VkBufferCopy nsgt_compute_buffer_copy_hop = {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = ctx_nsgt->hop_capacity,
+            };
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_nsgt->buffer[ctx_nsgt->idx_hop_stage],
+                            ctx_nsgt->buffer[ctx_nsgt->idx_hop],
+                            1,
+                            &nsgt_compute_buffer_copy_hop);
+            nsgt_compute_buffer_memory_barrier[1].sType =
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            nsgt_compute_buffer_memory_barrier[1].pNext = NULL;
+            nsgt_compute_buffer_memory_barrier[1].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            nsgt_compute_buffer_memory_barrier[1].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_buffer_memory_barrier[1].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[1].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[1].buffer =
+                ctx_nsgt->buffer[ctx_nsgt->idx_hop];
+            nsgt_compute_buffer_memory_barrier[1].offset = 0;
+            nsgt_compute_buffer_memory_barrier[1].size = VK_WHOLE_SIZE;
+            // length
+            VkBufferCopy nsgt_compute_buffer_copy_length = {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = ctx_nsgt->length_capacity,
+            };
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_nsgt->buffer[ctx_nsgt->idx_length_stage],
+                            ctx_nsgt->buffer[ctx_nsgt->idx_length],
+                            1,
+                            &nsgt_compute_buffer_copy_length);
+            nsgt_compute_buffer_memory_barrier[2].sType =
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            nsgt_compute_buffer_memory_barrier[2].pNext = NULL;
+            nsgt_compute_buffer_memory_barrier[2].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            nsgt_compute_buffer_memory_barrier[2].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_buffer_memory_barrier[2].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[2].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[2].buffer =
+                ctx_nsgt->buffer[ctx_nsgt->idx_length];
+            nsgt_compute_buffer_memory_barrier[2].offset = 0;
+            nsgt_compute_buffer_memory_barrier[2].size = VK_WHOLE_SIZE;
+            // window
+            VkBufferCopy nsgt_compute_buffer_copy_window = {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = ctx_nsgt->window_capacity,
+            };
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_nsgt->buffer[ctx_nsgt->idx_window_stage],
+                            ctx_nsgt->buffer[ctx_nsgt->idx_window],
+                            1,
+                            &nsgt_compute_buffer_copy_window);
+            nsgt_compute_buffer_memory_barrier[3].sType =
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            nsgt_compute_buffer_memory_barrier[3].pNext = NULL;
+            nsgt_compute_buffer_memory_barrier[3].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            nsgt_compute_buffer_memory_barrier[3].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_buffer_memory_barrier[3].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[3].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[3].buffer =
+                ctx_nsgt->buffer[ctx_nsgt->idx_window];
+            nsgt_compute_buffer_memory_barrier[3].offset = 0;
+            nsgt_compute_buffer_memory_barrier[3].size = VK_WHOLE_SIZE;
+            // dual_window
+            VkBufferCopy nsgt_compute_buffer_copy_dual_window = {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = ctx_nsgt->window_capacity,
+            };
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_nsgt->buffer[ctx_nsgt->idx_dual_window_stage],
+                            ctx_nsgt->buffer[ctx_nsgt->idx_dual_window],
+                            1,
+                            &nsgt_compute_buffer_copy_dual_window);
+            nsgt_compute_buffer_memory_barrier[4].sType =
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            nsgt_compute_buffer_memory_barrier[4].pNext = NULL;
+            nsgt_compute_buffer_memory_barrier[4].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            nsgt_compute_buffer_memory_barrier[4].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_buffer_memory_barrier[4].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[4].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[4].buffer =
+                ctx_nsgt->buffer[ctx_nsgt->idx_dual_window];
+            nsgt_compute_buffer_memory_barrier[4].offset = 0;
+            nsgt_compute_buffer_memory_barrier[4].size = VK_WHOLE_SIZE;
+            // frequency
+            VkBufferCopy nsgt_compute_buffer_copy_frequency = {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = ctx_nsgt->frequency_capacity,
+            };
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_nsgt->buffer[ctx_nsgt->idx_frequency_stage],
+                            ctx_nsgt->buffer[ctx_nsgt->idx_frequency],
+                            1,
+                            &nsgt_compute_buffer_copy_frequency);
+            nsgt_compute_buffer_memory_barrier[5].sType =
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            nsgt_compute_buffer_memory_barrier[5].pNext = NULL;
+            nsgt_compute_buffer_memory_barrier[5].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            nsgt_compute_buffer_memory_barrier[5].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_buffer_memory_barrier[5].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[5].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[5].buffer =
+                ctx_nsgt->buffer[ctx_nsgt->idx_frequency];
+            nsgt_compute_buffer_memory_barrier[5].offset = 0;
+            nsgt_compute_buffer_memory_barrier[5].size = VK_WHOLE_SIZE;
+            // l
+            VkBufferCopy nsgt_compute_buffer_copy_l = {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = ctx_nsgt->wav_channel_capacity};
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_nsgt->buffer[ctx_nsgt->idx_l_stage],
+                            ctx_nsgt->buffer[ctx_nsgt->idx_l],
+                            1,
+                            &nsgt_compute_buffer_copy_l);
+            nsgt_compute_buffer_memory_barrier[6].sType =
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            nsgt_compute_buffer_memory_barrier[6].pNext = NULL;
+            nsgt_compute_buffer_memory_barrier[6].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            nsgt_compute_buffer_memory_barrier[6].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_buffer_memory_barrier[6].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[6].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[6].buffer =
+                ctx_nsgt->buffer[ctx_nsgt->idx_l];
+            nsgt_compute_buffer_memory_barrier[6].offset = 0;
+            nsgt_compute_buffer_memory_barrier[6].size = VK_WHOLE_SIZE;
+            // r
+            VkBufferCopy nsgt_compute_buffer_copy_r = {
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = ctx_nsgt->wav_channel_capacity};
+            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
+                            ctx_nsgt->buffer[ctx_nsgt->idx_r_stage],
+                            ctx_nsgt->buffer[ctx_nsgt->idx_r],
+                            1,
+                            &nsgt_compute_buffer_copy_r);
+            nsgt_compute_buffer_memory_barrier[7].sType =
+                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            nsgt_compute_buffer_memory_barrier[7].pNext = NULL;
+            nsgt_compute_buffer_memory_barrier[7].srcAccessMask =
+                VK_ACCESS_TRANSFER_WRITE_BIT;
+            nsgt_compute_buffer_memory_barrier[7].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_buffer_memory_barrier[7].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[7].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_buffer_memory_barrier[7].buffer =
+                ctx_nsgt->buffer[ctx_nsgt->idx_r];
+            nsgt_compute_buffer_memory_barrier[7].offset = 0;
+            nsgt_compute_buffer_memory_barrier[7].size = VK_WHOLE_SIZE;
+            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 0,
+                                 0,
+                                 NULL,
+                                 8,
+                                 nsgt_compute_buffer_memory_barrier,
+                                 0,
+                                 NULL);
+            uint32_t nsgt_compute_total_sample_elements =
+                ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity;
+            uint32_t nsgt_compute_threads_per_group = 64; // local size
+            uint32_t nsgt_compute_group_count_x =
+                (nsgt_compute_total_sample_elements +
+                 nsgt_compute_threads_per_group - 1) /
+                nsgt_compute_threads_per_group;
+            call_king_terry("nsgt dispatch bins=%u frames=%u groups=%u",
+                            ctx_nsgt->bin_capacity,
+                            ctx_nsgt->frame_capacity,
+                            nsgt_compute_group_count_x);
+            vkCmdBindPipeline(ctx_vk->cmd_buffer,
+                              VK_PIPELINE_BIND_POINT_COMPUTE,
+                              ctx_nsgt->compute_pipeline);
+            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
+                                    VK_PIPELINE_BIND_POINT_COMPUTE,
+                                    ctx_nsgt->compute_pipeline_layout,
+                                    0,
+                                    1,
+                                    &ctx_nsgt->descriptor_set,
+                                    0,
+                                    NULL);
+            vkCmdDispatch(ctx_vk->cmd_buffer, nsgt_compute_group_count_x, 1, 1);
+            VkImageMemoryBarrier nsgt_compute_image_memory_barrier[2];
+            // l_image barrier
+            nsgt_compute_image_memory_barrier[0].sType =
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            nsgt_compute_image_memory_barrier[0].pNext = NULL;
+            nsgt_compute_image_memory_barrier[0].srcAccessMask =
+                VK_ACCESS_SHADER_WRITE_BIT;
+            nsgt_compute_image_memory_barrier[0].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_image_memory_barrier[0].oldLayout =
+                VK_IMAGE_LAYOUT_GENERAL;
+            nsgt_compute_image_memory_barrier[0].newLayout =
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            nsgt_compute_image_memory_barrier[0].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_image_memory_barrier[0].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_image_memory_barrier[0].image =
+                ctx_nsgt->image[ctx_nsgt->idx_l_image];
+            nsgt_compute_image_memory_barrier[0].subresourceRange.aspectMask =
+                VK_IMAGE_ASPECT_COLOR_BIT;
+            nsgt_compute_image_memory_barrier[0].subresourceRange.baseMipLevel =
+                0;
+            nsgt_compute_image_memory_barrier[0].subresourceRange.levelCount =
+                1;
+            nsgt_compute_image_memory_barrier[0]
+                .subresourceRange.baseArrayLayer = 0;
+            nsgt_compute_image_memory_barrier[0].subresourceRange.layerCount =
+                1;
+            // r_image barrier
+            nsgt_compute_image_memory_barrier[1].sType =
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            nsgt_compute_image_memory_barrier[1].pNext = NULL;
+            nsgt_compute_image_memory_barrier[1].srcAccessMask =
+                VK_ACCESS_SHADER_WRITE_BIT;
+            nsgt_compute_image_memory_barrier[1].dstAccessMask =
+                VK_ACCESS_SHADER_READ_BIT;
+            nsgt_compute_image_memory_barrier[1].oldLayout =
+                VK_IMAGE_LAYOUT_GENERAL;
+            nsgt_compute_image_memory_barrier[1].newLayout =
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            nsgt_compute_image_memory_barrier[1].srcQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_image_memory_barrier[1].dstQueueFamilyIndex =
+                VK_QUEUE_FAMILY_IGNORED;
+            nsgt_compute_image_memory_barrier[1].image =
+                ctx_nsgt->image[ctx_nsgt->idx_r_image];
+            nsgt_compute_image_memory_barrier[1].subresourceRange.aspectMask =
+                VK_IMAGE_ASPECT_COLOR_BIT;
+            nsgt_compute_image_memory_barrier[1].subresourceRange.baseMipLevel =
+                0;
+            nsgt_compute_image_memory_barrier[1].subresourceRange.levelCount =
+                1;
+            nsgt_compute_image_memory_barrier[1]
+                .subresourceRange.baseArrayLayer = 0;
+            nsgt_compute_image_memory_barrier[1].subresourceRange.layerCount =
+                1;
+            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0,
+                                 0,
+                                 NULL,
+                                 0,
+                                 NULL,
+                                 2,
+                                 nsgt_compute_image_memory_barrier);
         war_label_render_pass:
             //-------------------------------------------------------------
             //  RENDER PASS
@@ -2898,7 +3069,7 @@ cmd_timeout_done:
                                  ctx_vk->quads_index_buffer,
                                  quad_indices_offset,
                                  VK_INDEX_TYPE_UINT32);
-            war_quad_push_constants quad_push_constants = {
+            war_quad_push_constant quad_push_constant = {
                 .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
                 .physical_size = {physical_width, physical_height},
                 .cell_size = {ctx_wr->cell_width, ctx_wr->cell_height},
@@ -2914,8 +3085,8 @@ cmd_timeout_done:
                                ctx_vk->pipeline_layout,
                                VK_SHADER_STAGE_VERTEX_BIT,
                                0,
-                               sizeof(war_quad_push_constants),
-                               &quad_push_constants);
+                               sizeof(war_quad_push_constant),
+                               &quad_push_constant);
             vkCmdDrawIndexed(
                 ctx_vk->cmd_buffer, quad_indices_count, 1, 0, 0, 0);
             // draw transparent quads
@@ -2982,7 +3153,7 @@ cmd_timeout_done:
                                  ctx_vk->quads_index_buffer,
                                  transparent_quad_indices_offset,
                                  VK_INDEX_TYPE_UINT32);
-            war_quad_push_constants transparent_quad_push_constants = {
+            war_quad_push_constant transparent_quad_push_constant = {
                 .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
                 .physical_size = {physical_width, physical_height},
                 .cell_size = {ctx_wr->cell_width, ctx_wr->cell_height},
@@ -2998,8 +3169,8 @@ cmd_timeout_done:
                                ctx_vk->pipeline_layout,
                                VK_SHADER_STAGE_VERTEX_BIT,
                                0,
-                               sizeof(war_quad_push_constants),
-                               &transparent_quad_push_constants);
+                               sizeof(war_quad_push_constant),
+                               &transparent_quad_push_constant);
             vkCmdDrawIndexed(
                 ctx_vk->cmd_buffer, transparent_quad_indices_count, 1, 0, 0, 0);
             //---------------------------------------------------------
@@ -3194,7 +3365,7 @@ cmd_timeout_done:
                                  ctx_vk->text_index_buffer,
                                  text_indices_offset,
                                  VK_INDEX_TYPE_UINT32);
-            war_text_push_constants text_push_constants = {
+            war_text_push_constant text_push_constant = {
                 .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
                 .physical_size = {physical_width, physical_height},
                 .cell_size = {ctx_wr->cell_width, ctx_wr->cell_height},
@@ -3215,12 +3386,12 @@ cmd_timeout_done:
                                ctx_vk->text_pipeline_layout,
                                VK_SHADER_STAGE_VERTEX_BIT,
                                0,
-                               sizeof(war_text_push_constants),
-                               &text_push_constants);
+                               sizeof(war_text_push_constant),
+                               &text_push_constant);
             vkCmdDrawIndexed(
                 ctx_vk->cmd_buffer, text_indices_count, 1, 0, 0, 0);
             //-----------------------------------------------------------------
-            // NSGT VISUAL PIPELINE
+            // NSGT GRAPHICS PIPELINE
             //-----------------------------------------------------------------
             if ((ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
                  ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&

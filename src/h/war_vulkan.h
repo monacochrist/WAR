@@ -53,21 +53,142 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
-// quads_vertex_buffer
-// quads_index_buffer
-// quads_instance_buffer
-// text_vertex_buffer
-// text_instance_buffer
-// text_index_buffer
-// nsgt_compute_l_buffer_previous
-// nsgt_compute_l_buffer
-// nsgt_compute_r_buffer_previous
-// nsgt_compute_r_buffer
-// nsgt_compute_l_staging
-// nsgt_compute_r_staging
-// nsgt_compute_diff_buffer
-// nsgt_visual_vertex_buffer
-// nsgt_visual_index_buffer
+static inline uint8_t war_vulkan_get_shader_module(
+    VkDevice device, VkShaderModule* shader_module, const char* path) {
+    call_king_terry("war_vulkan_get_shader_module");
+    FILE* file = fopen(path, "rb");
+    fseek(file, 0, SEEK_END);
+    size_t size = ftell(file);
+    rewind(file);
+    char* code = malloc(size);
+    fread(code, 1, size, file);
+    fclose(file);
+    VkShaderModuleCreateInfo create_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = size,
+        .pCode = (uint32_t*)code};
+    if (vkCreateShaderModule(device, &create_info, NULL, shader_module) !=
+        VK_SUCCESS) {
+        call_king_terry("Failed to create shader module: %s", path);
+        return 0;
+    }
+    free(code);
+    return 1;
+}
+
+static inline void war_nsgt_flush(uint32_t idx_count,
+                                  uint32_t* idx,
+                                  VkDeviceSize* offset,
+                                  VkDeviceSize* size,
+                                  VkDevice device,
+                                  war_nsgt_context* ctx_nsgt) {
+    for (uint32_t i = 0; i < idx_count; i++) {
+        ctx_nsgt->mapped_memory_range[i] = (VkMappedMemoryRange){
+            .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+            .pNext = NULL,
+            .memory = ctx_nsgt->device_memory[idx[i]],
+            .offset = offset ? offset[i] : 0,
+            .size = size ? size[i] : VK_WHOLE_SIZE,
+        };
+    }
+
+    VkResult res = vkFlushMappedMemoryRanges(
+        device, idx_count, ctx_nsgt->mapped_memory_range);
+    assert(res == VK_SUCCESS);
+}
+
+static inline void war_nsgt_buffer_barrier(uint32_t idx_count,
+                                           uint32_t* idx,
+                                           VkPipelineStageFlags src_stage,
+                                           VkPipelineStageFlags dst_stage,
+                                           VkAccessFlags src_access,
+                                           VkAccessFlags dst_access,
+                                           VkCommandBuffer cmd,
+                                           war_nsgt_context* ctx_nsgt) {
+    for (uint32_t i = 0; i < idx_count; i++) {
+        ctx_nsgt->buffer_memory_barrier[i] = (VkBufferMemoryBarrier){
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .pNext = NULL,
+            .srcAccessMask = src_access,
+            .dstAccessMask = dst_access,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = ctx_nsgt->buffer[idx[i]],
+            .offset = 0,
+            .size = VK_WHOLE_SIZE,
+        };
+    }
+    vkCmdPipelineBarrier(cmd,
+                         src_stage,
+                         dst_stage,
+                         0, // dependencyFlags
+                         0,
+                         NULL,
+                         idx_count,
+                         ctx_nsgt->buffer_memory_barrier,
+                         0,
+                         NULL);
+}
+
+static inline void war_nsgt_image_barrier(uint32_t idx_count,
+                                          uint32_t* idx,
+                                          VkPipelineStageFlags src_stage,
+                                          VkPipelineStageFlags dst_stage,
+                                          VkAccessFlags src_access,
+                                          VkAccessFlags dst_access,
+                                          VkImageLayout old_layout,
+                                          VkImageLayout new_layout,
+                                          VkCommandBuffer cmd,
+                                          war_nsgt_context* ctx_nsgt) {
+    for (uint32_t i = 0; i < idx_count; i++) {
+        ctx_nsgt->image_memory_barrier[i] = (VkImageMemoryBarrier){
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = NULL,
+            .srcAccessMask = src_access,
+            .dstAccessMask = dst_access,
+            .oldLayout = old_layout,
+            .newLayout = new_layout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = ctx_nsgt->image[idx[i]],
+            .subresourceRange =
+                {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+        };
+    }
+    vkCmdPipelineBarrier(cmd,
+                         src_stage,
+                         dst_stage,
+                         0, // dependencyFlags
+                         0,
+                         NULL,
+                         0,
+                         NULL,
+                         idx_count,
+                         ctx_nsgt->image_memory_barrier);
+}
+
+static inline void war_nsgt_copy(VkCommandBuffer cmd,
+                                 uint32_t idx_src,
+                                 uint32_t idx_dst,
+                                 VkDeviceSize src_offset,
+                                 VkDeviceSize dst_offset,
+                                 VkDeviceSize size,
+                                 war_nsgt_context* ctx_nsgt) {
+    VkBufferCopy copy = {
+        .srcOffset = src_offset,
+        .dstOffset = dst_offset,
+        .size = size,
+    };
+    vkCmdCopyBuffer(
+        cmd, ctx_nsgt->buffer[idx_src], ctx_nsgt->buffer[idx_dst], 1, &copy);
+}
+
 static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                                    war_lua_context* ctx_lua,
                                    war_pool* pool_wr,
@@ -548,7 +669,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     VkPushConstantRange push_constant_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .offset = 0,
-        .size = sizeof(war_quad_push_constants),
+        .size = sizeof(war_quad_push_constant),
     };
     VkPipelineLayoutCreateInfo layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -1547,7 +1668,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     ctx_vk->text_push_constant_range = (VkPushConstantRange){
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .offset = 0,
-        .size = sizeof(war_text_push_constants),
+        .size = sizeof(war_text_push_constant),
     };
     VkPipelineLayoutCreateInfo sdf_pipeline_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -2038,265 +2159,268 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                                        NULL,
                                        &ctx_vk->transparent_quad_pipeline);
     assert(result == VK_SUCCESS);
-    ////-------------------------------------------------------------------------
-    ////  NSGT VISUAL PIPELINE
-    ////-------------------------------------------------------------------------
-    uint8_t fn_result = war_vulkan_get_shader_module(ctx_vk->device,
-                                             &ctx_vk->nsgt_visual_vertex_shader,
-                                             "build/spv/war_nsgt_vertex.spv");
-    assert(fn_result);
-    fn_result =
-        war_vulkan_get_shader_module(ctx_vk->device,
-                                     &ctx_vk->nsgt_visual_fragment_shader,
-                                     "build/spv/war_nsgt_fragment.spv");
-    assert(fn_result);
-    VkDescriptorSetLayoutBinding* nsgt_visual_bindings =
-        (VkDescriptorSetLayoutBinding[2]){
-            // L buffer
-            {0,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             1,
-             VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
-             NULL},
-            // R buffer
-            {1,
-             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             1,
-             VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
-             NULL},
-        };
-    VkDescriptorSetLayoutCreateInfo nsgt_visual_descriptor_set_layout_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 2,
-        .pBindings = nsgt_visual_bindings};
-    result =
-        vkCreateDescriptorSetLayout(ctx_vk->device,
-                                    &nsgt_visual_descriptor_set_layout_info,
-                                    NULL,
-                                    &ctx_vk->nsgt_visual_descriptor_set_layout);
-    assert(result == VK_SUCCESS);
-    VkPushConstantRange nsgt_visual_push_constant_range = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-        .offset = 0,
-        .size = sizeof(war_nsgt_visual_push_constants),
-    };
-    VkPipelineLayoutCreateInfo nsgt_visual_pipeline_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &ctx_vk->nsgt_visual_descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &nsgt_visual_push_constant_range,
-    };
-    result = vkCreatePipelineLayout(ctx_vk->device,
-                                    &nsgt_visual_pipeline_layout_create_info,
-                                    NULL,
-                                    &ctx_vk->nsgt_visual_pipeline_layout);
-    assert(result == VK_SUCCESS);
-    VkPipelineShaderStageCreateInfo nsgt_visual_pipeline_shader_stages[2] = {
-        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-         .stage = VK_SHADER_STAGE_VERTEX_BIT,
-         .module = ctx_vk->nsgt_visual_vertex_shader,
-         .pName = "main"},
-        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-         .module = ctx_vk->nsgt_visual_fragment_shader,
-         .pName = "main"}};
-    VkPipelineRasterizationStateCreateInfo nsgt_visual_rasterizer = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .depthClampEnable = VK_FALSE,
-        .rasterizerDiscardEnable = VK_FALSE,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .lineWidth = 1.0f,
-        .cullMode = VK_CULL_MODE_NONE,
-        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        .depthBiasEnable = VK_FALSE,
-    };
-    VkPipelineMultisampleStateCreateInfo nsgt_visual_multisampling = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-        .sampleShadingEnable = VK_FALSE,
-    };
-    VkViewport nsgt_visual_viewport = {
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = width,
-        .height = height,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    };
-    VkRect2D nsgt_visual_scissor = {
-        .offset = {0, 0},
-        .extent = {width, height},
-    };
-    VkPipelineViewportStateCreateInfo nsgt_visual_viewport_state = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .viewportCount = 1,
-        .pViewports = &nsgt_visual_viewport,
-        .scissorCount = 1,
-        .pScissors = &nsgt_visual_scissor,
-    };
-    VkVertexInputBindingDescription nsgt_visual_vertex_binding = {
-        .binding = 0,
-        .stride = sizeof(war_nsgt_vertex),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    };
-    VkVertexInputAttributeDescription nsgt_visual_vertex_attributes[2] = {
+    //-------------------------------------------------------------------------
+    //  NSGT VISUAL PIPELINE
+    //-------------------------------------------------------------------------
+    // uint8_t fn_result = war_vulkan_get_shader_module(ctx_vk->device,
+    //                                         &ctx_vk->nsgt_visual_vertex_shader,
+    //                                         "build/spv/war_nsgt_vertex.spv");
+    // assert(fn_result);
+    // fn_result =
+    //    war_vulkan_get_shader_module(ctx_vk->device,
+    //                                 &ctx_vk->nsgt_visual_fragment_shader,
+    //                                 "build/spv/war_nsgt_fragment.spv");
+    // assert(fn_result);
+    // VkDescriptorSetLayoutBinding* nsgt_visual_bindings =
+    //    (VkDescriptorSetLayoutBinding[2]){
+    //        // L buffer
+    //        {0,
+    //         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+    //         1,
+    //         VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
+    //         NULL},
+    //        // R buffer
+    //        {1,
+    //         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+    //         1,
+    //         VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
+    //         NULL},
+    //    };
+    // VkDescriptorSetLayoutCreateInfo nsgt_visual_descriptor_set_layout_info =
+    // {
+    //    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+    //    .bindingCount = 2,
+    //    .pBindings = nsgt_visual_bindings};
+    // result =
+    //    vkCreateDescriptorSetLayout(ctx_vk->device,
+    //                                &nsgt_visual_descriptor_set_layout_info,
+    //                                NULL,
+    //                                &ctx_vk->nsgt_visual_descriptor_set_layout);
+    // assert(result == VK_SUCCESS);
+    // VkPushConstantRange nsgt_visual_push_constant_range = {
+    //    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT |
+    //    VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size =
+    //    sizeof(war_nsgt_visual_push_constant),
+    //};
+    // VkPipelineLayoutCreateInfo nsgt_visual_pipeline_layout_create_info = {
+    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    //    .setLayoutCount = 1,
+    //    .pSetLayouts = &ctx_vk->nsgt_visual_descriptor_set_layout,
+    //    .pushConstantRangeCount = 1,
+    //    .pPushConstantRanges = &nsgt_visual_push_constant_range,
+    //};
+    // result = vkCreatePipelineLayout(ctx_vk->device,
+    //                                &nsgt_visual_pipeline_layout_create_info,
+    //                                NULL,
+    //                                &ctx_vk->nsgt_visual_pipeline_layout);
+    // assert(result == VK_SUCCESS);
+    // VkPipelineShaderStageCreateInfo nsgt_visual_pipeline_shader_stages[2] = {
+    //    {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+    //     .stage = VK_SHADER_STAGE_VERTEX_BIT,
+    //     .module = ctx_vk->nsgt_visual_vertex_shader,
+    //     .pName = "main"},
+    //    {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+    //     .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+    //     .module = ctx_vk->nsgt_visual_fragment_shader,
+    //     .pName = "main"}};
+    // VkPipelineRasterizationStateCreateInfo nsgt_visual_rasterizer = {
+    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    //    .depthClampEnable = VK_FALSE,
+    //    .rasterizerDiscardEnable = VK_FALSE,
+    //    .polygonMode = VK_POLYGON_MODE_FILL,
+    //    .lineWidth = 1.0f,
+    //    .cullMode = VK_CULL_MODE_NONE,
+    //    .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+    //    .depthBiasEnable = VK_FALSE,
+    //};
+    // VkPipelineMultisampleStateCreateInfo nsgt_visual_multisampling = {
+    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+    //    .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    //    .sampleShadingEnable = VK_FALSE,
+    //};
+    // VkViewport nsgt_visual_viewport = {
+    //    .x = 0.0f,
+    //    .y = 0.0f,
+    //    .width = width,
+    //    .height = height,
+    //    .minDepth = 0.0f,
+    //    .maxDepth = 1.0f,
+    //};
+    // VkRect2D nsgt_visual_scissor = {
+    //    .offset = {0, 0},
+    //    .extent = {width, height},
+    //};
+    // VkPipelineViewportStateCreateInfo nsgt_visual_viewport_state = {
+    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+    //    .viewportCount = 1,
+    //    .pViewports = &nsgt_visual_viewport,
+    //    .scissorCount = 1,
+    //    .pScissors = &nsgt_visual_scissor,
+    //};
+    // VkVertexInputBindingDescription nsgt_visual_vertex_binding = {
+    //    .binding = 0,
+    //    .stride = sizeof(war_nsgt_vertex),
+    //    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    //};
+    // VkVertexInputAttributeDescription nsgt_visual_vertex_attributes[2] = {
 
-        {
-            .location = 0,
-            .binding = 0,
-            .format = VK_FORMAT_R32G32_SFLOAT,
-            .offset = offsetof(war_nsgt_vertex, uv),
-        },
-        {
-            .location = 1,
-            .binding = 0,
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = offsetof(war_nsgt_vertex, pos),
-        },
-    };
-    VkPipelineVertexInputStateCreateInfo nsgt_vertex_input_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &nsgt_visual_vertex_binding,
-        .vertexAttributeDescriptionCount = 2,
-        .pVertexAttributeDescriptions = nsgt_visual_vertex_attributes,
-    };
-    VkPipelineInputAssemblyStateCreateInfo nsgt_visual_input_assembly = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .primitiveRestartEnable = VK_FALSE,
-    };
-    VkPipelineColorBlendAttachmentState nsgt_visual_color_blend_attachment = {
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-        .blendEnable = VK_FALSE,
-    };
-    VkPipelineColorBlendStateCreateInfo nsgt_visual_color_blending = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .logicOpEnable = VK_FALSE,
-        .attachmentCount = 1,
-        .pAttachments = &nsgt_visual_color_blend_attachment,
-    };
-    VkPipelineDepthStencilStateCreateInfo nsgt_visual_depth_stencil = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
-        .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
-        .stencilTestEnable = VK_FALSE,
-    };
-    VkGraphicsPipelineCreateInfo nsgt_visual_pipeline_info = {
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .stageCount = 2,
-        .pStages = nsgt_visual_pipeline_shader_stages,
-        .layout = ctx_vk->nsgt_visual_pipeline_layout,
-        .renderPass = ctx_vk->render_pass, // must be created beforehand
-        // other fixed-function state (vertex input, rasterization, viewport,
-        // blending)
-        .pVertexInputState = &nsgt_vertex_input_info,
-        .pRasterizationState = &nsgt_visual_rasterizer,
-        .pMultisampleState = &nsgt_visual_multisampling,
-        .pViewportState = &nsgt_visual_viewport_state,
-        .pInputAssemblyState = &nsgt_visual_input_assembly,
-        .pColorBlendState = &nsgt_visual_color_blending,
-        .pDepthStencilState = &nsgt_visual_depth_stencil,
-    };
-    result = vkCreateGraphicsPipelines(ctx_vk->device,
-                                       VK_NULL_HANDLE,
-                                       1,
-                                       &nsgt_visual_pipeline_info,
-                                       NULL,
-                                       &ctx_vk->nsgt_visual_pipeline);
-    assert(result == VK_SUCCESS);
-    VkDescriptorPoolSize nsgt_visual_descriptor_pool_sizes[1] = {
-        (VkDescriptorPoolSize){
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount = 2,
-        },
-    };
-    VkDescriptorPoolCreateInfo nsgt_visual_descriptor_pool_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = 1,
-        .pPoolSizes = nsgt_visual_descriptor_pool_sizes,
-        .maxSets = 1,
-    };
-    result = vkCreateDescriptorPool(ctx_vk->device,
-                                    &nsgt_visual_descriptor_pool_info,
-                                    NULL,
-                                    &ctx_vk->nsgt_visual_descriptor_pool);
-    assert(result == VK_SUCCESS);
-    VkDescriptorSetAllocateInfo nsgt_visual_descriptor_set_alloc_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = ctx_vk->nsgt_visual_descriptor_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &ctx_vk->nsgt_visual_descriptor_set_layout,
-    };
-    result = vkAllocateDescriptorSets(ctx_vk->device,
-                                      &nsgt_visual_descriptor_set_alloc_info,
-                                      &ctx_vk->nsgt_visual_descriptor_set);
-    assert(result == VK_SUCCESS);
-    VkWriteDescriptorSet nsgt_visual_write_descriptor_set[2] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = ctx_vk->nsgt_visual_descriptor_set,
-            .dstBinding = 0,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &ctx_vk->nsgt_compute_l_buffer_info,
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = ctx_vk->nsgt_visual_descriptor_set,
-            .dstBinding = 1,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &ctx_vk->nsgt_compute_r_buffer_info,
-        },
-    };
-    vkUpdateDescriptorSets(
-        ctx_vk->device, 2, nsgt_visual_write_descriptor_set, 0, NULL);
-    ctx_vk->nsgt_visual_quad_capacity =
-        atomic_load(&ctx_lua->VK_NSGT_VISUAL_QUAD_CAPACITY);
-    ctx_vk->nsgt_visual_vertex_buffer_capacity =
-        ctx_vk->nsgt_visual_quad_capacity * 4 * sizeof(war_nsgt_vertex);
-    ctx_vk->nsgt_visual_index_buffer_capacity =
-        ctx_vk->nsgt_visual_quad_capacity * 6 * sizeof(uint32_t);
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_visual_vertex_buffer_capacity,
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_visual_vertex_buffer,
-        &ctx_vk->nsgt_visual_vertex_buffer_memory,
-        &ctx_vk->nsgt_visual_vertex_buffer_memory_requirements);
-    assert(fn_result);
-    fn_result = war_vulkan_create_buffer(
-        ctx_vk->device,
-        ctx_vk->physical_device,
-        ctx_vk->nsgt_visual_index_buffer_capacity,
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &ctx_vk->nsgt_visual_index_buffer,
-        &ctx_vk->nsgt_visual_index_buffer_memory,
-        &ctx_vk->nsgt_visual_index_buffer_memory_requirements);
-    assert(fn_result);
-    result = vkMapMemory(ctx_vk->device,
-                         ctx_vk->nsgt_visual_vertex_buffer_memory,
-                         0,
-                         VK_WHOLE_SIZE,
-                         0,
-                         &ctx_vk->nsgt_visual_map_vertex);
-    assert(result == VK_SUCCESS);
-    result = vkMapMemory(ctx_vk->device,
-                         ctx_vk->nsgt_visual_index_buffer_memory,
-                         0,
-                         VK_WHOLE_SIZE,
-                         0,
-                         &ctx_vk->nsgt_visual_map_index);
-    assert(result == VK_SUCCESS);
+    //    {
+    //        .location = 0,
+    //        .binding = 0,
+    //        .format = VK_FORMAT_R32G32_SFLOAT,
+    //        .offset = offsetof(war_nsgt_vertex, uv),
+    //    },
+    //    {
+    //        .location = 1,
+    //        .binding = 0,
+    //        .format = VK_FORMAT_R32G32B32_SFLOAT,
+    //        .offset = offsetof(war_nsgt_vertex, pos),
+    //    },
+    //};
+    // VkPipelineVertexInputStateCreateInfo nsgt_vertex_input_info = {
+    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    //    .vertexBindingDescriptionCount = 1,
+    //    .pVertexBindingDescriptions = &nsgt_visual_vertex_binding,
+    //    .vertexAttributeDescriptionCount = 2,
+    //    .pVertexAttributeDescriptions = nsgt_visual_vertex_attributes,
+    //};
+    // VkPipelineInputAssemblyStateCreateInfo nsgt_visual_input_assembly = {
+    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+    //    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    //    .primitiveRestartEnable = VK_FALSE,
+    //};
+    // VkPipelineColorBlendAttachmentState nsgt_visual_color_blend_attachment =
+    // {
+    //    .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
+    //    |
+    //                      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    //    .blendEnable = VK_FALSE,
+    //};
+    // VkPipelineColorBlendStateCreateInfo nsgt_visual_color_blending = {
+    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    //    .logicOpEnable = VK_FALSE,
+    //    .attachmentCount = 1,
+    //    .pAttachments = &nsgt_visual_color_blend_attachment,
+    //};
+    // VkPipelineDepthStencilStateCreateInfo nsgt_visual_depth_stencil = {
+    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    //    .depthTestEnable = VK_TRUE,
+    //    .depthWriteEnable = VK_TRUE,
+    //    .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
+    //    .stencilTestEnable = VK_FALSE,
+    //};
+    // VkGraphicsPipelineCreateInfo nsgt_visual_pipeline_info = {
+    //    .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+    //    .stageCount = 2,
+    //    .pStages = nsgt_visual_pipeline_shader_stages,
+    //    .layout = ctx_vk->nsgt_visual_pipeline_layout,
+    //    .renderPass = ctx_vk->render_pass, // must be created beforehand
+    //    // other fixed-function state (vertex input, rasterization, viewport,
+    //    // blending)
+    //    .pVertexInputState = &nsgt_vertex_input_info,
+    //    .pRasterizationState = &nsgt_visual_rasterizer,
+    //    .pMultisampleState = &nsgt_visual_multisampling,
+    //    .pViewportState = &nsgt_visual_viewport_state,
+    //    .pInputAssemblyState = &nsgt_visual_input_assembly,
+    //    .pColorBlendState = &nsgt_visual_color_blending,
+    //    .pDepthStencilState = &nsgt_visual_depth_stencil,
+    //};
+    // result = vkCreateGraphicsPipelines(ctx_vk->device,
+    //                                   VK_NULL_HANDLE,
+    //                                   1,
+    //                                   &nsgt_visual_pipeline_info,
+    //                                   NULL,
+    //                                   &ctx_vk->nsgt_visual_pipeline);
+    // assert(result == VK_SUCCESS);
+    // VkDescriptorPoolSize nsgt_visual_descriptor_pool_sizes[1] = {
+    //    (VkDescriptorPoolSize){
+    //        .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+    //        .descriptorCount = 2,
+    //    },
+    //};
+    // VkDescriptorPoolCreateInfo nsgt_visual_descriptor_pool_info = {
+    //    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+    //    .poolSizeCount = 1,
+    //    .pPoolSizes = nsgt_visual_descriptor_pool_sizes,
+    //    .maxSets = 1,
+    //};
+    // result = vkCreateDescriptorPool(ctx_vk->device,
+    //                                &nsgt_visual_descriptor_pool_info,
+    //                                NULL,
+    //                                &ctx_vk->nsgt_visual_descriptor_pool);
+    // assert(result == VK_SUCCESS);
+    // VkDescriptorSetAllocateInfo nsgt_visual_descriptor_set_alloc_info = {
+    //    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+    //    .descriptorPool = ctx_vk->nsgt_visual_descriptor_pool,
+    //    .descriptorSetCount = 1,
+    //    .pSetLayouts = &ctx_vk->nsgt_visual_descriptor_set_layout,
+    //};
+    // result = vkAllocateDescriptorSets(ctx_vk->device,
+    //                                  &nsgt_visual_descriptor_set_alloc_info,
+    //                                  &ctx_vk->nsgt_visual_descriptor_set);
+    // assert(result == VK_SUCCESS);
+    // VkWriteDescriptorSet nsgt_visual_write_descriptor_set[2] = {
+    //    {
+    //        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+    //        .dstSet = ctx_vk->nsgt_visual_descriptor_set,
+    //        .dstBinding = 0,
+    //        .descriptorCount = 1,
+    //        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+    //        .pBufferInfo = &ctx_vk->nsgt_compute_l_buffer_info,
+    //    },
+    //    {
+    //        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+    //        .dstSet = ctx_vk->nsgt_visual_descriptor_set,
+    //        .dstBinding = 1,
+    //        .descriptorCount = 1,
+    //        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+    //        .pBufferInfo = &ctx_vk->nsgt_compute_r_buffer_info,
+    //    },
+    //};
+    // vkUpdateDescriptorSets(
+    //    ctx_vk->device, 2, nsgt_visual_write_descriptor_set, 0, NULL);
+    // ctx_vk->nsgt_visual_quad_capacity =
+    //    atomic_load(&ctx_lua->VK_NSGT_VISUAL_QUAD_CAPACITY);
+    // ctx_vk->nsgt_visual_vertex_buffer_capacity =
+    //    ctx_vk->nsgt_visual_quad_capacity * 4 * sizeof(war_nsgt_vertex);
+    // ctx_vk->nsgt_visual_index_buffer_capacity =
+    //    ctx_vk->nsgt_visual_quad_capacity * 6 * sizeof(uint32_t);
+    // fn_result = war_vulkan_create_buffer(
+    //    ctx_vk->device,
+    //    ctx_vk->physical_device,
+    //    ctx_vk->nsgt_visual_vertex_buffer_capacity,
+    //    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    //    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+    //        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    //    &ctx_vk->nsgt_visual_vertex_buffer,
+    //    &ctx_vk->nsgt_visual_vertex_buffer_memory,
+    //    &ctx_vk->nsgt_visual_vertex_buffer_memory_requirements);
+    // assert(fn_result);
+    // fn_result = war_vulkan_create_buffer(
+    //    ctx_vk->device,
+    //    ctx_vk->physical_device,
+    //    ctx_vk->nsgt_visual_index_buffer_capacity,
+    //    VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+    //    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+    //        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    //    &ctx_vk->nsgt_visual_index_buffer,
+    //    &ctx_vk->nsgt_visual_index_buffer_memory,
+    //    &ctx_vk->nsgt_visual_index_buffer_memory_requirements);
+    // assert(fn_result);
+    // result = vkMapMemory(ctx_vk->device,
+    //                     ctx_vk->nsgt_visual_vertex_buffer_memory,
+    //                     0,
+    //                     VK_WHOLE_SIZE,
+    //                     0,
+    //                     &ctx_vk->nsgt_visual_map_vertex);
+    // assert(result == VK_SUCCESS);
+    // result = vkMapMemory(ctx_vk->device,
+    //                     ctx_vk->nsgt_visual_index_buffer_memory,
+    //                     0,
+    //                     VK_WHOLE_SIZE,
+    //                     0,
+    //                     &ctx_vk->nsgt_visual_map_index);
+    // assert(result == VK_SUCCESS);
     //-------------------------------------------------------------------------
     // END
     //-------------------------------------------------------------------------
@@ -2305,6 +2429,918 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     free(all_attrs);
     free(sdf_all_attrs);
     end("war_vulkan_init");
+}
+
+static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
+                                 war_pool* pool_wr,
+                                 war_lua_context* ctx_lua,
+                                 VkDevice device,
+                                 VkPhysicalDevice physical_device,
+                                 VkRenderPass render_pass) {
+    header("war_nsgt_init");
+    ctx_nsgt->descriptor_count = 0;
+    ctx_nsgt->descriptor_image_count = 0;
+    ctx_nsgt->resource_count =
+        atomic_load(&ctx_lua->VK_NSGT_COMPUTE_RESOURCE_COUNT);
+    ctx_nsgt->bin_capacity = atomic_load(&ctx_lua->VK_NSGT_BIN_CAPACITY);
+    ctx_nsgt->frame_capacity = atomic_load(&ctx_lua->VK_NSGT_FRAME_CAPACITY);
+    ctx_nsgt->sample_rate = atomic_load(&ctx_lua->A_SAMPLE_RATE);
+    ctx_nsgt->sample_duration = atomic_load(&ctx_lua->A_SAMPLE_DURATION);
+    ctx_nsgt->channel_count = atomic_load(&ctx_lua->A_CHANNEL_COUNT);
+    ctx_nsgt->frequency_min = atomic_load(&ctx_lua->VK_NSGT_FREQUENCY_MIN);
+    ctx_nsgt->frequency_max = atomic_load(&ctx_lua->VK_NSGT_FREQUENCY_MAX);
+    ctx_nsgt->alpha = atomic_load(&ctx_lua->VK_NSGT_ALPHA);
+    ctx_nsgt->window_length_min =
+        atomic_load(&ctx_lua->VK_NSGT_WINDOW_LENGTH_MIN);
+    ctx_nsgt->shape_factor = atomic_load(&ctx_lua->VK_NSGT_SHAPE_FACTOR);
+    ctx_nsgt->wav_channel_capacity =
+        ctx_nsgt->sample_rate * ctx_nsgt->sample_duration * sizeof(float);
+    ctx_nsgt->nsgt_channel_capacity =
+        ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity * sizeof(float) * 2;
+    ctx_nsgt->magnitude_channel_capacity =
+        ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity * sizeof(float);
+    ctx_nsgt->offset_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
+    ctx_nsgt->length_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
+    ctx_nsgt->frequency_capacity = ctx_nsgt->bin_capacity * sizeof(float);
+    ctx_nsgt->hop_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
+    //-------------------------------------------------------------------------
+    // NSGT FORMULA (GAUSSIAN + DUAL WINDOW, EXACT INVERTIBLE, INLINE MIN/MAX)
+    //-------------------------------------------------------------------------
+    float* frequency = malloc(ctx_nsgt->frequency_capacity);
+    uint32_t* length = malloc(ctx_nsgt->length_capacity);
+    uint32_t* hop = malloc(ctx_nsgt->hop_capacity);
+    uint32_t* offset = malloc(ctx_nsgt->offset_capacity);
+    float* window = NULL;
+    float* dual_window = NULL;
+    float* scale = NULL;
+    float* sum_squares = NULL;
+    uint32_t window_cursor = 0;
+    float ERB_min =
+        21.4f * log10f(4.37f * ctx_nsgt->frequency_min / 1000.0f + 1.0f);
+    float ERB_max =
+        21.4f * log10f(4.37f * ctx_nsgt->frequency_max / 1000.0f + 1.0f);
+    float ERB_scale = (ERB_max - ERB_min) / (ctx_nsgt->bin_capacity - 1);
+    for (uint32_t i = 0; i < ctx_nsgt->bin_capacity; i++) {
+        float erb_i = ERB_min + i * ERB_scale;
+        frequency[i] = (1000.0f / 4.37f) * (powf(10.0f, erb_i / 21.4f) - 1.0f);
+        float erb_bandwidth = 24.7f * (4.37f * frequency[i] / 1000.0f + 1.0f);
+
+        uint32_t length_temp = (uint32_t)roundf(
+            ctx_nsgt->alpha * ctx_nsgt->sample_rate / erb_bandwidth);
+        if (length_temp < ctx_nsgt->window_length_min)
+            length_temp = ctx_nsgt->window_length_min;
+        if (length_temp & 1) length_temp++; // ensure even length
+
+        length[i] = length_temp;
+        hop[i] = length[i] / 2;
+        window_cursor += length[i];
+    }
+    offset[0] = 0;
+    for (uint32_t i = 1; i < ctx_nsgt->bin_capacity; i++) {
+        offset[i] = offset[i - 1] + hop[i - 1];
+    }
+    ctx_nsgt->window_capacity = window_cursor * sizeof(float);
+    window = malloc(ctx_nsgt->window_capacity);
+    dual_window = malloc(ctx_nsgt->window_capacity);
+    memset(window, 0, ctx_nsgt->window_capacity);
+    memset(dual_window, 0, ctx_nsgt->window_capacity);
+    for (uint32_t i = 0; i < ctx_nsgt->bin_capacity; i++) {
+        uint32_t length_i = length[i];
+        uint32_t offset_i = offset[i];
+        float sigma = length_i / ctx_nsgt->shape_factor;
+        for (uint32_t n = 0; n < length_i; n++) {
+            float x = (float)n - ((float)length_i / 2.0f);
+            window[offset_i + n] = expf(-M_PI * x * x / (sigma * sigma));
+        }
+    }
+    sum_squares = malloc(window_cursor * sizeof(float));
+    memset(sum_squares, 0, window_cursor * sizeof(float));
+    for (uint32_t b = 0; b < ctx_nsgt->bin_capacity; b++) {
+        for (uint32_t n = 0; n < length[b]; n++) {
+            sum_squares[offset[b] + n] +=
+                window[offset[b] + n] * window[offset[b] + n];
+        }
+    }
+    scale = malloc(ctx_nsgt->bin_capacity * sizeof(float));
+    for (uint32_t b = 0; b < ctx_nsgt->bin_capacity; b++) {
+        uint32_t off = offset[b];
+        uint32_t L = length[b];
+        float max_ss = 0.0f;
+        for (uint32_t n = 0; n < L; n++) {
+            if (sum_squares[off + n] > max_ss) max_ss = sum_squares[off + n];
+        }
+        scale[b] = 1.0f / max_ss;
+        for (uint32_t n = 0; n < L; n++) {
+            dual_window[off + n] = window[off + n] * scale[b];
+        }
+    }
+    //-------------------------------------------------------------------------
+    // Tight frame check (dual window), ignoring near-zero edges
+    memset(sum_squares, 0, window_cursor * sizeof(float));
+    for (uint32_t b = 0; b < ctx_nsgt->bin_capacity; b++) {
+        uint32_t off = offset[b];
+        uint32_t L = length[b];
+        for (uint32_t n = 0; n < L; n++) {
+            sum_squares[off + n] += window[off + n] * dual_window[off + n];
+        }
+    }
+    float min_val_dual = FLT_MAX, max_val_dual = -FLT_MAX;
+    float ignore_threshold = 1e-6f;
+    for (uint32_t n = 0; n < window_cursor; n++) {
+        if (sum_squares[n] < ignore_threshold) continue; // ignore zero edges
+        if (sum_squares[n] < min_val_dual) min_val_dual = sum_squares[n];
+        if (sum_squares[n] > max_val_dual) max_val_dual = sum_squares[n];
+    }
+    call_king_terry("TIGHT FRAME CHECK (gaussian, dual): min=%.8f max=%.8f",
+                    min_val_dual,
+                    max_val_dual);
+
+    // Tight frame check (raw Gaussian, non-dual), ignoring near-zero edges
+    memset(sum_squares, 0, window_cursor * sizeof(float));
+    for (uint32_t b = 0; b < ctx_nsgt->bin_capacity; b++) {
+        uint32_t off = offset[b];
+        uint32_t L = length[b];
+        for (uint32_t n = 0; n < L; n++) {
+            sum_squares[off + n] += window[off + n] * window[off + n];
+        }
+    }
+    float min_val_raw = FLT_MAX, max_val_raw = -FLT_MAX;
+    for (uint32_t n = 0; n < window_cursor; n++) {
+        if (sum_squares[n] < ignore_threshold) continue; // ignore zero edges
+        if (sum_squares[n] < min_val_raw) min_val_raw = sum_squares[n];
+        if (sum_squares[n] > max_val_raw) max_val_raw = sum_squares[n];
+    }
+    call_king_terry(
+        "TIGHT FRAME CHECK (gaussian, non-dual): min=%.8f max=%.8f",
+        min_val_raw,
+        max_val_raw);
+    //-------------------------------------------------------------------------
+    // Cleanup
+    free(sum_squares);
+    free(scale);
+    //-------------------------------------------------------------------------
+    // END NSGT FORMULA (GAUSSIAN + DUAL WINDOW, INLINE MIN/MAX)
+    //-------------------------------------------------------------------------
+    // pool alloc
+    ctx_nsgt->memory_property_flags = war_pool_alloc(
+        pool_wr, sizeof(VkMemoryPropertyFlags) * ctx_nsgt->resource_count);
+    ctx_nsgt->usage_flags = war_pool_alloc(
+        pool_wr, sizeof(VkBufferUsageFlags) * ctx_nsgt->resource_count);
+    ctx_nsgt->buffer =
+        war_pool_alloc(pool_wr, sizeof(VkBuffer) * ctx_nsgt->resource_count);
+    ctx_nsgt->memory_requirements = war_pool_alloc(
+        pool_wr, sizeof(VkMemoryRequirements) * ctx_nsgt->resource_count);
+    ctx_nsgt->device_memory = war_pool_alloc(
+        pool_wr, sizeof(VkDeviceMemory) * ctx_nsgt->resource_count);
+    ctx_nsgt->map =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_nsgt->resource_count);
+    ctx_nsgt->capacity = war_pool_alloc(
+        pool_wr, sizeof(VkDeviceSize) * ctx_nsgt->resource_count);
+    ctx_nsgt->descriptor_buffer_info = war_pool_alloc(
+        pool_wr, sizeof(VkDescriptorBufferInfo) * ctx_nsgt->resource_count);
+    ctx_nsgt->descriptor_image_info = war_pool_alloc(
+        pool_wr, sizeof(VkDescriptorImageInfo) * ctx_nsgt->resource_count);
+    ctx_nsgt->image =
+        war_pool_alloc(pool_wr, sizeof(VkImage) * ctx_nsgt->resource_count);
+    ctx_nsgt->image_view =
+        war_pool_alloc(pool_wr, sizeof(VkImageView) * ctx_nsgt->resource_count);
+    ctx_nsgt->format =
+        war_pool_alloc(pool_wr, sizeof(VkFormat) * ctx_nsgt->resource_count);
+    ctx_nsgt->extent_3d =
+        war_pool_alloc(pool_wr, sizeof(VkExtent3D) * ctx_nsgt->resource_count);
+    ctx_nsgt->mapped_memory_range = war_pool_alloc(
+        pool_wr, sizeof(VkMappedMemoryRange) * ctx_nsgt->resource_count);
+    ctx_nsgt->buffer_memory_barrier = war_pool_alloc(
+        pool_wr, sizeof(VkBufferMemoryBarrier) * ctx_nsgt->resource_count);
+    ctx_nsgt->image_memory_barrier = war_pool_alloc(
+        pool_wr, sizeof(VkImageMemoryBarrier) * ctx_nsgt->resource_count);
+    ctx_nsgt->image_usage_flags = war_pool_alloc(
+        pool_wr, sizeof(VkImageUsageFlags) * ctx_nsgt->resource_count);
+    ctx_nsgt->shader_stage_flags = war_pool_alloc(
+        pool_wr, sizeof(VkShaderStageFlags) * ctx_nsgt->resource_count);
+    ctx_nsgt->descriptor_set_layout_binding = war_pool_alloc(
+        pool_wr,
+        sizeof(VkDescriptorSetLayoutBinding) * ctx_nsgt->resource_count);
+    ctx_nsgt->write_descriptor_set = war_pool_alloc(
+        pool_wr, sizeof(VkWriteDescriptorSet) * ctx_nsgt->resource_count);
+    //-------------------------------------------------------------------------
+    // CONFIG
+    //-------------------------------------------------------------------------
+    // resources
+    ctx_nsgt->idx_offset = 0;
+    ctx_nsgt->idx_hop = 1;
+    ctx_nsgt->idx_length = 2;
+    ctx_nsgt->idx_window = 3;
+    ctx_nsgt->idx_dual_window = 4;
+    ctx_nsgt->idx_frequency = 5;
+    ctx_nsgt->idx_l = 6;
+    ctx_nsgt->idx_r = 7;
+    ctx_nsgt->idx_l_nsgt_temp = 8;
+    ctx_nsgt->idx_r_nsgt_temp = 9;
+    ctx_nsgt->idx_l_nsgt = 10;
+    ctx_nsgt->idx_r_nsgt = 11;
+    ctx_nsgt->idx_l_magnitude_temp = 12;
+    ctx_nsgt->idx_r_magnitude_temp = 13;
+    ctx_nsgt->idx_l_magnitude = 14;
+    ctx_nsgt->idx_r_magnitude = 15;
+    ctx_nsgt->idx_l_image = 16;
+    ctx_nsgt->idx_r_image = 17;
+    ctx_nsgt->idx_l_stage = 18;
+    ctx_nsgt->idx_r_stage = 19;
+    ctx_nsgt->idx_offset_stage = 20;
+    ctx_nsgt->idx_hop_stage = 21;
+    ctx_nsgt->idx_length_stage = 22;
+    ctx_nsgt->idx_window_stage = 23;
+    ctx_nsgt->idx_dual_window_stage = 24;
+    ctx_nsgt->idx_frequency_stage = 25;
+    // offset
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_offset] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_offset] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_offset] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_offset] = ctx_nsgt->offset_capacity;
+    // hop
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_hop] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_hop] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_hop] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_hop] = ctx_nsgt->hop_capacity;
+    // length
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_length] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_length] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_length] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_length] = ctx_nsgt->length_capacity;
+    // window
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_window] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_window] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_window] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_window] = ctx_nsgt->window_capacity;
+    // dual_window
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_dual_window] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_dual_window] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_dual_window] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_dual_window] = ctx_nsgt->window_capacity;
+    // frequency
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_frequency] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_frequency] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_frequency] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_frequency] = ctx_nsgt->frequency_capacity;
+    // offset_stage
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_offset_stage] =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_offset_stage] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_offset_stage] = ctx_nsgt->offset_capacity;
+    // hop_stage
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_hop_stage] =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_hop_stage] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_hop_stage] = ctx_nsgt->hop_capacity;
+    // length_stage
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_length_stage] =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_length_stage] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_length_stage] = ctx_nsgt->length_capacity;
+    // window_stage
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_window_stage] =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_window_stage] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_window_stage] = ctx_nsgt->window_capacity;
+    // dual_window_stage
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_dual_window_stage] =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_dual_window_stage] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_dual_window_stage] =
+        ctx_nsgt->window_capacity;
+    // frequency_stage
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_frequency_stage] =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_frequency_stage] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_frequency_stage] =
+        ctx_nsgt->frequency_capacity;
+    // l
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_l] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_l] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_l] = VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_l] = ctx_nsgt->wav_channel_capacity;
+    // r
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_r] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_r] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_r] = VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_r] = ctx_nsgt->wav_channel_capacity;
+    // l_nsgt_temp
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_l_nsgt_temp] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_l_nsgt_temp] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_l_nsgt_temp] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_l_nsgt_temp] =
+        ctx_nsgt->nsgt_channel_capacity;
+    // r_nsgt_temp
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_r_nsgt_temp] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_r_nsgt_temp] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_r_nsgt_temp] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_r_nsgt_temp] =
+        ctx_nsgt->nsgt_channel_capacity;
+    // l_nsgt
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_l_nsgt] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_l_nsgt] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_l_nsgt] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_l_nsgt] = ctx_nsgt->nsgt_channel_capacity;
+    // r_nsgt
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_r_nsgt] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_r_nsgt] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_r_nsgt] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_r_nsgt] = ctx_nsgt->nsgt_channel_capacity;
+    // l_magnitude_temp
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_l_magnitude_temp] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_l_magnitude_temp] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_l_magnitude_temp] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_l_magnitude_temp] =
+        ctx_nsgt->magnitude_channel_capacity;
+    // r_magnitude_temp
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_r_magnitude_temp] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_r_magnitude_temp] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_r_magnitude_temp] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_r_magnitude_temp] =
+        ctx_nsgt->magnitude_channel_capacity;
+    // l_magnitude
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_l_magnitude] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_l_magnitude] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_l_magnitude] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_l_magnitude] =
+        ctx_nsgt->magnitude_channel_capacity;
+    // r_magnitude
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_r_magnitude] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_r_magnitude] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_r_magnitude] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_r_magnitude] =
+        ctx_nsgt->magnitude_channel_capacity;
+    // l_image
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_l_image] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_l_image] =
+        VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    ctx_nsgt->format[ctx_nsgt->idx_l_image] = VK_FORMAT_R32_SFLOAT;
+    ctx_nsgt->extent_3d[ctx_nsgt->idx_l_image] =
+        (VkExtent3D){.width = ctx_nsgt->frame_capacity,
+                     .height = ctx_nsgt->bin_capacity,
+                     .depth = 1};
+    ctx_nsgt->image_usage_flags[ctx_nsgt->idx_l_image] =
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    // r_image
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_r_image] =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    ctx_nsgt->shader_stage_flags[ctx_nsgt->idx_r_image] =
+        VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    ctx_nsgt->format[ctx_nsgt->idx_r_image] = VK_FORMAT_R32_SFLOAT;
+    ctx_nsgt->extent_3d[ctx_nsgt->idx_r_image] =
+        ctx_nsgt->extent_3d[ctx_nsgt->idx_l_image];
+    ctx_nsgt->image_usage_flags[ctx_nsgt->idx_r_image] =
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    // l_stage
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_l_stage] =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_l_stage] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_l_stage] = ctx_nsgt->wav_channel_capacity;
+    // r_stage
+    ctx_nsgt->memory_property_flags[ctx_nsgt->idx_r_stage] =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    ctx_nsgt->usage_flags[ctx_nsgt->idx_r_stage] =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    ctx_nsgt->capacity[ctx_nsgt->idx_r_stage] = ctx_nsgt->wav_channel_capacity;
+    VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device,
+                                        &physical_device_memory_properties);
+    VkResult result;
+    for (VkDeviceSize i = 0; i < ctx_nsgt->resource_count; i++) {
+        VkImageUsageFlags image_usage_flags = ctx_nsgt->image_usage_flags[i];
+        if ((image_usage_flags &
+             (VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) != 0) {
+            goto image;
+        }
+        VkMemoryPropertyFlags memory_property_flags =
+            ctx_nsgt->memory_property_flags[i];
+        uint8_t device_local =
+            (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
+        VkBufferCreateInfo buffer_create_info = {0};
+        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_create_info.size = ctx_nsgt->capacity[i];
+        buffer_create_info.usage = ctx_nsgt->usage_flags[i];
+        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        result = vkCreateBuffer(
+            device, &buffer_create_info, NULL, &ctx_nsgt->buffer[i]);
+        assert(result == VK_SUCCESS);
+        vkGetBufferMemoryRequirements(
+            device, ctx_nsgt->buffer[i], &ctx_nsgt->memory_requirements[i]);
+        uint32_t memory_type_index = UINT32_MAX;
+        VkMemoryRequirements memory_requirements =
+            ctx_nsgt->memory_requirements[i];
+        for (uint32_t j = 0;
+             j < physical_device_memory_properties.memoryTypeCount;
+             j++) {
+            if ((memory_requirements.memoryTypeBits & (1 << j)) &&
+                (physical_device_memory_properties.memoryTypes[j]
+                     .propertyFlags &
+                 ctx_nsgt->memory_property_flags[i]) ==
+                    ctx_nsgt->memory_property_flags[i]) {
+                memory_type_index = j;
+                break;
+            }
+        }
+        assert(memory_type_index != UINT32_MAX);
+        VkMemoryAllocateInfo memory_allocate_info = {0};
+        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memory_allocate_info.allocationSize = memory_requirements.size;
+        memory_allocate_info.memoryTypeIndex = memory_type_index;
+        result = vkAllocateMemory(
+            device, &memory_allocate_info, NULL, &ctx_nsgt->device_memory[i]);
+        assert(result == VK_SUCCESS);
+        result = vkBindBufferMemory(
+            device, ctx_nsgt->buffer[i], ctx_nsgt->device_memory[i], 0);
+        assert(result == VK_SUCCESS);
+        if (!device_local) {
+            result = vkMapMemory(device,
+                                 ctx_nsgt->device_memory[i],
+                                 0,
+                                 ctx_nsgt->capacity[i],
+                                 0,
+                                 &ctx_nsgt->map[i]);
+            assert(result == VK_SUCCESS);
+            continue;
+        }
+        assert(ctx_nsgt->descriptor_count == i);
+        VkDescriptorBufferInfo* descriptor_buffer_info =
+            ctx_nsgt->descriptor_buffer_info;
+        descriptor_buffer_info[ctx_nsgt->descriptor_count].buffer =
+            ctx_nsgt->buffer[ctx_nsgt->descriptor_count];
+        descriptor_buffer_info[ctx_nsgt->descriptor_count].offset = 0;
+        descriptor_buffer_info[ctx_nsgt->descriptor_count].range =
+            ctx_nsgt->capacity[ctx_nsgt->descriptor_count];
+        VkShaderStageFlags* shader_stage_flags = ctx_nsgt->shader_stage_flags;
+        VkDescriptorSetLayoutBinding* descriptor_set_layout_binding =
+            ctx_nsgt->descriptor_set_layout_binding;
+        VkWriteDescriptorSet* write_descriptor_set =
+            ctx_nsgt->write_descriptor_set;
+        descriptor_set_layout_binding[ctx_nsgt->descriptor_count].binding =
+            ctx_nsgt->descriptor_count;
+        descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
+            .descriptorCount = 1;
+        descriptor_set_layout_binding[ctx_nsgt->descriptor_count].stageFlags =
+            shader_stage_flags[ctx_nsgt->descriptor_count];
+        write_descriptor_set[ctx_nsgt->descriptor_count].sType =
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write_descriptor_set[ctx_nsgt->descriptor_count].dstBinding =
+            ctx_nsgt->descriptor_count;
+        write_descriptor_set[ctx_nsgt->descriptor_count].descriptorCount = 1;
+        write_descriptor_set[ctx_nsgt->descriptor_count].descriptorType =
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write_descriptor_set[ctx_nsgt->descriptor_count].pBufferInfo =
+            &descriptor_buffer_info[ctx_nsgt->descriptor_count];
+        ctx_nsgt->descriptor_count++;
+        continue;
+    image:
+        VkImageCreateInfo image_create_info = {0};
+        image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        image_create_info.imageType = VK_IMAGE_TYPE_2D;
+        image_create_info.format = ctx_nsgt->format[i];
+        image_create_info.extent = ctx_nsgt->extent_3d[i];
+        image_create_info.mipLevels = 1;
+        image_create_info.arrayLayers = 1;
+        image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+        image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+        image_create_info.usage = ctx_nsgt->image_usage_flags[i];
+        image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        result = vkCreateImage(
+            device, &image_create_info, NULL, &ctx_nsgt->image[i]);
+        assert(result == VK_SUCCESS);
+        vkGetImageMemoryRequirements(
+            device, ctx_nsgt->image[i], &ctx_nsgt->memory_requirements[i]);
+        memory_requirements = ctx_nsgt->memory_requirements[i];
+        memory_type_index = UINT32_MAX;
+        for (uint32_t j = 0;
+             j < physical_device_memory_properties.memoryTypeCount;
+             j++) {
+            if ((memory_requirements.memoryTypeBits & (1 << j)) &&
+                (physical_device_memory_properties.memoryTypes[j]
+                     .propertyFlags &
+                 ctx_nsgt->memory_property_flags[i]) ==
+                    ctx_nsgt->memory_property_flags[i]) {
+                memory_type_index = j;
+                break;
+            }
+        }
+        assert(memory_type_index != UINT32_MAX);
+        memory_allocate_info = (VkMemoryAllocateInfo){0};
+        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memory_allocate_info.allocationSize = memory_requirements.size;
+        memory_allocate_info.memoryTypeIndex = memory_type_index;
+        result = vkAllocateMemory(
+            device, &memory_allocate_info, NULL, &ctx_nsgt->device_memory[i]);
+        assert(result == VK_SUCCESS);
+        result = vkBindImageMemory(
+            device, ctx_nsgt->image[i], ctx_nsgt->device_memory[i], 0);
+        assert(result == VK_SUCCESS);
+        VkImageViewCreateInfo view_info = {0};
+        view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_info.image = ctx_nsgt->image[i];
+        view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_info.format = ctx_nsgt->format[i];
+        view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        view_info.subresourceRange.baseMipLevel = 0;
+        view_info.subresourceRange.levelCount = 1;
+        view_info.subresourceRange.baseArrayLayer = 0;
+        view_info.subresourceRange.layerCount = 1;
+        result = vkCreateImageView(
+            device, &view_info, NULL, &ctx_nsgt->image_view[i]);
+        assert(result == VK_SUCCESS);
+        assert(ctx_nsgt->descriptor_count == i);
+        // descriptor_image_info
+        ctx_nsgt->descriptor_image_info[ctx_nsgt->descriptor_count].imageView =
+            ctx_nsgt->image_view[i];
+        ctx_nsgt->descriptor_image_info[ctx_nsgt->descriptor_count]
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        ctx_nsgt->descriptor_image_info[ctx_nsgt->descriptor_count].sampler =
+            VK_NULL_HANDLE;
+        // descriptor_set_layout_binding
+        ctx_nsgt->descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
+            .binding = ctx_nsgt->descriptor_count;
+        ctx_nsgt->descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        ctx_nsgt->descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
+            .descriptorCount = 1;
+        ctx_nsgt->descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
+            .stageFlags = ctx_nsgt->shader_stage_flags[i];
+        // write_descriptor_set
+        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count].sType =
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count].dstBinding =
+            ctx_nsgt->descriptor_count;
+        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count]
+            .descriptorCount = 1;
+        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count]
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count].pImageInfo =
+            &ctx_nsgt->descriptor_image_info[ctx_nsgt->descriptor_count];
+        ctx_nsgt->descriptor_count++;
+        ctx_nsgt->descriptor_image_count++;
+    }
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = ctx_nsgt->descriptor_count,
+        .pBindings = ctx_nsgt->descriptor_set_layout_binding,
+    };
+    result = vkCreateDescriptorSetLayout(device,
+                                         &descriptor_set_layout_create_info,
+                                         NULL,
+                                         &ctx_nsgt->descriptor_set_layout);
+    assert(result == VK_SUCCESS);
+    VkDescriptorPoolSize descriptor_pool_size[2] = {
+        (VkDescriptorPoolSize){
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount =
+                ctx_nsgt->descriptor_count - ctx_nsgt->descriptor_image_count,
+        },
+        (VkDescriptorPoolSize){
+            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .descriptorCount = ctx_nsgt->descriptor_image_count,
+        },
+    };
+    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .poolSizeCount = 2,
+        .pPoolSizes = descriptor_pool_size,
+        .maxSets = 1,
+    };
+    result = vkCreateDescriptorPool(
+        device, &descriptor_pool_create_info, NULL, &ctx_nsgt->descriptor_pool);
+    assert(result == VK_SUCCESS);
+    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = ctx_nsgt->descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &ctx_nsgt->descriptor_set_layout,
+    };
+    result = vkAllocateDescriptorSets(
+        device, &descriptor_set_allocate_info, &ctx_nsgt->descriptor_set);
+    assert(result == VK_SUCCESS);
+    for (VkDeviceSize i = 0; i < ctx_nsgt->descriptor_count; i++) {
+        ctx_nsgt->write_descriptor_set[i].dstSet = ctx_nsgt->descriptor_set;
+    }
+    vkUpdateDescriptorSets(device,
+                           ctx_nsgt->descriptor_count,
+                           ctx_nsgt->write_descriptor_set,
+                           0,
+                           NULL);
+    uint8_t fn_result = war_vulkan_get_shader_module(
+        device, &ctx_nsgt->compute_shader, "build/spv/war_nsgt_compute.spv");
+    assert(fn_result);
+    fn_result = war_vulkan_get_shader_module(
+        device, &ctx_nsgt->vertex_shader, "build/spv/war_nsgt_vertex.spv");
+    assert(fn_result);
+    fn_result = war_vulkan_get_shader_module(
+        device, &ctx_nsgt->fragment_shader, "build/spv/war_nsgt_fragment.spv");
+    assert(fn_result);
+    VkPushConstantRange compute_push_constant_range = {
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset = 0,
+        .size = sizeof(war_nsgt_compute_push_constant),
+    };
+    VkPipelineLayoutCreateInfo compute_pipeline_layout_create_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &ctx_nsgt->descriptor_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &compute_push_constant_range,
+    };
+    result = vkCreatePipelineLayout(device,
+                                    &compute_pipeline_layout_create_info,
+                                    NULL,
+                                    &ctx_nsgt->compute_pipeline_layout);
+    assert(result == VK_SUCCESS);
+    VkComputePipelineCreateInfo compute_pipeline_create_info = {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage =
+            (VkPipelineShaderStageCreateInfo){
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                .module = ctx_nsgt->compute_shader,
+                .pName = "main",
+            },
+        .layout = ctx_nsgt->compute_pipeline_layout,
+    };
+    result = vkCreateComputePipelines(device,
+                                      VK_NULL_HANDLE,
+                                      1,
+                                      &compute_pipeline_create_info,
+                                      NULL,
+                                      &ctx_nsgt->compute_pipeline);
+    assert(result == VK_SUCCESS);
+    VkPushConstantRange graphics_push_constant_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = sizeof(war_nsgt_graphics_push_constant),
+    };
+    VkPipelineLayoutCreateInfo graphics_pipeline_layout_create_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &ctx_nsgt->descriptor_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &graphics_push_constant_range,
+    };
+    result = vkCreatePipelineLayout(device,
+                                    &graphics_pipeline_layout_create_info,
+                                    NULL,
+                                    &ctx_nsgt->graphics_pipeline_layout);
+    assert(result == VK_SUCCESS);
+    VkPipelineShaderStageCreateInfo*
+        graphics_pipeline_shader_stage_create_info =
+            (VkPipelineShaderStageCreateInfo[2]){
+                (VkPipelineShaderStageCreateInfo){
+                    .sType =
+                        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    .stage = VK_SHADER_STAGE_VERTEX_BIT,
+                    .module = ctx_nsgt->vertex_shader,
+                    .pName = "main",
+                },
+                (VkPipelineShaderStageCreateInfo){
+                    .sType =
+                        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+                    .module = ctx_nsgt->fragment_shader,
+                    .pName = "main",
+                },
+            };
+    VkPipelineVertexInputStateCreateInfo
+        graphics_pipeline_vertex_input_state_create_info = {0};
+    graphics_pipeline_vertex_input_state_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    VkPipelineInputAssemblyStateCreateInfo
+        graphics_pipeline_input_assembly_state_create_info = {0};
+    graphics_pipeline_input_assembly_state_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    graphics_pipeline_input_assembly_state_create_info.topology =
+        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo
+        graphics_pipeline_viewport_state_create_info = {0};
+    graphics_pipeline_viewport_state_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    graphics_pipeline_viewport_state_create_info.viewportCount = 1;
+    graphics_pipeline_viewport_state_create_info.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo
+        graphics_pipeline_rasterization_state_create_info = {0};
+    graphics_pipeline_rasterization_state_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    graphics_pipeline_rasterization_state_create_info.polygonMode =
+        VK_POLYGON_MODE_FILL;
+    graphics_pipeline_rasterization_state_create_info.cullMode =
+        VK_CULL_MODE_NONE;
+    graphics_pipeline_rasterization_state_create_info.frontFace =
+        VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    graphics_pipeline_rasterization_state_create_info.lineWidth = 1.0f;
+    VkPipelineMultisampleStateCreateInfo
+        graphics_pipeline_multisample_state_create_info = {0};
+    graphics_pipeline_multisample_state_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    graphics_pipeline_multisample_state_create_info.rasterizationSamples =
+        VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineDepthStencilStateCreateInfo
+        graphics_pipeline_depth_stencil_state_create_info = {0};
+    graphics_pipeline_depth_stencil_state_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    graphics_pipeline_depth_stencil_state_create_info.depthTestEnable =
+        VK_FALSE;
+    graphics_pipeline_depth_stencil_state_create_info.depthWriteEnable =
+        VK_FALSE;
+    VkPipelineColorBlendStateCreateInfo
+        graphics_pipeline_color_blend_state_create_info = {0};
+    VkPipelineColorBlendAttachmentState
+        graphics_pipeline_color_blend_attachment_state = {
+            .colorWriteMask =
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+            .blendEnable = VK_FALSE,
+        };
+    graphics_pipeline_color_blend_state_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    graphics_pipeline_color_blend_state_create_info.attachmentCount = 1;
+    graphics_pipeline_color_blend_state_create_info.pAttachments =
+        &graphics_pipeline_color_blend_attachment_state;
+    VkDynamicState graphics_dynamic_state[] = {VK_DYNAMIC_STATE_VIEWPORT,
+                                               VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo
+        graphics_pipeline_dynamic_state_create_info = {0};
+    graphics_pipeline_dynamic_state_create_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    graphics_pipeline_dynamic_state_create_info.dynamicStateCount = 2;
+    graphics_pipeline_dynamic_state_create_info.pDynamicStates =
+        graphics_dynamic_state;
+    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 2,
+        .pStages = graphics_pipeline_shader_stage_create_info,
+        .layout = ctx_nsgt->graphics_pipeline_layout,
+        .pVertexInputState = &graphics_pipeline_vertex_input_state_create_info,
+        .pInputAssemblyState =
+            &graphics_pipeline_input_assembly_state_create_info,
+        .pViewportState = &graphics_pipeline_viewport_state_create_info,
+        .pRasterizationState =
+            &graphics_pipeline_rasterization_state_create_info,
+        .pMultisampleState = &graphics_pipeline_multisample_state_create_info,
+        .pDepthStencilState =
+            &graphics_pipeline_depth_stencil_state_create_info,
+        .pColorBlendState = &graphics_pipeline_color_blend_state_create_info,
+        .pDynamicState = &graphics_pipeline_dynamic_state_create_info,
+        .renderPass = render_pass,
+        .subpass = 0,
+    };
+    result = vkCreateGraphicsPipelines(device,
+                                       VK_NULL_HANDLE,
+                                       1,
+                                       &graphics_pipeline_create_info,
+                                       NULL,
+                                       &ctx_nsgt->graphics_pipeline);
+    assert(result == VK_SUCCESS);
+    //-------------------------------------------------------------------------
+    // COPY OVER TO MAP
+    //-------------------------------------------------------------------------
+    VkMappedMemoryRange mapped_memory_range[6];
+    memcpy(ctx_nsgt->map[ctx_nsgt->idx_offset_stage],
+           offset,
+           ctx_nsgt->offset_capacity);
+    mapped_memory_range[0].offset = 0;
+    mapped_memory_range[0].size = VK_WHOLE_SIZE;
+    mapped_memory_range[0].memory =
+        ctx_nsgt->device_memory[ctx_nsgt->idx_offset_stage];
+    mapped_memory_range[0].pNext = NULL;
+    mapped_memory_range[0].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    memcpy(ctx_nsgt->map[ctx_nsgt->idx_hop_stage], hop, ctx_nsgt->hop_capacity);
+    mapped_memory_range[1].offset = 0;
+    mapped_memory_range[1].size = VK_WHOLE_SIZE;
+    mapped_memory_range[1].memory =
+        ctx_nsgt->device_memory[ctx_nsgt->idx_hop_stage];
+    mapped_memory_range[1].pNext = NULL;
+    mapped_memory_range[1].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    memcpy(ctx_nsgt->map[ctx_nsgt->idx_length_stage],
+           length,
+           ctx_nsgt->length_capacity);
+    mapped_memory_range[2].offset = 0;
+    mapped_memory_range[2].size = VK_WHOLE_SIZE;
+    mapped_memory_range[2].memory =
+        ctx_nsgt->device_memory[ctx_nsgt->idx_length_stage];
+    mapped_memory_range[2].pNext = NULL;
+    mapped_memory_range[2].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    memcpy(ctx_nsgt->map[ctx_nsgt->idx_window_stage],
+           window,
+           ctx_nsgt->window_capacity);
+    mapped_memory_range[3].offset = 0;
+    mapped_memory_range[3].size = VK_WHOLE_SIZE;
+    mapped_memory_range[3].memory =
+        ctx_nsgt->device_memory[ctx_nsgt->idx_window_stage];
+    mapped_memory_range[3].pNext = NULL;
+    mapped_memory_range[3].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    memcpy(ctx_nsgt->map[ctx_nsgt->idx_dual_window_stage],
+           dual_window,
+           ctx_nsgt->window_capacity);
+    mapped_memory_range[4].offset = 0;
+    mapped_memory_range[4].size = VK_WHOLE_SIZE;
+    mapped_memory_range[4].memory =
+        ctx_nsgt->device_memory[ctx_nsgt->idx_dual_window_stage];
+    mapped_memory_range[4].pNext = NULL;
+    mapped_memory_range[4].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    memcpy(ctx_nsgt->map[ctx_nsgt->idx_frequency_stage],
+           frequency,
+           ctx_nsgt->frequency_capacity);
+    mapped_memory_range[5].offset = 0;
+    mapped_memory_range[5].size = VK_WHOLE_SIZE;
+    mapped_memory_range[5].memory =
+        ctx_nsgt->device_memory[ctx_nsgt->idx_frequency_stage];
+    mapped_memory_range[5].pNext = NULL;
+    mapped_memory_range[5].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+    vkFlushMappedMemoryRanges(device, 6, mapped_memory_range);
+    // cleanup
+    free(offset);
+    free(hop);
+    free(length);
+    free(window);
+    free(dual_window);
+    free(frequency);
+    end("war_nsgt_init");
 }
 
 #endif // WAR_VULKAN_H
