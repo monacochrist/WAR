@@ -885,6 +885,7 @@ void* war_window_render(void* args) {
         .chunk_size = init_capacity - 8,
         .format = "WAVE",
     };
+    ctx_wr->init_riff_header = init_riff_header;
     war_fmt_chunk init_fmt_chunk = (war_fmt_chunk){
         .subchunk1_id = "fmt ",
         .subchunk1_size = 16,
@@ -896,10 +897,12 @@ void* war_window_render(void* args) {
         .block_align = atomic_load(&ctx_lua->A_CHANNEL_COUNT) * sizeof(float),
         .bits_per_sample = 32,
     };
+    ctx_wr->init_fmt_chunk = init_fmt_chunk;
     war_data_chunk init_data_chunk = (war_data_chunk){
         .subchunk2_id = "data",
         .subchunk2_size = init_capacity - 44,
     };
+    ctx_wr->init_data_chunk = init_data_chunk;
     *(war_riff_header*)capture_wav->file = init_riff_header;
     *(war_fmt_chunk*)(capture_wav->file + sizeof(war_riff_header)) =
         init_fmt_chunk;
@@ -2181,30 +2184,46 @@ cmd_timeout_done:
                  ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
                  ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE) ||
                 capture_wav->memfd_size <= 44 || !ctx_nsgt->dirty_compute) {
+                ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
+                ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
+                ctx_nsgt->fn_idx_count = 2;
+                for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+                    if (ctx_nsgt->image_layout[ctx_nsgt->src_idx[i]] ==
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+                        continue;
+                    }
+                    war_nsgt_image_barrier(
+                        ctx_nsgt->fn_idx_count,
+                        ctx_nsgt->src_idx,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        VK_ACCESS_SHADER_READ_BIT,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        ctx_vk->cmd_buffer,
+                        ctx_nsgt);
+                    break;
+                }
                 goto war_label_render_pass;
             }
-            call_king_terry("COMPUTE");
             ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
             ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
             ctx_nsgt->fn_idx_count = 2;
             war_nsgt_image_barrier(ctx_nsgt->fn_idx_count,
                                    ctx_nsgt->src_idx,
-                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                   VK_ACCESS_SHADER_WRITE_BIT |
-                                       VK_ACCESS_SHADER_READ_BIT,
+                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                   VK_ACCESS_SHADER_WRITE_BIT,
                                    VK_IMAGE_LAYOUT_GENERAL,
                                    ctx_vk->cmd_buffer,
                                    ctx_nsgt);
-            // load samples
-            uint8_t* wav_samples = capture_wav->file + 44;
-            uint32_t total_samples = capture_wav->memfd_size - 44;
-            memcpy(ctx_nsgt->map[ctx_nsgt->idx_l_stage],
-                   wav_samples,
-                   total_samples);
-            memcpy(ctx_nsgt->map[ctx_nsgt->idx_r_stage],
-                   wav_samples,
-                   total_samples);
+            float* samples = (float*)(capture_wav->file + 44);
+            uint32_t channel_samples =
+                ((capture_wav->memfd_size - 44) / sizeof(float)) / 2;
+            float* l_stage = (float*)ctx_nsgt->map[ctx_nsgt->idx_l_stage];
+            float* r_stage = (float*)ctx_nsgt->map[ctx_nsgt->idx_r_stage];
+            for (uint32_t i = 0; i < channel_samples; i++) {
+                l_stage[i] = samples[i * 2 + 0];
+                r_stage[i] = samples[i * 2 + 1];
+            }
+            call_king_terry("memfd_size: %u", capture_wav->memfd_size);
             ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_stage;
             ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_stage;
             ctx_nsgt->fn_idx_count = 2;
@@ -2237,7 +2256,7 @@ cmd_timeout_done:
             war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
                                     ctx_nsgt->dst_idx,
                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT,
                                     ctx_vk->cmd_buffer,
                                     ctx_nsgt);
             uint32_t total_sample_elements =
@@ -2263,6 +2282,10 @@ cmd_timeout_done:
             nsgt_compute_push_constant.bin_capacity = ctx_nsgt->bin_capacity;
             nsgt_compute_push_constant.frame_capacity =
                 ctx_nsgt->frame_capacity;
+            nsgt_compute_push_constant.bin_start = 0;
+            nsgt_compute_push_constant.bin_end = ctx_nsgt->bin_capacity;
+            nsgt_compute_push_constant.frame_start = 0;
+            nsgt_compute_push_constant.frame_end = ctx_nsgt->frame_capacity;
             vkCmdPushConstants(
                 ctx_vk->cmd_buffer,
                 ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_compute],
@@ -2277,15 +2300,12 @@ cmd_timeout_done:
             ctx_nsgt->fn_idx_count = 2;
             war_nsgt_image_barrier(ctx_nsgt->fn_idx_count,
                                    ctx_nsgt->src_idx,
-                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                   VK_ACCESS_SHADER_READ_BIT |
-                                       VK_ACCESS_SHADER_WRITE_BIT,
+                                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                   VK_ACCESS_SHADER_READ_BIT,
                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                    ctx_vk->cmd_buffer,
                                    ctx_nsgt);
             ctx_nsgt->dirty_compute = 0;
-            call_king_terry("END COMPUTE");
         war_label_render_pass:
             //-------------------------------------------------------------
             //  RENDER PASS
@@ -3200,26 +3220,6 @@ cmd_timeout_done:
                  ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE)) {
                 goto war_label_end_render_pass;
             }
-            call_king_terry("GRAPHICS");
-            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
-            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
-            ctx_nsgt->fn_idx_count = 2;
-            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
-                if (ctx_nsgt->image_layout[ctx_nsgt->src_idx[i]] ==
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-                    continue;
-                }
-                war_nsgt_image_barrier(
-                    ctx_nsgt->fn_idx_count,
-                    ctx_nsgt->src_idx,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    ctx_vk->cmd_buffer,
-                    ctx_nsgt);
-                break;
-            }
             vkCmdBindPipeline(
                 ctx_vk->cmd_buffer,
                 ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_graphics],
@@ -3259,7 +3259,6 @@ cmd_timeout_done:
                 ctx_nsgt->push_constant_size[ctx_nsgt->pipeline_idx_graphics],
                 &nsgt_graphics_push_constant);
             vkCmdDraw(ctx_vk->cmd_buffer, 3, 1, 0, 0);
-            call_king_terry("END GRAPHICS");
         war_label_end_render_pass:
             //---------------------------------------------------------
             //   END RENDER PASS
@@ -3468,19 +3467,20 @@ cmd_timeout_done:
                     break;
                 }
             }
-            if (ctx_wr->fullscreen) {
-                war_wl_surface_set_opaque_region(fd, wl_surface_id, 0);
-                ctx_wr->text_feather = default_text_feather;
-                ctx_wr->text_thickness = default_text_thickness;
-                ctx_wr->alpha_scale = default_alpha_scale;
-                ctx_wr->alpha_scale_cursor = default_cursor_alpha_scale;
-                goto wayland_done;
-            }
-            war_wl_surface_set_opaque_region(fd, wl_surface_id, wl_region_id);
-            ctx_wr->text_feather = windowed_text_feather;
-            ctx_wr->text_thickness = windowed_text_thickness;
-            ctx_wr->alpha_scale = default_windowed_alpha_scale;
-            ctx_wr->alpha_scale_cursor = default_windowed_cursor_alpha_scale;
+            war_wl_surface_set_opaque_region(fd, wl_surface_id, 0);
+            // if (ctx_wr->fullscreen) {
+            //     war_wl_surface_set_opaque_region(fd, wl_surface_id, 0);
+            //     ctx_wr->text_feather = default_text_feather;
+            //     ctx_wr->text_thickness = default_text_thickness;
+            //     ctx_wr->alpha_scale = default_alpha_scale;
+            //     ctx_wr->alpha_scale_cursor = default_cursor_alpha_scale;
+            //     goto wayland_done;
+            // }
+            // war_wl_surface_set_opaque_region(fd, wl_surface_id,
+            // wl_region_id); ctx_wr->text_feather = windowed_text_feather;
+            // ctx_wr->text_thickness = windowed_text_thickness;
+            // ctx_wr->alpha_scale = default_windowed_alpha_scale;
+            // ctx_wr->alpha_scale_cursor = default_windowed_cursor_alpha_scale;
             goto wayland_done;
         xdg_toplevel_close:
             // dump_bytes("xdg_toplevel_close event", msg_buffer +
@@ -3620,12 +3620,6 @@ cmd_timeout_done:
             ssize_t dmabuf_sent = sendmsg(fd, &msg, 0);
             if (dmabuf_sent < 0) perror("sendmsg");
             assert(dmabuf_sent == 28);
-#if DEBUG
-            uint8_t full_msg[32] = {0};
-            memcpy(full_msg, header, 8);
-            memcpy(full_msg + 8, tail, 20);
-#endif
-            dump_bytes("zwp_linux_buffer_params_v1::add request", full_msg, 28);
 
             uint8_t create_immed[28]; // REFACTOR: maybe 0 initialize
             war_write_le32(

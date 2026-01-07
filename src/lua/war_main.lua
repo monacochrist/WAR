@@ -122,8 +122,8 @@ ctx_lua = {
     VK_MAX_FRAMES                       = 1,
     VK_GLYPH_COUNT                      = 128,
     -- nsgt
-    NSGT_BIN_CAPACITY                   = 256,  -- fixed for tight-frame condition
-    NSGT_FRAME_CAPACITY                 = 128,   -- fixed for tight-frame condition
+    NSGT_BIN_CAPACITY                   = 256 * 4,  -- fixed for tight-frame condition
+    NSGT_FRAME_CAPACITY                 = 128 * 4,   -- fixed for tight-frame condition
     NSGT_FREQUENCY_MIN                  = 20,    -- fixed for tight-frame condition
     NSGT_FREQUENCY_MAX                  = 20000, -- fixed for tight-frame condition
     NSGT_ALPHA                          = 1.0,

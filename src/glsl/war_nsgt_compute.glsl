@@ -24,12 +24,12 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, binding = 0) buffer buf0 { uint data[]; } offset; 
-layout(std430, binding = 1) buffer buf1 { uint data[]; } hop;
-layout(std430, binding = 2) buffer buf2 { uint data[]; } length;
-layout(std430, binding = 3) buffer buf3 { float data[]; } window;
-layout(std430, binding = 4) buffer buf4 { float data[]; } dual_window;
-layout(std430, binding = 5) buffer buf5 { float data[]; } frequency;
+layout(std430, binding = 0) buffer buf0 { uint data[]; } offset_buffer; 
+layout(std430, binding = 1) buffer buf1 { uint data[]; } hop_buffer;
+layout(std430, binding = 2) buffer buf2 { uint data[]; } length_buffer;
+layout(std430, binding = 3) buffer buf3 { float data[]; } window_buffer;
+layout(std430, binding = 4) buffer buf4 { float data[]; } dual_window_buffer;
+layout(std430, binding = 5) buffer buf5 { float data[]; } frequency_buffer;
 layout(std430, binding = 6) buffer buf6 { float data[]; } l_buffer;
 layout(std430, binding = 7) buffer buf7 { float data[]; } r_buffer;
 layout(std430, binding = 8) buffer buf8 { vec2 data[]; } l_nsgt_temp_buffer;
@@ -56,23 +56,56 @@ layout(push_constant) uniform pc {
     layout(offset = 36) uint frame_capacity;
 } push_constant;
 
+vec2 complexAdd(vec2 a, vec2 b) { return vec2(a.x + b.x, a.y + b.y); }
+vec2 complexMul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+vec2 cis(float theta) { return vec2(cos(theta), sin(theta)); }
+
 void main() {
-    // Compute global index
     uint gid = gl_GlobalInvocationID.x;
-    uint total_threads = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    uint total_coeffs = push_constant.bin_capacity * push_constant.frame_capacity;
 
-    // Simple placeholder: fill image with a gradient
-    for (uint f = 0; f < push_constant.frame_capacity; f++) {
-        for (uint b = 0; b < push_constant.bin_capacity; b++) {
-            if ((b * push_constant.frame_capacity + f) % total_threads == gid) {
-                // L channel: horizontal gradient
-                float l_val = float(f) / float(push_constant.frame_capacity);
-                imageStore(l_image, ivec2(f, b), vec4(l_val, 0.0, 0.0, 1.0));
+    if (gid >= total_coeffs) return;
 
-                // R channel: vertical gradient
-                float r_val = float(b) / float(push_constant.bin_capacity);
-                imageStore(r_image, ivec2(f, b), vec4(r_val, 0.0, 0.0, 1.0));
-            }
-        }
+    uint b = gid % push_constant.bin_capacity;          // bin index
+    uint n = gid / push_constant.bin_capacity;          // frame index
+
+    int start = int(push_constant.bin_start);
+    int end = int(push_constant.bin_end);
+    if (b < start || b >= end) return;
+
+    // --- Calculate NSGT coefficient for left channel ---
+    int L_b = int(length_buffer.data[b]);
+    int a_b = int(hop_buffer.data[b]);
+    vec2 coeff_l = vec2(0.0);
+    vec2 coeff_r = vec2(0.0);
+
+    for (int t = 0; t < L_b; t++) {
+        uint idx = n * a_b + t;
+        float sample_l = l_buffer.data[idx];
+        float sample_r = r_buffer.data[idx];
+
+        float w = window_buffer.data[offset_buffer.data[b] + t];           // Gaussian window_buffer
+        float dw = dual_window_buffer.data[offset_buffer.data[b] + t];     // Dual window_buffer
+
+        float phase = -6.28318530718 * frequency_buffer.data[b] * float(t) / float(L_b); // -2π f t / L_b
+        vec2 exp_phase = cis(phase);
+
+        vec2 s_l = vec2(sample_l * w * dw, 0.0);
+        vec2 s_r = vec2(sample_r * w * dw, 0.0);
+
+        coeff_l = complexAdd(coeff_l, complexMul(s_l, exp_phase));
+        coeff_r = complexAdd(coeff_r, complexMul(s_r, exp_phase));
     }
+
+    // --- Store NSGT coefficient ---
+    uint idx_out = b * push_constant.frame_capacity + n;
+    l_nsgt_buffer.data[idx_out] = coeff_l;
+    r_nsgt_buffer.data[idx_out] = coeff_r;
+
+    // --- Magnitude for visualization ---
+    float mag_l = length(coeff_l);
+    float mag_r = length(coeff_r);
+
+    imageStore(l_image, ivec2(n, b), vec4(mag_l, mag_l, mag_l, 1.0));
+    imageStore(r_image, ivec2(n, b), vec4(mag_r, mag_r, mag_r, 1.0));
 }

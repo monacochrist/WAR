@@ -26,6 +26,7 @@
 #include "h/war_data.h"
 #include "h/war_debug_macros.h"
 #include "h/war_functions.h"
+#include "h/war_vulkan.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -2851,6 +2852,8 @@ static inline void war_capture_mode(war_env* env) {
     war_status_context* ctx_status = env->ctx_status;
     war_producer_consumer* pc_capture = env->pc_capture;
     war_command_context* ctx_command = env->ctx_command;
+    war_nsgt_context* ctx_nsgt = env->ctx_nsgt;
+    ctx_nsgt->dirty_compute = 1;
     ctx_fsm->repeat_keysym = 0;
     ctx_fsm->repeat_mod = 0;
     ctx_fsm->repeating = 0;
@@ -2886,7 +2889,31 @@ static inline void war_capture_reload(war_env* env) {
     call_king_terry("war_capture_reload");
     war_window_render_context* ctx_wr = env->ctx_wr;
     war_nsgt_context* ctx_nsgt = env->ctx_nsgt;
+    war_file* capture_wav = env->capture_wav;
+    war_vulkan_context* ctx_vk = env->ctx_vk;
     ctx_nsgt->dirty_compute = 1;
+    capture_wav->memfd_size = 44;
+    memset(capture_wav->file, 0, capture_wav->memfd_capacity);
+    *(war_riff_header*)capture_wav->file = ctx_wr->init_riff_header;
+    *(war_fmt_chunk*)(capture_wav->file + sizeof(war_riff_header)) =
+        ctx_wr->init_fmt_chunk;
+    *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
+                       sizeof(war_fmt_chunk)) = ctx_wr->init_data_chunk;
+    memset(ctx_nsgt->map[ctx_nsgt->idx_l_stage],
+           0,
+           ctx_nsgt->capacity[ctx_nsgt->idx_l_stage]);
+    memset(ctx_nsgt->map[ctx_nsgt->idx_r_stage],
+           0,
+           ctx_nsgt->capacity[ctx_nsgt->idx_r_stage]);
+    ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_stage;
+    ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_stage;
+    ctx_nsgt->fn_idx_count = 2;
+    war_nsgt_flush(ctx_nsgt->fn_idx_count,
+                   ctx_nsgt->src_idx,
+                   NULL,
+                   NULL,
+                   ctx_vk->device,
+                   ctx_nsgt);
     ctx_wr->numeric_prefix = 0;
 }
 

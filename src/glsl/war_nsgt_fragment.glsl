@@ -50,5 +50,5 @@ void main() {
     // Choose left or right channel for visualization
     float v = (push_constant.channel == 0) ? l : r;
 
-    out_color = vec4(v, v, v, 1.0);
+    out_color = vec4(v, 0.0, 0.0, 1.0);
 }

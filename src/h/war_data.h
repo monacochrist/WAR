@@ -806,6 +806,10 @@ typedef struct war_window_render_context {
     uint8_t layer_flux;
     uint32_t default_viewport_cols;
     uint32_t default_viewport_rows;
+    // init wav header
+    war_riff_header init_riff_header;
+    war_fmt_chunk init_fmt_chunk;
+    war_data_chunk init_data_chunk;
 } war_window_render_context;
 
 enum war_command_prompt_types {

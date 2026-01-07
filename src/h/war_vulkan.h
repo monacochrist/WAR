@@ -3389,7 +3389,7 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
             ctx_nsgt->push_constant_shader_stage_flags[i];
         push_constant_range.offset = 0;
         push_constant_range.size = ctx_nsgt->push_constant_size[i];
-        VkPipelineLayoutCreateInfo pipeline_layout_create_info;
+        VkPipelineLayoutCreateInfo pipeline_layout_create_info = {0};
         pipeline_layout_create_info.sType =
             VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipeline_layout_create_info.setLayoutCount = 1;
