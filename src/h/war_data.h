@@ -108,14 +108,15 @@ enum war_layers {
     LAYER_NOTES = 4,
     LAYER_NOTE_TEXT = 5,
     LAYER_HUD = 6,
-    LAYER_HUD_TEXT = 7,
-    LAYER_CURSOR = 8,
-    LAYER_POPUP_BACKGROUND = 9,
-    LAYER_POPUP_OUTLINE = 10,
-    LAYER_POPUP_TEXT = 11,
-    LAYER_POPUP_HUD = 12,
-    LAYER_POPUP_HUD_TEXT = 13,
-    LAYER_POPUP_CURSOR = 14,
+    LAYER_HUD_CURSOR = 7,
+    LAYER_HUD_TEXT = 8,
+    LAYER_CURSOR = 9,
+    LAYER_POPUP_BACKGROUND = 10,
+    LAYER_POPUP_OUTLINE = 11,
+    LAYER_POPUP_TEXT = 12,
+    LAYER_POPUP_HUD = 13,
+    LAYER_POPUP_HUD_TEXT = 14,
+    LAYER_POPUP_CURSOR = 15,
 };
 
 enum war_hud {
@@ -415,19 +416,21 @@ typedef struct war_lua_context {
     _Atomic int VK_GLYPH_COUNT;
     _Atomic int VK_NSGT_DIFF_CAPACITY;
     _Atomic int VK_ALIGNMENT;
-    // nsgt compute
-    _Atomic int VK_NSGT_BIN_CAPACITY;
-    _Atomic int VK_NSGT_FRAME_CAPACITY;
-    _Atomic int VK_NSGT_COMPUTE_RESOURCE_COUNT;
+    // nsgt
+    _Atomic int NSGT_BIN_CAPACITY;
+    _Atomic int NSGT_FRAME_CAPACITY;
+    _Atomic int NSGT_FREQUENCY_MIN;
+    _Atomic int NSGT_FREQUENCY_MAX;
+    _Atomic float NSGT_ALPHA;
+    _Atomic float NSGT_SHAPE_FACTOR;
+    _Atomic int NSGT_WINDOW_LENGTH_MIN;
+    _Atomic int NSGT_RESOURCE_COUNT;
+    _Atomic int NSGT_DESCRIPTOR_SET_COUNT;
+    _Atomic int NSGT_SHADER_COUNT;
+    _Atomic int NSGT_PIPELINE_COUNT;
     // nsgt visual
     _Atomic int VK_NSGT_VISUAL_QUAD_CAPACITY;
     _Atomic int VK_NSGT_VISUAL_RESOURCE_COUNT;
-    _Atomic int VK_NSGT_FREQUENCY_MIN;
-    _Atomic int VK_NSGT_FREQUENCY_MAX;
-    _Atomic float VK_NSGT_ALPHA;
-    _Atomic float VK_NSGT_SHAPE_FACTOR;
-    _Atomic int VK_NSGT_WINDOW_LENGTH_MIN;
-
     // misc
     _Atomic float DEFAULT_ALPHA_SCALE;
     _Atomic float DEFAULT_CURSOR_ALPHA_SCALE;
@@ -758,11 +761,11 @@ typedef struct war_window_render_context {
     float playback_bar_pos_x_increment;
     double FPS;
     uint64_t frame_duration_us;
-    bool sleep;
+    uint8_t sleep;
     uint64_t sleep_duration_us;
-    bool end_window_render;
-    bool trinity;
-    bool fullscreen;
+    uint8_t end_window_render;
+    uint8_t trinity;
+    uint8_t fullscreen;
     uint32_t light_gray_hex;
     uint32_t darker_light_gray_hex;
     uint32_t dark_gray_hex;
@@ -783,7 +786,7 @@ typedef struct war_window_render_context {
     uint8_t cursor_blink_state;
     uint64_t cursor_blink_duration_us;
     uint64_t cursor_blink_previous_us;
-    bool cursor_blinking;
+    uint8_t cursor_blinking;
     uint32_t color_note_default;
     uint32_t color_note_outline_default;
     uint32_t color_cursor;
@@ -792,9 +795,12 @@ typedef struct war_window_render_context {
     float gain_increment;
     float midi_octave;
     float midi_note;
-    bool midi_toggle;
-    bool skip_release;
+    uint8_t midi_toggle;
+    uint8_t skip_release;
     uint8_t prompt;
+    // cursor flags
+    uint8_t transparent_cursor;
+    uint8_t chopped_cursor;
     uint32_t num_chars_in_prompt;
     uint32_t cursor_pos_x_command_mode;
     uint8_t layer_flux;
@@ -1018,33 +1024,47 @@ typedef struct war_nsgt_compute_push_constant {
     int frame_end;
     float param1;
     float param2;
+    uint bin_capacity;
+    uint frame_capacity;
 } war_nsgt_compute_push_constant;
 
 typedef struct war_nsgt_graphics_push_constant {
     int channel;
     int blend;
-    int _pad1[2];
-    float color_l[4]; // <-- RGBA now
-    float color_r[4]; // <-- RGBA now
-    int _pad2[2];
+    int _pad0[2];
+    float color_l[4];
+    float color_r[4];
     float time_offset;
     float freq_scale;
     float time_scale;
-    int num_frames;
     int bin_capacity;
     int frame_capacity;
+    float z_layer;
+    int _pad1;
 } war_nsgt_graphics_push_constant;
 
 typedef struct war_nsgt_context {
     // pipeline
-    VkPipeline compute_pipeline;
-    VkPipelineLayout compute_pipeline_layout;
-    VkPipeline graphics_pipeline;
-    VkPipelineLayout graphics_pipeline_layout;
+    uint32_t pipeline_idx_compute;
+    uint32_t pipeline_idx_graphics;
+    VkPipeline* pipeline;
+    VkPipelineLayout* pipeline_layout;
+    VkStructureType* structure_type;
+    VkPipelineShaderStageCreateInfo* pipeline_shader_stage_create_info;
+    VkShaderStageFlags* push_constant_shader_stage_flags;
+    uint32_t* push_constant_size;
+    uint32_t* pipeline_set_idx;
+    uint32_t* pipeline_shader_idx;
+    VkPipelineBindPoint* pipeline_bind_point;
+    VkDeviceSize pipeline_count;
     // shaders
-    VkShaderModule compute_shader;
-    VkShaderModule vertex_shader;
-    VkShaderModule fragment_shader;
+    uint32_t shader_idx_compute;
+    uint32_t shader_idx_vertex;
+    uint32_t shader_idx_fragment;
+    VkShaderModule* shader_module;
+    VkShaderStageFlagBits* shader_stage_flag_bits;
+    char* shader_path;
+    VkDeviceSize shader_count;
     // resources
     uint32_t idx_offset;
     uint32_t idx_hop;
@@ -1086,21 +1106,36 @@ typedef struct war_nsgt_context {
     VkImageUsageFlags* image_usage_flags;
     VkDeviceSize resource_count;
     // descriptor set
+    uint32_t set_idx_compute;
+    uint32_t set_idx_graphics;
     VkShaderStageFlags* shader_stage_flags;
     VkDescriptorBufferInfo* descriptor_buffer_info;
     VkDescriptorImageInfo* descriptor_image_info;
     VkDescriptorSetLayoutBinding* descriptor_set_layout_binding;
     VkWriteDescriptorSet* write_descriptor_set;
-    VkDescriptorSet descriptor_set;
-    VkDescriptorSetLayout descriptor_set_layout;
-    VkDescriptorPool descriptor_pool;
+    VkDescriptorSet* descriptor_set;
+    VkDescriptorSetLayout* descriptor_set_layout;
+    VkDescriptorType* image_descriptor_type;
+    VkDescriptorPool* descriptor_pool;
+    VkImageLayout* descriptor_image_layout;
     VkDeviceSize descriptor_count;
     VkDeviceSize descriptor_image_count;
+    VkDeviceSize descriptor_set_count;
     // logic
     VkMappedMemoryRange* mapped_memory_range;
     VkBufferMemoryBarrier* buffer_memory_barrier;
     VkImageMemoryBarrier* image_memory_barrier;
+    VkImageLayout* image_layout;
+    VkAccessFlags* access_flags;
+    VkPipelineStageFlags* pipeline_stage_flags;
+    uint32_t* src_idx;
+    uint32_t* dst_idx;
+    VkDeviceSize* size;
+    VkDeviceSize* offset;
+    uint32_t fn_idx_count;
+    uint8_t dirty_compute;
     // misc
+    VkSampler sampler;
     float alpha;
     float shape_factor;
     uint32_t window_length_min;
@@ -1119,6 +1154,7 @@ typedef struct war_nsgt_context {
     VkDeviceSize window_capacity;
     VkDeviceSize frequency_capacity;
     VkDeviceSize hop_capacity;
+    VkDeviceSize path_limit;
 } war_nsgt_context;
 
 typedef struct war_vulkan_context {
@@ -1311,6 +1347,7 @@ struct war_env {
     war_fsm_context* ctx_fsm;
     war_cache* cache;
     war_producer_consumer* pc_capture;
+    war_nsgt_context* ctx_nsgt;
 };
 
 #endif // WAR_DATA_H

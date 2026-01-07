@@ -244,7 +244,10 @@ void* war_window_render(void* args) {
                   ctx_lua,
                   ctx_vk->device,
                   ctx_vk->physical_device,
-                  ctx_vk->render_pass);
+                  ctx_vk->render_pass,
+                  ctx_vk->cmd_buffer,
+                  ctx_vk->queue,
+                  ctx_vk->in_flight_fences[ctx_vk->current_frame]);
     //-------------------------------------------------------------------------
     // COLOR CONTEXT
     //-------------------------------------------------------------------------
@@ -473,6 +476,8 @@ void* war_window_render(void* args) {
         .color_cursor_transparent = white_hex,
     };
     war_window_render_context* ctx_wr = &ctx_wr_stack;
+    // TODO: add transparent centers (cut out), chopped cursor,....
+    // cursor flags
     ctx_wr->layers_active = war_pool_alloc(
         pool_wr, sizeof(char) * atomic_load(&ctx_lua->A_LAYER_COUNT));
     for (int i = 0; i < LAYER_COUNT; i++) {
@@ -1019,6 +1024,7 @@ void* war_window_render(void* args) {
     env->ctx_fsm = ctx_fsm;
     env->cache = cache;
     env->pc_capture = pc_capture;
+    env->ctx_nsgt = ctx_nsgt;
 wr: {
     if (war_pc_from_a(pc_control, &header, &size, control_payload)) {
         goto* pc_control_cmd[header];
@@ -2157,11 +2163,8 @@ cmd_timeout_done:
                               1,
                               &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
             assert(result == VK_SUCCESS);
-
-            // Ensure command buffer is reset before re-recording
             result = vkResetCommandBuffer(ctx_vk->cmd_buffer, 0);
             assert(result == VK_SUCCESS);
-
             VkCommandBufferBeginInfo cmd_buffer_begin_info = {
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
@@ -2177,315 +2180,112 @@ cmd_timeout_done:
                  ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
                  ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
                  ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE) ||
-                capture_wav->memfd_size <= 44) {
+                capture_wav->memfd_size <= 44 || !ctx_nsgt->dirty_compute) {
                 goto war_label_render_pass;
             }
-            VkBufferMemoryBarrier nsgt_compute_buffer_memory_barrier[8];
-            VkBufferCopy nsgt_compute_buffer_copy_offset = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = ctx_nsgt->offset_capacity,
-            };
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_nsgt->buffer[ctx_nsgt->idx_offset_stage],
-                            ctx_nsgt->buffer[ctx_nsgt->idx_offset],
-                            1,
-                            &nsgt_compute_buffer_copy_offset);
-            nsgt_compute_buffer_memory_barrier[0].sType =
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            nsgt_compute_buffer_memory_barrier[0].pNext = NULL;
-            nsgt_compute_buffer_memory_barrier[0].srcAccessMask =
-                VK_ACCESS_TRANSFER_WRITE_BIT;
-            nsgt_compute_buffer_memory_barrier[0].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_buffer_memory_barrier[0].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[0].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[0].buffer =
-                ctx_nsgt->buffer[ctx_nsgt->idx_offset];
-            nsgt_compute_buffer_memory_barrier[0].offset = 0;
-            nsgt_compute_buffer_memory_barrier[0].size = VK_WHOLE_SIZE;
-            // hop
-            VkBufferCopy nsgt_compute_buffer_copy_hop = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = ctx_nsgt->hop_capacity,
-            };
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_nsgt->buffer[ctx_nsgt->idx_hop_stage],
-                            ctx_nsgt->buffer[ctx_nsgt->idx_hop],
-                            1,
-                            &nsgt_compute_buffer_copy_hop);
-            nsgt_compute_buffer_memory_barrier[1].sType =
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            nsgt_compute_buffer_memory_barrier[1].pNext = NULL;
-            nsgt_compute_buffer_memory_barrier[1].srcAccessMask =
-                VK_ACCESS_TRANSFER_WRITE_BIT;
-            nsgt_compute_buffer_memory_barrier[1].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_buffer_memory_barrier[1].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[1].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[1].buffer =
-                ctx_nsgt->buffer[ctx_nsgt->idx_hop];
-            nsgt_compute_buffer_memory_barrier[1].offset = 0;
-            nsgt_compute_buffer_memory_barrier[1].size = VK_WHOLE_SIZE;
-            // length
-            VkBufferCopy nsgt_compute_buffer_copy_length = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = ctx_nsgt->length_capacity,
-            };
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_nsgt->buffer[ctx_nsgt->idx_length_stage],
-                            ctx_nsgt->buffer[ctx_nsgt->idx_length],
-                            1,
-                            &nsgt_compute_buffer_copy_length);
-            nsgt_compute_buffer_memory_barrier[2].sType =
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            nsgt_compute_buffer_memory_barrier[2].pNext = NULL;
-            nsgt_compute_buffer_memory_barrier[2].srcAccessMask =
-                VK_ACCESS_TRANSFER_WRITE_BIT;
-            nsgt_compute_buffer_memory_barrier[2].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_buffer_memory_barrier[2].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[2].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[2].buffer =
-                ctx_nsgt->buffer[ctx_nsgt->idx_length];
-            nsgt_compute_buffer_memory_barrier[2].offset = 0;
-            nsgt_compute_buffer_memory_barrier[2].size = VK_WHOLE_SIZE;
-            // window
-            VkBufferCopy nsgt_compute_buffer_copy_window = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = ctx_nsgt->window_capacity,
-            };
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_nsgt->buffer[ctx_nsgt->idx_window_stage],
-                            ctx_nsgt->buffer[ctx_nsgt->idx_window],
-                            1,
-                            &nsgt_compute_buffer_copy_window);
-            nsgt_compute_buffer_memory_barrier[3].sType =
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            nsgt_compute_buffer_memory_barrier[3].pNext = NULL;
-            nsgt_compute_buffer_memory_barrier[3].srcAccessMask =
-                VK_ACCESS_TRANSFER_WRITE_BIT;
-            nsgt_compute_buffer_memory_barrier[3].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_buffer_memory_barrier[3].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[3].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[3].buffer =
-                ctx_nsgt->buffer[ctx_nsgt->idx_window];
-            nsgt_compute_buffer_memory_barrier[3].offset = 0;
-            nsgt_compute_buffer_memory_barrier[3].size = VK_WHOLE_SIZE;
-            // dual_window
-            VkBufferCopy nsgt_compute_buffer_copy_dual_window = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = ctx_nsgt->window_capacity,
-            };
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_nsgt->buffer[ctx_nsgt->idx_dual_window_stage],
-                            ctx_nsgt->buffer[ctx_nsgt->idx_dual_window],
-                            1,
-                            &nsgt_compute_buffer_copy_dual_window);
-            nsgt_compute_buffer_memory_barrier[4].sType =
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            nsgt_compute_buffer_memory_barrier[4].pNext = NULL;
-            nsgt_compute_buffer_memory_barrier[4].srcAccessMask =
-                VK_ACCESS_TRANSFER_WRITE_BIT;
-            nsgt_compute_buffer_memory_barrier[4].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_buffer_memory_barrier[4].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[4].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[4].buffer =
-                ctx_nsgt->buffer[ctx_nsgt->idx_dual_window];
-            nsgt_compute_buffer_memory_barrier[4].offset = 0;
-            nsgt_compute_buffer_memory_barrier[4].size = VK_WHOLE_SIZE;
-            // frequency
-            VkBufferCopy nsgt_compute_buffer_copy_frequency = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = ctx_nsgt->frequency_capacity,
-            };
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_nsgt->buffer[ctx_nsgt->idx_frequency_stage],
-                            ctx_nsgt->buffer[ctx_nsgt->idx_frequency],
-                            1,
-                            &nsgt_compute_buffer_copy_frequency);
-            nsgt_compute_buffer_memory_barrier[5].sType =
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            nsgt_compute_buffer_memory_barrier[5].pNext = NULL;
-            nsgt_compute_buffer_memory_barrier[5].srcAccessMask =
-                VK_ACCESS_TRANSFER_WRITE_BIT;
-            nsgt_compute_buffer_memory_barrier[5].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_buffer_memory_barrier[5].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[5].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[5].buffer =
-                ctx_nsgt->buffer[ctx_nsgt->idx_frequency];
-            nsgt_compute_buffer_memory_barrier[5].offset = 0;
-            nsgt_compute_buffer_memory_barrier[5].size = VK_WHOLE_SIZE;
-            // l
-            VkBufferCopy nsgt_compute_buffer_copy_l = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = ctx_nsgt->wav_channel_capacity};
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_nsgt->buffer[ctx_nsgt->idx_l_stage],
-                            ctx_nsgt->buffer[ctx_nsgt->idx_l],
-                            1,
-                            &nsgt_compute_buffer_copy_l);
-            nsgt_compute_buffer_memory_barrier[6].sType =
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            nsgt_compute_buffer_memory_barrier[6].pNext = NULL;
-            nsgt_compute_buffer_memory_barrier[6].srcAccessMask =
-                VK_ACCESS_TRANSFER_WRITE_BIT;
-            nsgt_compute_buffer_memory_barrier[6].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_buffer_memory_barrier[6].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[6].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[6].buffer =
-                ctx_nsgt->buffer[ctx_nsgt->idx_l];
-            nsgt_compute_buffer_memory_barrier[6].offset = 0;
-            nsgt_compute_buffer_memory_barrier[6].size = VK_WHOLE_SIZE;
-            // r
-            VkBufferCopy nsgt_compute_buffer_copy_r = {
-                .srcOffset = 0,
-                .dstOffset = 0,
-                .size = ctx_nsgt->wav_channel_capacity};
-            vkCmdCopyBuffer(ctx_vk->cmd_buffer,
-                            ctx_nsgt->buffer[ctx_nsgt->idx_r_stage],
-                            ctx_nsgt->buffer[ctx_nsgt->idx_r],
-                            1,
-                            &nsgt_compute_buffer_copy_r);
-            nsgt_compute_buffer_memory_barrier[7].sType =
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            nsgt_compute_buffer_memory_barrier[7].pNext = NULL;
-            nsgt_compute_buffer_memory_barrier[7].srcAccessMask =
-                VK_ACCESS_TRANSFER_WRITE_BIT;
-            nsgt_compute_buffer_memory_barrier[7].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_buffer_memory_barrier[7].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[7].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_buffer_memory_barrier[7].buffer =
-                ctx_nsgt->buffer[ctx_nsgt->idx_r];
-            nsgt_compute_buffer_memory_barrier[7].offset = 0;
-            nsgt_compute_buffer_memory_barrier[7].size = VK_WHOLE_SIZE;
-            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
-                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 0,
-                                 0,
-                                 NULL,
-                                 8,
-                                 nsgt_compute_buffer_memory_barrier,
-                                 0,
-                                 NULL);
-            uint32_t nsgt_compute_total_sample_elements =
+            call_king_terry("COMPUTE");
+            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
+            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
+            ctx_nsgt->fn_idx_count = 2;
+            war_nsgt_image_barrier(ctx_nsgt->fn_idx_count,
+                                   ctx_nsgt->src_idx,
+                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                   VK_ACCESS_SHADER_WRITE_BIT |
+                                       VK_ACCESS_SHADER_READ_BIT,
+                                   VK_IMAGE_LAYOUT_GENERAL,
+                                   ctx_vk->cmd_buffer,
+                                   ctx_nsgt);
+            // load samples
+            uint8_t* wav_samples = capture_wav->file + 44;
+            uint32_t total_samples = capture_wav->memfd_size - 44;
+            memcpy(ctx_nsgt->map[ctx_nsgt->idx_l_stage],
+                   wav_samples,
+                   total_samples);
+            memcpy(ctx_nsgt->map[ctx_nsgt->idx_r_stage],
+                   wav_samples,
+                   total_samples);
+            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_stage;
+            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_stage;
+            ctx_nsgt->fn_idx_count = 2;
+            war_nsgt_flush(ctx_nsgt->fn_idx_count,
+                           ctx_nsgt->src_idx,
+                           NULL,
+                           NULL,
+                           ctx_vk->device,
+                           ctx_nsgt);
+            //  src
+            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_stage;
+            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_stage;
+            // dst
+            ctx_nsgt->dst_idx[0] = ctx_nsgt->idx_l;
+            ctx_nsgt->dst_idx[1] = ctx_nsgt->idx_r;
+            // size
+            ctx_nsgt->fn_idx_count = 2;
+            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+                ctx_nsgt->size[i] = ctx_nsgt->capacity[ctx_nsgt->src_idx[i]];
+            }
+            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+                war_nsgt_copy(ctx_vk->cmd_buffer,
+                              ctx_nsgt->src_idx[i],
+                              ctx_nsgt->dst_idx[i],
+                              0,
+                              0,
+                              ctx_nsgt->size[i],
+                              ctx_nsgt);
+            }
+            war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
+                                    ctx_nsgt->dst_idx,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                                    ctx_vk->cmd_buffer,
+                                    ctx_nsgt);
+            uint32_t total_sample_elements =
                 ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity;
-            uint32_t nsgt_compute_threads_per_group = 64; // local size
-            uint32_t nsgt_compute_group_count_x =
-                (nsgt_compute_total_sample_elements +
-                 nsgt_compute_threads_per_group - 1) /
-                nsgt_compute_threads_per_group;
-            call_king_terry("nsgt dispatch bins=%u frames=%u groups=%u",
-                            ctx_nsgt->bin_capacity,
-                            ctx_nsgt->frame_capacity,
-                            nsgt_compute_group_count_x);
-            vkCmdBindPipeline(ctx_vk->cmd_buffer,
-                              VK_PIPELINE_BIND_POINT_COMPUTE,
-                              ctx_nsgt->compute_pipeline);
-            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
-                                    VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    ctx_nsgt->compute_pipeline_layout,
-                                    0,
-                                    1,
-                                    &ctx_nsgt->descriptor_set,
-                                    0,
-                                    NULL);
-            vkCmdDispatch(ctx_vk->cmd_buffer, nsgt_compute_group_count_x, 1, 1);
-            VkImageMemoryBarrier nsgt_compute_image_memory_barrier[2];
-            // l_image barrier
-            nsgt_compute_image_memory_barrier[0].sType =
-                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            nsgt_compute_image_memory_barrier[0].pNext = NULL;
-            nsgt_compute_image_memory_barrier[0].srcAccessMask =
-                VK_ACCESS_SHADER_WRITE_BIT;
-            nsgt_compute_image_memory_barrier[0].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_image_memory_barrier[0].oldLayout =
-                VK_IMAGE_LAYOUT_GENERAL;
-            nsgt_compute_image_memory_barrier[0].newLayout =
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            nsgt_compute_image_memory_barrier[0].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_image_memory_barrier[0].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_image_memory_barrier[0].image =
-                ctx_nsgt->image[ctx_nsgt->idx_l_image];
-            nsgt_compute_image_memory_barrier[0].subresourceRange.aspectMask =
-                VK_IMAGE_ASPECT_COLOR_BIT;
-            nsgt_compute_image_memory_barrier[0].subresourceRange.baseMipLevel =
-                0;
-            nsgt_compute_image_memory_barrier[0].subresourceRange.levelCount =
-                1;
-            nsgt_compute_image_memory_barrier[0]
-                .subresourceRange.baseArrayLayer = 0;
-            nsgt_compute_image_memory_barrier[0].subresourceRange.layerCount =
-                1;
-            // r_image barrier
-            nsgt_compute_image_memory_barrier[1].sType =
-                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            nsgt_compute_image_memory_barrier[1].pNext = NULL;
-            nsgt_compute_image_memory_barrier[1].srcAccessMask =
-                VK_ACCESS_SHADER_WRITE_BIT;
-            nsgt_compute_image_memory_barrier[1].dstAccessMask =
-                VK_ACCESS_SHADER_READ_BIT;
-            nsgt_compute_image_memory_barrier[1].oldLayout =
-                VK_IMAGE_LAYOUT_GENERAL;
-            nsgt_compute_image_memory_barrier[1].newLayout =
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            nsgt_compute_image_memory_barrier[1].srcQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_image_memory_barrier[1].dstQueueFamilyIndex =
-                VK_QUEUE_FAMILY_IGNORED;
-            nsgt_compute_image_memory_barrier[1].image =
-                ctx_nsgt->image[ctx_nsgt->idx_r_image];
-            nsgt_compute_image_memory_barrier[1].subresourceRange.aspectMask =
-                VK_IMAGE_ASPECT_COLOR_BIT;
-            nsgt_compute_image_memory_barrier[1].subresourceRange.baseMipLevel =
-                0;
-            nsgt_compute_image_memory_barrier[1].subresourceRange.levelCount =
-                1;
-            nsgt_compute_image_memory_barrier[1]
-                .subresourceRange.baseArrayLayer = 0;
-            nsgt_compute_image_memory_barrier[1].subresourceRange.layerCount =
-                1;
-            vkCmdPipelineBarrier(ctx_vk->cmd_buffer,
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                 0,
-                                 0,
-                                 NULL,
-                                 0,
-                                 NULL,
-                                 2,
-                                 nsgt_compute_image_memory_barrier);
+            uint32_t threads_per_group = 64;
+            uint32_t group_count_x =
+                (total_sample_elements + threads_per_group - 1) /
+                threads_per_group;
+            vkCmdBindPipeline(
+                ctx_vk->cmd_buffer,
+                ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_compute],
+                ctx_nsgt->pipeline[ctx_nsgt->pipeline_idx_compute]);
+            vkCmdBindDescriptorSets(
+                ctx_vk->cmd_buffer,
+                ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_compute],
+                ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_compute],
+                0,
+                1,
+                &ctx_nsgt->descriptor_set[ctx_nsgt->set_idx_compute],
+                0,
+                NULL);
+            war_nsgt_compute_push_constant nsgt_compute_push_constant = {0};
+            nsgt_compute_push_constant.bin_capacity = ctx_nsgt->bin_capacity;
+            nsgt_compute_push_constant.frame_capacity =
+                ctx_nsgt->frame_capacity;
+            vkCmdPushConstants(
+                ctx_vk->cmd_buffer,
+                ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_compute],
+                ctx_nsgt->push_constant_shader_stage_flags
+                    [ctx_nsgt->pipeline_idx_compute],
+                0,
+                ctx_nsgt->push_constant_size[ctx_nsgt->pipeline_idx_compute],
+                &nsgt_compute_push_constant);
+            vkCmdDispatch(ctx_vk->cmd_buffer, group_count_x, 1, 1);
+            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
+            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
+            ctx_nsgt->fn_idx_count = 2;
+            war_nsgt_image_barrier(ctx_nsgt->fn_idx_count,
+                                   ctx_nsgt->src_idx,
+                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                   VK_ACCESS_SHADER_READ_BIT |
+                                       VK_ACCESS_SHADER_WRITE_BIT,
+                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                   ctx_vk->cmd_buffer,
+                                   ctx_nsgt);
+            ctx_nsgt->dirty_compute = 0;
+            call_king_terry("END COMPUTE");
         war_label_render_pass:
             //-------------------------------------------------------------
             //  RENDER PASS
@@ -2544,6 +2344,7 @@ cmd_timeout_done:
             uint32_t cursor_color_transparent =
                 ((uint8_t)(color_alpha * alpha_factor) << 24) |
                 (ctx_wr->color_cursor_transparent & 0x00FFFFFF);
+            float cursor_layer = ctx_wr->z_layers[LAYER_CURSOR];
             // draw note quads and figure out if cursor should be
             // transparent
             // TODO: spillover
@@ -2609,13 +2410,13 @@ cmd_timeout_done:
                                    (float)ctx_wr->sub_col /
                                        ctx_wr->navigation_sub_cells_col,
                                ctx_wr->cursor_pos_y,
-                               ctx_wr->z_layers[LAYER_CURSOR]},
+                               cursor_layer},
                     (float[2]){(float)ctx_wr->cursor_size_x, 1},
                     cursor_color,
                     0,
                     0,
                     (float[2]){0.0f, 0.0f},
-                    QUAD_GRID | QUAD_OUTLINE);
+                    QUAD_GRID);
             } else if (ctx_fsm->current_mode == ctx_fsm->MODE_VIEWS) {
                 // draw views
                 uint32_t offset_col = ctx_wr->left_col +
@@ -2757,35 +2558,35 @@ cmd_timeout_done:
             }
             if (ctx_fsm->current_mode == ctx_fsm->MODE_COMMAND) {
                 if (ctx_command->prompt_text_size > 0) {
-                    war_make_transparent_quad(
-                        transparent_quad_vertices,
-                        transparent_quad_indices,
-                        &transparent_quad_vertices_count,
-                        &transparent_quad_indices_count,
+                    war_make_quad(
+                        quad_vertices,
+                        quad_indices,
+                        &quad_vertices_count,
+                        &quad_indices_count,
                         (float[3]){ctx_wr->left_col +
                                        ctx_command->text_write_index +
                                        ctx_command->prompt_text_size + 2,
                                    ctx_wr->bottom_row + 1,
-                                   ctx_wr->z_layers[LAYER_CURSOR]},
-                        (float[2]){(float)ctx_wr->cursor_size_x, 1},
-                        cursor_color,
+                                   ctx_wr->z_layers[LAYER_HUD_CURSOR]},
+                        (float[2]){1, 1},
+                        ctx_wr->color_cursor,
                         0,
                         0,
                         (float[2]){0.0f, 0.0f},
                         0);
                 } else {
-                    war_make_transparent_quad(
-                        transparent_quad_vertices,
-                        transparent_quad_indices,
-                        &transparent_quad_vertices_count,
-                        &transparent_quad_indices_count,
+                    war_make_quad(
+                        quad_vertices,
+                        quad_indices,
+                        &quad_vertices_count,
+                        &quad_indices_count,
                         (float[3]){ctx_wr->left_col +
                                        ctx_command->text_write_index +
                                        ctx_command->prompt_text_size + 1,
                                    ctx_wr->bottom_row + 1,
-                                   ctx_wr->z_layers[LAYER_CURSOR]},
-                        (float[2]){(float)ctx_wr->cursor_size_x, 1},
-                        cursor_color,
+                                   ctx_wr->z_layers[LAYER_HUD_CURSOR]},
+                        (float[2]){1, 1},
+                        ctx_wr->color_cursor,
                         0,
                         0,
                         (float[2]){0.0f, 0.0f},
@@ -3396,10 +3197,69 @@ cmd_timeout_done:
             if ((ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
                  ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
                  ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
-                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE) ||
-                capture_wav->memfd_size <= 44) {
+                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE)) {
                 goto war_label_end_render_pass;
             }
+            call_king_terry("GRAPHICS");
+            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
+            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
+            ctx_nsgt->fn_idx_count = 2;
+            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+                if (ctx_nsgt->image_layout[ctx_nsgt->src_idx[i]] ==
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+                    continue;
+                }
+                war_nsgt_image_barrier(
+                    ctx_nsgt->fn_idx_count,
+                    ctx_nsgt->src_idx,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    ctx_vk->cmd_buffer,
+                    ctx_nsgt);
+                break;
+            }
+            vkCmdBindPipeline(
+                ctx_vk->cmd_buffer,
+                ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_graphics],
+                ctx_nsgt->pipeline[ctx_nsgt->pipeline_idx_graphics]);
+            vkCmdBindDescriptorSets(
+                ctx_vk->cmd_buffer,
+                ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_graphics],
+                ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_graphics],
+                0,
+                1,
+                &ctx_nsgt->descriptor_set[ctx_nsgt->set_idx_graphics],
+                0,
+                NULL);
+            war_nsgt_graphics_push_constant nsgt_graphics_push_constant = {0};
+            nsgt_graphics_push_constant.z_layer =
+                ctx_wr->z_layers[LAYER_GRIDLINES];
+            VkViewport nsgt_graphics_viewport = {
+                .x = 0.0f,
+                .y = 0.0f,
+                .width = (float)physical_width,
+                .height = (float)physical_height,
+                .minDepth = 0.0f,
+                .maxDepth = 1.0f,
+            };
+            VkRect2D nsgt_graphics_rect_2d = {
+                .offset = {0, 0},
+                .extent = {physical_width, physical_height},
+            };
+            vkCmdSetViewport(ctx_vk->cmd_buffer, 0, 1, &nsgt_graphics_viewport);
+            vkCmdSetScissor(ctx_vk->cmd_buffer, 0, 1, &nsgt_graphics_rect_2d);
+            vkCmdPushConstants(
+                ctx_vk->cmd_buffer,
+                ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_graphics],
+                ctx_nsgt->push_constant_shader_stage_flags
+                    [ctx_nsgt->pipeline_idx_graphics],
+                0,
+                ctx_nsgt->push_constant_size[ctx_nsgt->pipeline_idx_graphics],
+                &nsgt_graphics_push_constant);
+            vkCmdDraw(ctx_vk->cmd_buffer, 3, 1, 0, 0);
+            call_king_terry("END GRAPHICS");
         war_label_end_render_pass:
             //---------------------------------------------------------
             //   END RENDER PASS
@@ -3417,20 +3277,25 @@ cmd_timeout_done:
                 .pSignalSemaphores = NULL,
             };
             result =
+                vkResetFences(ctx_vk->device,
+                              1,
+                              &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+            assert(result == VK_SUCCESS);
+            result =
                 vkQueueSubmit(ctx_vk->queue,
                               1,
                               &submit_info,
                               ctx_vk->in_flight_fences[ctx_vk->current_frame]);
             assert(result == VK_SUCCESS);
-            result = vkWaitForFences(
-                ctx_vk->device,
-                1,
-                &ctx_vk->in_flight_fences[ctx_vk->current_frame],
-                VK_TRUE,
-                UINT64_MAX);
-            assert(result == VK_SUCCESS);
-            // vkQueueWaitIdle(ctx_vk->queue);
-            // VkMappedMemoryRange nsgt_ranges[4] = {
+            // result = vkWaitForFences(
+            //     ctx_vk->device,
+            //     1,
+            //     &ctx_vk->in_flight_fences[ctx_vk->current_frame],
+            //     VK_TRUE,
+            //     UINT64_MAX);
+            // assert(result == VK_SUCCESS);
+            //  vkQueueWaitIdle(ctx_vk->queue);
+            //  VkMappedMemoryRange nsgt_ranges[4] = {
 
             //    {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
             //     .memory = ctx_vk->nsgt_compute_l_staging_memory,
@@ -3471,6 +3336,7 @@ cmd_timeout_done:
             //                redo_diff_buffer_data[0]);
             // call_king_terry("redo_diff_buffer_data[13]: %u",
             //                redo_diff_buffer_data[13]);
+            ctx_wr->trinity = 1;
             goto wayland_done;
         }
         wl_display_error:
@@ -3865,15 +3731,15 @@ cmd_timeout_done:
             ssize_t set_buffer_scale_written = write(fd, set_buffer_scale, 12);
             assert(set_buffer_scale_written == 12);
 
-            // war_wayland_holy_trinity(fd,
-            //                          wl_surface_id,
-            //                          wl_buffer_id,
-            //                          0,
-            //                          0,
-            //                          0,
-            //                          0,
-            //                          physical_width,
-            //                          physical_height);
+            war_wayland_holy_trinity(fd,
+                                     wl_surface_id,
+                                     wl_buffer_id,
+                                     0,
+                                     0,
+                                     0,
+                                     0,
+                                     physical_width,
+                                     physical_height);
             goto wayland_done;
         wl_surface_preferred_buffer_transform:
             dump_bytes("wl_surface_preferred_buffer_transform event",
@@ -3893,16 +3759,15 @@ cmd_timeout_done:
             ssize_t set_buffer_transform_written =
                 write(fd, set_buffer_transform, 12);
             assert(set_buffer_transform_written == 12);
-
-            // war_wayland_holy_trinity(fd,
-            //                          wl_surface_id,
-            //                          wl_buffer_id,
-            //                          0,
-            //                          0,
-            //                          0,
-            //                          0,
-            //                          physical_width,
-            //                          physical_height);
+            war_wayland_holy_trinity(fd,
+                                     wl_surface_id,
+                                     wl_buffer_id,
+                                     0,
+                                     0,
+                                     0,
+                                     0,
+                                     physical_width,
+                                     physical_height);
             goto wayland_done;
         zwp_idle_inhibit_manager_v1_jump:
             dump_bytes("zwp_idle_inhibit_manager_v1_jump event",
@@ -4738,15 +4603,15 @@ cmd_timeout_done:
             // dump_bytes("wl_pointer_frame event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            //  war_wayland_holy_trinity(fd,
-            //                           wl_surface_id,
-            //                           wl_buffer_id,
-            //                           0,
-            //                           0,
-            //                           0,
-            //                           0,
-            //                           physical_width,
-            //                           physical_height);
+            war_wayland_holy_trinity(fd,
+                                     wl_surface_id,
+                                     wl_buffer_id,
+                                     0,
+                                     0,
+                                     0,
+                                     0,
+                                     physical_width,
+                                     physical_height);
             goto wayland_done;
         wl_pointer_axis_source:
             dump_bytes("wl_pointer_axis_source event",

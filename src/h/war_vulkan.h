@@ -57,10 +57,19 @@ static inline uint8_t war_vulkan_get_shader_module(
     VkDevice device, VkShaderModule* shader_module, const char* path) {
     call_king_terry("war_vulkan_get_shader_module");
     FILE* file = fopen(path, "rb");
+    if (!file) {
+        call_king_terry("failed to open file: %s", path);
+        return 0;
+    }
     fseek(file, 0, SEEK_END);
     size_t size = ftell(file);
     rewind(file);
     char* code = malloc(size);
+    if (!code) {
+        call_king_terry("failed to allocate memory for shader: %s", path);
+        fclose(file);
+        return 0;
+    }
     fread(code, 1, size, file);
     fclose(file);
     VkShaderModuleCreateInfo create_info = {
@@ -76,101 +85,93 @@ static inline uint8_t war_vulkan_get_shader_module(
     return 1;
 }
 
+static inline VkDeviceSize war_vulkan_align_size_up(VkDeviceSize size,
+                                                    VkDeviceSize alignment,
+                                                    VkDeviceSize capacity) {
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        call_king_terry("ERROR: alignment is not power-of-2");
+        return 0;
+    }
+    VkDeviceSize aligned = (size + alignment - 1) & ~(alignment - 1);
+    if (aligned > capacity) { aligned = capacity; }
+    return aligned;
+}
+
+static inline VkDeviceSize war_vulkan_align_offset_down(VkDeviceSize offset,
+                                                        VkDeviceSize alignment,
+                                                        VkDeviceSize capacity) {
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        call_king_terry("ERROR: alignment is not power-of-2");
+        return 0;
+    }
+    VkDeviceSize aligned = offset & ~(alignment - 1);
+    if (aligned > capacity) {
+        call_king_terry("ERROR: aligned offset exceeds capacity");
+        return 0;
+    }
+    return aligned;
+}
+
 static inline void war_nsgt_flush(uint32_t idx_count,
                                   uint32_t* idx,
                                   VkDeviceSize* offset,
                                   VkDeviceSize* size,
                                   VkDevice device,
                                   war_nsgt_context* ctx_nsgt) {
+    assert(idx_count <= ctx_nsgt->resource_count);
     for (uint32_t i = 0; i < idx_count; i++) {
+        VkDeviceSize off = offset ? offset[i] : 0;
+        VkDeviceSize sz = size ? size[i] : ctx_nsgt->capacity[idx[i]];
+        VkDeviceSize aligned_offset = war_vulkan_align_offset_down(
+            off,
+            ctx_nsgt->memory_requirements[idx[i]].alignment,
+            ctx_nsgt->capacity[idx[i]]);
+        VkDeviceSize aligned_size = war_vulkan_align_size_up(
+            sz + (off - aligned_offset),
+            ctx_nsgt->memory_requirements[idx[i]].alignment,
+            ctx_nsgt->capacity[idx[i]]);
         ctx_nsgt->mapped_memory_range[i] = (VkMappedMemoryRange){
             .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
             .pNext = NULL,
             .memory = ctx_nsgt->device_memory[idx[i]],
-            .offset = offset ? offset[i] : 0,
-            .size = size ? size[i] : VK_WHOLE_SIZE,
+            .offset = aligned_offset,
+            .size = aligned_size,
         };
     }
-
-    VkResult res = vkFlushMappedMemoryRanges(
+    VkResult result = vkFlushMappedMemoryRanges(
         device, idx_count, ctx_nsgt->mapped_memory_range);
-    assert(res == VK_SUCCESS);
+    assert(result == VK_SUCCESS);
 }
 
-static inline void war_nsgt_buffer_barrier(uint32_t idx_count,
-                                           uint32_t* idx,
-                                           VkPipelineStageFlags src_stage,
-                                           VkPipelineStageFlags dst_stage,
-                                           VkAccessFlags src_access,
-                                           VkAccessFlags dst_access,
-                                           VkCommandBuffer cmd,
-                                           war_nsgt_context* ctx_nsgt) {
+static inline void war_nsgt_invalidate(uint32_t idx_count,
+                                       uint32_t* idx,
+                                       VkDeviceSize* offset,
+                                       VkDeviceSize* size,
+                                       VkDevice device,
+                                       war_nsgt_context* ctx_nsgt) {
+    assert(idx_count <= ctx_nsgt->resource_count);
     for (uint32_t i = 0; i < idx_count; i++) {
-        ctx_nsgt->buffer_memory_barrier[i] = (VkBufferMemoryBarrier){
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        VkDeviceSize off = offset ? offset[i] : 0;
+        VkDeviceSize sz = size ? size[i] : ctx_nsgt->capacity[idx[i]];
+        VkDeviceSize aligned_offset = war_vulkan_align_offset_down(
+            off,
+            ctx_nsgt->memory_requirements[idx[i]].alignment,
+            ctx_nsgt->capacity[idx[i]]);
+        VkDeviceSize aligned_size = war_vulkan_align_size_up(
+            sz + (off - aligned_offset),
+            ctx_nsgt->memory_requirements[idx[i]].alignment,
+            ctx_nsgt->capacity[idx[i]]);
+        ctx_nsgt->mapped_memory_range[i] = (VkMappedMemoryRange){
+            .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
             .pNext = NULL,
-            .srcAccessMask = src_access,
-            .dstAccessMask = dst_access,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = ctx_nsgt->buffer[idx[i]],
-            .offset = 0,
-            .size = VK_WHOLE_SIZE,
+            .memory = ctx_nsgt->device_memory[idx[i]],
+            .offset = aligned_offset,
+            .size = aligned_size,
         };
     }
-    vkCmdPipelineBarrier(cmd,
-                         src_stage,
-                         dst_stage,
-                         0, // dependencyFlags
-                         0,
-                         NULL,
-                         idx_count,
-                         ctx_nsgt->buffer_memory_barrier,
-                         0,
-                         NULL);
-}
-
-static inline void war_nsgt_image_barrier(uint32_t idx_count,
-                                          uint32_t* idx,
-                                          VkPipelineStageFlags src_stage,
-                                          VkPipelineStageFlags dst_stage,
-                                          VkAccessFlags src_access,
-                                          VkAccessFlags dst_access,
-                                          VkImageLayout old_layout,
-                                          VkImageLayout new_layout,
-                                          VkCommandBuffer cmd,
-                                          war_nsgt_context* ctx_nsgt) {
-    for (uint32_t i = 0; i < idx_count; i++) {
-        ctx_nsgt->image_memory_barrier[i] = (VkImageMemoryBarrier){
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .pNext = NULL,
-            .srcAccessMask = src_access,
-            .dstAccessMask = dst_access,
-            .oldLayout = old_layout,
-            .newLayout = new_layout,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = ctx_nsgt->image[idx[i]],
-            .subresourceRange =
-                {
-                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1,
-                },
-        };
-    }
-    vkCmdPipelineBarrier(cmd,
-                         src_stage,
-                         dst_stage,
-                         0, // dependencyFlags
-                         0,
-                         NULL,
-                         0,
-                         NULL,
-                         idx_count,
-                         ctx_nsgt->image_memory_barrier);
+    VkResult result = vkInvalidateMappedMemoryRanges(
+        device, idx_count, ctx_nsgt->mapped_memory_range);
+    assert(result == VK_SUCCESS);
 }
 
 static inline void war_nsgt_copy(VkCommandBuffer cmd,
@@ -187,6 +188,88 @@ static inline void war_nsgt_copy(VkCommandBuffer cmd,
     };
     vkCmdCopyBuffer(
         cmd, ctx_nsgt->buffer[idx_src], ctx_nsgt->buffer[idx_dst], 1, &copy);
+}
+
+static inline void war_nsgt_buffer_barrier(uint32_t idx_count,
+                                           uint32_t* idx,
+                                           VkPipelineStageFlags dst_stage,
+                                           VkAccessFlags dst_access,
+                                           VkCommandBuffer cmd,
+                                           war_nsgt_context* ctx_nsgt) {
+    assert(idx_count <= ctx_nsgt->resource_count);
+    VkPipelineStageFlags pipeline_stage_flags_mask = 0;
+    for (uint32_t i = 0; i < idx_count; i++) {
+        ctx_nsgt->buffer_memory_barrier[i] = (VkBufferMemoryBarrier){
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .pNext = NULL,
+            .srcAccessMask = ctx_nsgt->access_flags[idx[i]],
+            .dstAccessMask = dst_access,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = ctx_nsgt->buffer[idx[i]],
+            .offset = 0,
+            .size = VK_WHOLE_SIZE,
+        };
+        pipeline_stage_flags_mask |= ctx_nsgt->pipeline_stage_flags[idx[i]];
+        ctx_nsgt->access_flags[idx[i]] = dst_access;
+        ctx_nsgt->pipeline_stage_flags[idx[i]] = dst_stage;
+    }
+    vkCmdPipelineBarrier(cmd,
+                         pipeline_stage_flags_mask,
+                         dst_stage,
+                         0, // dependencyFlags
+                         0,
+                         NULL, // memory barriers
+                         idx_count,
+                         ctx_nsgt->buffer_memory_barrier,
+                         0,
+                         NULL); // image barriers
+}
+
+static inline void war_nsgt_image_barrier(uint32_t idx_count,
+                                          uint32_t* idx,
+                                          VkPipelineStageFlags dst_stage,
+                                          VkAccessFlags dst_access,
+                                          VkImageLayout new_layout,
+                                          VkCommandBuffer cmd,
+                                          war_nsgt_context* ctx_nsgt) {
+    assert(idx_count <= ctx_nsgt->resource_count);
+    VkPipelineStageFlags pipeline_stage_flags_mask = 0;
+    for (uint32_t i = 0; i < idx_count; i++) {
+        ctx_nsgt->image_memory_barrier[i] = (VkImageMemoryBarrier){
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = NULL,
+            .srcAccessMask = ctx_nsgt->access_flags[idx[i]],
+            .dstAccessMask = dst_access,
+            .oldLayout = ctx_nsgt->image_layout[idx[i]],
+            .newLayout = new_layout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = ctx_nsgt->image[idx[i]],
+            .subresourceRange =
+                {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+        };
+        pipeline_stage_flags_mask |= ctx_nsgt->pipeline_stage_flags[idx[i]];
+        ctx_nsgt->image_layout[idx[i]] = new_layout;
+        ctx_nsgt->access_flags[idx[i]] = dst_access;
+        ctx_nsgt->pipeline_stage_flags[idx[i]] = dst_stage;
+    }
+    vkCmdPipelineBarrier(cmd,
+                         pipeline_stage_flags_mask,
+                         dst_stage,
+                         0, // dependencyFlags
+                         0,
+                         NULL, // memory barriers
+                         0,
+                         NULL, // buffer barriers
+                         idx_count,
+                         ctx_nsgt->image_memory_barrier);
 }
 
 static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
@@ -1957,7 +2040,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,  // enable depth testing
         .depthWriteEnable = VK_TRUE, // enable writing to depth buffer
-        .depthCompareOp = VK_COMPARE_OP_GREATER,
+        .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
         .stencilTestEnable = VK_FALSE,
     };
     VkPipelineViewportStateCreateInfo sdf_viewport_state = {
@@ -2078,9 +2161,9 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                 &ctx_vk->text_instance_buffer_mapped);
     VkPipelineDepthStencilStateCreateInfo transparent_depth_stencil = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = VK_TRUE,   // enable depth testing
-        .depthWriteEnable = VK_FALSE, // enable writing to depth buffer
-        .depthCompareOp = VK_COMPARE_OP_ALWAYS,
+        .depthTestEnable = VK_TRUE,  // enable depth testing
+        .depthWriteEnable = VK_TRUE, // enable writing to depth buffer
+        .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
         .stencilTestEnable = VK_FALSE,
     };
     VkGraphicsPipelineCreateInfo transparent_quad_pipeline_info = {
@@ -2436,23 +2519,30 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
                                  war_lua_context* ctx_lua,
                                  VkDevice device,
                                  VkPhysicalDevice physical_device,
-                                 VkRenderPass render_pass) {
+                                 VkRenderPass render_pass,
+                                 VkCommandBuffer cmd_buffer,
+                                 VkQueue queue,
+                                 VkFence fence) {
     header("war_nsgt_init");
+    // counts
     ctx_nsgt->descriptor_count = 0;
     ctx_nsgt->descriptor_image_count = 0;
-    ctx_nsgt->resource_count =
-        atomic_load(&ctx_lua->VK_NSGT_COMPUTE_RESOURCE_COUNT);
-    ctx_nsgt->bin_capacity = atomic_load(&ctx_lua->VK_NSGT_BIN_CAPACITY);
-    ctx_nsgt->frame_capacity = atomic_load(&ctx_lua->VK_NSGT_FRAME_CAPACITY);
+    ctx_nsgt->resource_count = atomic_load(&ctx_lua->NSGT_RESOURCE_COUNT);
+    ctx_nsgt->descriptor_set_count =
+        atomic_load(&ctx_lua->NSGT_DESCRIPTOR_SET_COUNT);
+    ctx_nsgt->shader_count = atomic_load(&ctx_lua->NSGT_SHADER_COUNT);
+    ctx_nsgt->pipeline_count = atomic_load(&ctx_lua->NSGT_PIPELINE_COUNT);
+    ctx_nsgt->path_limit = atomic_load(&ctx_lua->A_PATH_LIMIT);
+    ctx_nsgt->bin_capacity = atomic_load(&ctx_lua->NSGT_BIN_CAPACITY);
+    ctx_nsgt->frame_capacity = atomic_load(&ctx_lua->NSGT_FRAME_CAPACITY);
     ctx_nsgt->sample_rate = atomic_load(&ctx_lua->A_SAMPLE_RATE);
     ctx_nsgt->sample_duration = atomic_load(&ctx_lua->A_SAMPLE_DURATION);
     ctx_nsgt->channel_count = atomic_load(&ctx_lua->A_CHANNEL_COUNT);
-    ctx_nsgt->frequency_min = atomic_load(&ctx_lua->VK_NSGT_FREQUENCY_MIN);
-    ctx_nsgt->frequency_max = atomic_load(&ctx_lua->VK_NSGT_FREQUENCY_MAX);
-    ctx_nsgt->alpha = atomic_load(&ctx_lua->VK_NSGT_ALPHA);
-    ctx_nsgt->window_length_min =
-        atomic_load(&ctx_lua->VK_NSGT_WINDOW_LENGTH_MIN);
-    ctx_nsgt->shape_factor = atomic_load(&ctx_lua->VK_NSGT_SHAPE_FACTOR);
+    ctx_nsgt->frequency_min = atomic_load(&ctx_lua->NSGT_FREQUENCY_MIN);
+    ctx_nsgt->frequency_max = atomic_load(&ctx_lua->NSGT_FREQUENCY_MAX);
+    ctx_nsgt->alpha = atomic_load(&ctx_lua->NSGT_ALPHA);
+    ctx_nsgt->window_length_min = atomic_load(&ctx_lua->NSGT_WINDOW_LENGTH_MIN);
+    ctx_nsgt->shape_factor = atomic_load(&ctx_lua->NSGT_SHAPE_FACTOR);
     ctx_nsgt->wav_channel_capacity =
         ctx_nsgt->sample_rate * ctx_nsgt->sample_duration * sizeof(float);
     ctx_nsgt->nsgt_channel_capacity =
@@ -2484,13 +2574,11 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         float erb_i = ERB_min + i * ERB_scale;
         frequency[i] = (1000.0f / 4.37f) * (powf(10.0f, erb_i / 21.4f) - 1.0f);
         float erb_bandwidth = 24.7f * (4.37f * frequency[i] / 1000.0f + 1.0f);
-
         uint32_t length_temp = (uint32_t)roundf(
             ctx_nsgt->alpha * ctx_nsgt->sample_rate / erb_bandwidth);
         if (length_temp < ctx_nsgt->window_length_min)
             length_temp = ctx_nsgt->window_length_min;
         if (length_temp & 1) length_temp++; // ensure even length
-
         length[i] = length_temp;
         hop[i] = length[i] / 2;
         window_cursor += length[i];
@@ -2554,7 +2642,6 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     call_king_terry("TIGHT FRAME CHECK (gaussian, dual): min=%.8f max=%.8f",
                     min_val_dual,
                     max_val_dual);
-
     // Tight frame check (raw Gaussian, non-dual), ignoring near-zero edges
     memset(sum_squares, 0, window_cursor * sizeof(float));
     for (uint32_t b = 0; b < ctx_nsgt->bin_capacity; b++) {
@@ -2570,10 +2657,9 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         if (sum_squares[n] < min_val_raw) min_val_raw = sum_squares[n];
         if (sum_squares[n] > max_val_raw) max_val_raw = sum_squares[n];
     }
-    call_king_terry(
-        "TIGHT FRAME CHECK (gaussian, non-dual): min=%.8f max=%.8f",
-        min_val_raw,
-        max_val_raw);
+    call_king_terry("TIGHT FRAME CHECK (gaussian, non-dual): min=%.8f max=%.8f",
+                    min_val_raw,
+                    max_val_raw);
     //-------------------------------------------------------------------------
     // Cleanup
     free(sum_squares);
@@ -2623,10 +2709,71 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         sizeof(VkDescriptorSetLayoutBinding) * ctx_nsgt->resource_count);
     ctx_nsgt->write_descriptor_set = war_pool_alloc(
         pool_wr, sizeof(VkWriteDescriptorSet) * ctx_nsgt->resource_count);
+    ctx_nsgt->image_layout = war_pool_alloc(
+        pool_wr, sizeof(VkImageLayout) * ctx_nsgt->resource_count);
+    ctx_nsgt->access_flags = war_pool_alloc(
+        pool_wr, sizeof(VkAccessFlags) * ctx_nsgt->resource_count);
+    ctx_nsgt->pipeline_stage_flags = war_pool_alloc(
+        pool_wr, sizeof(VkPipelineStageFlags) * ctx_nsgt->resource_count);
+    ctx_nsgt->src_idx =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_nsgt->resource_count);
+    ctx_nsgt->dst_idx =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_nsgt->resource_count);
+    ctx_nsgt->size = war_pool_alloc(
+        pool_wr, sizeof(VkDeviceSize) * ctx_nsgt->resource_count);
+    ctx_nsgt->offset = war_pool_alloc(
+        pool_wr, sizeof(VkDeviceSize) * ctx_nsgt->resource_count);
+    ctx_nsgt->descriptor_set = war_pool_alloc(
+        pool_wr, sizeof(VkDescriptorSet) * ctx_nsgt->descriptor_set_count);
+    ctx_nsgt->descriptor_set_layout = war_pool_alloc(
+        pool_wr,
+        sizeof(VkDescriptorSetLayout) * ctx_nsgt->descriptor_set_count);
+    ctx_nsgt->image_descriptor_type = war_pool_alloc(
+        pool_wr, sizeof(VkDescriptorType) * ctx_nsgt->descriptor_set_count);
+    ctx_nsgt->descriptor_pool = war_pool_alloc(
+        pool_wr, sizeof(VkDescriptorPool) * ctx_nsgt->descriptor_set_count);
+    ctx_nsgt->descriptor_image_layout = war_pool_alloc(
+        pool_wr, sizeof(VkImageLayout) * ctx_nsgt->descriptor_set_count);
+    ctx_nsgt->shader_module = war_pool_alloc(
+        pool_wr, sizeof(VkShaderModule) * ctx_nsgt->shader_count);
+    ctx_nsgt->pipeline =
+        war_pool_alloc(pool_wr, sizeof(VkPipeline) * ctx_nsgt->pipeline_count);
+    ctx_nsgt->pipeline_layout = war_pool_alloc(
+        pool_wr, sizeof(VkPipelineLayout) * ctx_nsgt->pipeline_count);
+    ctx_nsgt->pipeline_set_idx =
+        war_pool_alloc(pool_wr,
+                       sizeof(uint32_t) * ctx_nsgt->pipeline_count *
+                           ctx_nsgt->descriptor_set_count);
+    memset(ctx_nsgt->pipeline_set_idx,
+           UINT32_MAX,
+           ctx_nsgt->pipeline_count * ctx_nsgt->descriptor_set_count *
+               sizeof(uint32_t));
+    ctx_nsgt->pipeline_shader_idx = war_pool_alloc(
+        pool_wr,
+        sizeof(uint32_t) * ctx_nsgt->pipeline_count * ctx_nsgt->shader_count);
+    memset(ctx_nsgt->pipeline_shader_idx,
+           UINT32_MAX,
+           ctx_nsgt->pipeline_count * ctx_nsgt->shader_count *
+               sizeof(uint32_t));
+    ctx_nsgt->pipeline_shader_stage_create_info = war_pool_alloc(
+        pool_wr,
+        sizeof(VkPipelineShaderStageCreateInfo) * ctx_nsgt->shader_count);
+    ctx_nsgt->shader_stage_flag_bits = war_pool_alloc(
+        pool_wr, sizeof(VkShaderStageFlagBits) * ctx_nsgt->shader_count);
+    ctx_nsgt->shader_path = war_pool_alloc(
+        pool_wr, sizeof(char) * ctx_nsgt->shader_count * ctx_nsgt->path_limit);
+    ctx_nsgt->structure_type = war_pool_alloc(
+        pool_wr, sizeof(VkStructureType) * ctx_nsgt->pipeline_count);
+    ctx_nsgt->push_constant_shader_stage_flags = war_pool_alloc(
+        pool_wr, sizeof(VkShaderStageFlags) * ctx_nsgt->pipeline_count);
+    ctx_nsgt->push_constant_size =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_nsgt->pipeline_count);
+    ctx_nsgt->pipeline_bind_point = war_pool_alloc(
+        pool_wr, sizeof(VkPipelineBindPoint) * ctx_nsgt->pipeline_count);
     //-------------------------------------------------------------------------
     // CONFIG
     //-------------------------------------------------------------------------
-    // resources
+    // resource
     ctx_nsgt->idx_offset = 0;
     ctx_nsgt->idx_hop = 1;
     ctx_nsgt->idx_length = 2;
@@ -2653,6 +2800,84 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     ctx_nsgt->idx_window_stage = 23;
     ctx_nsgt->idx_dual_window_stage = 24;
     ctx_nsgt->idx_frequency_stage = 25;
+    // descriptor set
+    ctx_nsgt->set_idx_compute = 0;
+    ctx_nsgt->set_idx_graphics = 1;
+    // compute
+    ctx_nsgt->image_descriptor_type[ctx_nsgt->set_idx_compute] =
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    ctx_nsgt->descriptor_image_layout[ctx_nsgt->set_idx_compute] =
+        VK_IMAGE_LAYOUT_GENERAL;
+    // graphics
+    ctx_nsgt->image_descriptor_type[ctx_nsgt->set_idx_graphics] =
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    ctx_nsgt->descriptor_image_layout[ctx_nsgt->set_idx_graphics] =
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    // shader
+    ctx_nsgt->shader_idx_compute = 0;
+    ctx_nsgt->shader_idx_vertex = 1;
+    ctx_nsgt->shader_idx_fragment = 2;
+    // shader compute
+    char* path_compute = "build/spv/war_nsgt_compute.spv";
+    memcpy(&ctx_nsgt->shader_path[ctx_nsgt->shader_idx_compute *
+                                  ctx_nsgt->path_limit],
+           path_compute,
+           strlen(path_compute));
+    ctx_nsgt->shader_stage_flag_bits[ctx_nsgt->shader_idx_compute] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    // shader vertex
+    char* path_vertex = "build/spv/war_nsgt_vertex.spv";
+    memcpy(&ctx_nsgt->shader_path[ctx_nsgt->shader_idx_vertex *
+                                  ctx_nsgt->path_limit],
+           path_vertex,
+           strlen(path_vertex));
+    ctx_nsgt->shader_stage_flag_bits[ctx_nsgt->shader_idx_vertex] =
+        VK_SHADER_STAGE_VERTEX_BIT;
+    // shader fragment
+    char* path_fragment = "build/spv/war_nsgt_fragment.spv";
+    memcpy(&ctx_nsgt->shader_path[ctx_nsgt->shader_idx_fragment *
+                                  ctx_nsgt->path_limit],
+           path_fragment,
+           strlen(path_fragment));
+    ctx_nsgt->shader_stage_flag_bits[ctx_nsgt->shader_idx_fragment] =
+        VK_SHADER_STAGE_FRAGMENT_BIT;
+    // pipeline idx
+    ctx_nsgt->pipeline_idx_compute = 0;
+    ctx_nsgt->pipeline_idx_graphics = 1;
+    // compute pipeline
+    ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_compute] =
+        VK_PIPELINE_BIND_POINT_COMPUTE;
+    ctx_nsgt->pipeline_set_idx[ctx_nsgt->pipeline_idx_compute *
+                                   ctx_nsgt->descriptor_set_count +
+                               0] = ctx_nsgt->set_idx_compute;
+    ctx_nsgt->pipeline_shader_idx[ctx_nsgt->pipeline_idx_compute *
+                                      ctx_nsgt->shader_count +
+                                  0] = ctx_nsgt->shader_idx_compute;
+    ctx_nsgt->structure_type[ctx_nsgt->pipeline_idx_compute] =
+        VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    ctx_nsgt->push_constant_shader_stage_flags[ctx_nsgt->pipeline_idx_compute] =
+        VK_SHADER_STAGE_COMPUTE_BIT;
+    ctx_nsgt->push_constant_size[ctx_nsgt->pipeline_idx_compute] =
+        sizeof(war_nsgt_compute_push_constant);
+    // graphics pipeline
+    ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_graphics] =
+        VK_PIPELINE_BIND_POINT_GRAPHICS;
+    ctx_nsgt->pipeline_set_idx[ctx_nsgt->pipeline_idx_graphics *
+                                   ctx_nsgt->descriptor_set_count +
+                               0] = ctx_nsgt->set_idx_graphics;
+    ctx_nsgt->pipeline_shader_idx[ctx_nsgt->pipeline_idx_graphics *
+                                      ctx_nsgt->shader_count +
+                                  0] = ctx_nsgt->shader_idx_vertex;
+    ctx_nsgt->pipeline_shader_idx[ctx_nsgt->pipeline_idx_graphics *
+                                      ctx_nsgt->shader_count +
+                                  1] = ctx_nsgt->shader_idx_fragment;
+    ctx_nsgt->structure_type[ctx_nsgt->pipeline_idx_graphics] =
+        VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    ctx_nsgt
+        ->push_constant_shader_stage_flags[ctx_nsgt->pipeline_idx_graphics] =
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    ctx_nsgt->push_constant_size[ctx_nsgt->pipeline_idx_graphics] =
+        sizeof(war_nsgt_graphics_push_constant);
     // offset
     ctx_nsgt->memory_property_flags[ctx_nsgt->idx_offset] =
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -2864,7 +3089,9 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     ctx_nsgt->format[ctx_nsgt->idx_r_image] = VK_FORMAT_R32_SFLOAT;
     ctx_nsgt->extent_3d[ctx_nsgt->idx_r_image] =
-        ctx_nsgt->extent_3d[ctx_nsgt->idx_l_image];
+        (VkExtent3D){.width = ctx_nsgt->frame_capacity,
+                     .height = ctx_nsgt->bin_capacity,
+                     .depth = 1};
     ctx_nsgt->image_usage_flags[ctx_nsgt->idx_r_image] =
         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     // l_stage
@@ -2881,10 +3108,33 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
         VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     ctx_nsgt->capacity[ctx_nsgt->idx_r_stage] = ctx_nsgt->wav_channel_capacity;
+    // sampler
+    VkSamplerCreateInfo graphics_sampler_info = {0};
+    graphics_sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    graphics_sampler_info.magFilter =
+        VK_FILTER_LINEAR; // magnification (upsampling)
+    graphics_sampler_info.minFilter =
+        VK_FILTER_LINEAR; // minification (downsampling)
+    graphics_sampler_info.mipmapMode =
+        VK_SAMPLER_MIPMAP_MODE_LINEAR; // optional
+    graphics_sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    graphics_sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    graphics_sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    graphics_sampler_info.mipLodBias = 0.0f;
+    graphics_sampler_info.anisotropyEnable = VK_FALSE;
+    graphics_sampler_info.maxAnisotropy = 1.0f;
+    graphics_sampler_info.compareEnable = VK_FALSE;
+    graphics_sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    graphics_sampler_info.unnormalizedCoordinates =
+        VK_FALSE; // use [0,1] UV coords
+    graphics_sampler_info.minLod = 0.0f;
+    graphics_sampler_info.maxLod = 1.0f; // no mipmaps
+    VkResult result = vkCreateSampler(
+        device, &graphics_sampler_info, NULL, &ctx_nsgt->sampler);
+    assert(result == VK_SUCCESS);
     VkPhysicalDeviceMemoryProperties physical_device_memory_properties;
     vkGetPhysicalDeviceMemoryProperties(physical_device,
                                         &physical_device_memory_properties);
-    VkResult result;
     for (VkDeviceSize i = 0; i < ctx_nsgt->resource_count; i++) {
         VkImageUsageFlags image_usage_flags = ctx_nsgt->image_usage_flags[i];
         if ((image_usage_flags &
@@ -2941,36 +3191,13 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
             assert(result == VK_SUCCESS);
             continue;
         }
-        assert(ctx_nsgt->descriptor_count == i);
-        VkDescriptorBufferInfo* descriptor_buffer_info =
-            ctx_nsgt->descriptor_buffer_info;
-        descriptor_buffer_info[ctx_nsgt->descriptor_count].buffer =
-            ctx_nsgt->buffer[ctx_nsgt->descriptor_count];
-        descriptor_buffer_info[ctx_nsgt->descriptor_count].offset = 0;
-        descriptor_buffer_info[ctx_nsgt->descriptor_count].range =
-            ctx_nsgt->capacity[ctx_nsgt->descriptor_count];
-        VkShaderStageFlags* shader_stage_flags = ctx_nsgt->shader_stage_flags;
-        VkDescriptorSetLayoutBinding* descriptor_set_layout_binding =
-            ctx_nsgt->descriptor_set_layout_binding;
-        VkWriteDescriptorSet* write_descriptor_set =
-            ctx_nsgt->write_descriptor_set;
-        descriptor_set_layout_binding[ctx_nsgt->descriptor_count].binding =
-            ctx_nsgt->descriptor_count;
-        descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
-            .descriptorCount = 1;
-        descriptor_set_layout_binding[ctx_nsgt->descriptor_count].stageFlags =
-            shader_stage_flags[ctx_nsgt->descriptor_count];
-        write_descriptor_set[ctx_nsgt->descriptor_count].sType =
-            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write_descriptor_set[ctx_nsgt->descriptor_count].dstBinding =
-            ctx_nsgt->descriptor_count;
-        write_descriptor_set[ctx_nsgt->descriptor_count].descriptorCount = 1;
-        write_descriptor_set[ctx_nsgt->descriptor_count].descriptorType =
+        // descriptor_set_layout_binding
+        ctx_nsgt->descriptor_set_layout_binding[i].binding = i;
+        ctx_nsgt->descriptor_set_layout_binding[i].descriptorType =
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write_descriptor_set[ctx_nsgt->descriptor_count].pBufferInfo =
-            &descriptor_buffer_info[ctx_nsgt->descriptor_count];
+        ctx_nsgt->descriptor_set_layout_binding[i].descriptorCount = 1;
+        ctx_nsgt->descriptor_set_layout_binding[i].stageFlags =
+            ctx_nsgt->shader_stage_flags[i];
         ctx_nsgt->descriptor_count++;
         continue;
     image:
@@ -3029,310 +3256,330 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         result = vkCreateImageView(
             device, &view_info, NULL, &ctx_nsgt->image_view[i]);
         assert(result == VK_SUCCESS);
-        assert(ctx_nsgt->descriptor_count == i);
-        // descriptor_image_info
-        ctx_nsgt->descriptor_image_info[ctx_nsgt->descriptor_count].imageView =
-            ctx_nsgt->image_view[i];
-        ctx_nsgt->descriptor_image_info[ctx_nsgt->descriptor_count]
-            .imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        ctx_nsgt->descriptor_image_info[ctx_nsgt->descriptor_count].sampler =
-            VK_NULL_HANDLE;
         // descriptor_set_layout_binding
-        ctx_nsgt->descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
-            .binding = ctx_nsgt->descriptor_count;
-        ctx_nsgt->descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        ctx_nsgt->descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
-            .descriptorCount = 1;
-        ctx_nsgt->descriptor_set_layout_binding[ctx_nsgt->descriptor_count]
-            .stageFlags = ctx_nsgt->shader_stage_flags[i];
-        // write_descriptor_set
-        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count].sType =
-            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count].dstBinding =
-            ctx_nsgt->descriptor_count;
-        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count]
-            .descriptorCount = 1;
-        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count]
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        ctx_nsgt->write_descriptor_set[ctx_nsgt->descriptor_count].pImageInfo =
-            &ctx_nsgt->descriptor_image_info[ctx_nsgt->descriptor_count];
+        ctx_nsgt->descriptor_set_layout_binding[i].binding = i;
+        ctx_nsgt->descriptor_set_layout_binding[i].descriptorCount = 1;
+        ctx_nsgt->descriptor_set_layout_binding[i].stageFlags =
+            ctx_nsgt->shader_stage_flags[i];
         ctx_nsgt->descriptor_count++;
         ctx_nsgt->descriptor_image_count++;
     }
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = ctx_nsgt->descriptor_count,
-        .pBindings = ctx_nsgt->descriptor_set_layout_binding,
-    };
-    result = vkCreateDescriptorSetLayout(device,
-                                         &descriptor_set_layout_create_info,
-                                         NULL,
-                                         &ctx_nsgt->descriptor_set_layout);
-    assert(result == VK_SUCCESS);
-    VkDescriptorPoolSize descriptor_pool_size[2] = {
-        (VkDescriptorPoolSize){
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .descriptorCount =
-                ctx_nsgt->descriptor_count - ctx_nsgt->descriptor_image_count,
-        },
-        (VkDescriptorPoolSize){
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .descriptorCount = ctx_nsgt->descriptor_image_count,
-        },
-    };
-    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .poolSizeCount = 2,
-        .pPoolSizes = descriptor_pool_size,
-        .maxSets = 1,
-    };
-    result = vkCreateDescriptorPool(
-        device, &descriptor_pool_create_info, NULL, &ctx_nsgt->descriptor_pool);
-    assert(result == VK_SUCCESS);
-    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = ctx_nsgt->descriptor_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &ctx_nsgt->descriptor_set_layout,
-    };
-    result = vkAllocateDescriptorSets(
-        device, &descriptor_set_allocate_info, &ctx_nsgt->descriptor_set);
-    assert(result == VK_SUCCESS);
-    for (VkDeviceSize i = 0; i < ctx_nsgt->descriptor_count; i++) {
-        ctx_nsgt->write_descriptor_set[i].dstSet = ctx_nsgt->descriptor_set;
-    }
-    vkUpdateDescriptorSets(device,
-                           ctx_nsgt->descriptor_count,
-                           ctx_nsgt->write_descriptor_set,
-                           0,
-                           NULL);
-    uint8_t fn_result = war_vulkan_get_shader_module(
-        device, &ctx_nsgt->compute_shader, "build/spv/war_nsgt_compute.spv");
-    assert(fn_result);
-    fn_result = war_vulkan_get_shader_module(
-        device, &ctx_nsgt->vertex_shader, "build/spv/war_nsgt_vertex.spv");
-    assert(fn_result);
-    fn_result = war_vulkan_get_shader_module(
-        device, &ctx_nsgt->fragment_shader, "build/spv/war_nsgt_fragment.spv");
-    assert(fn_result);
-    VkPushConstantRange compute_push_constant_range = {
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        .offset = 0,
-        .size = sizeof(war_nsgt_compute_push_constant),
-    };
-    VkPipelineLayoutCreateInfo compute_pipeline_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &ctx_nsgt->descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &compute_push_constant_range,
-    };
-    result = vkCreatePipelineLayout(device,
-                                    &compute_pipeline_layout_create_info,
-                                    NULL,
-                                    &ctx_nsgt->compute_pipeline_layout);
-    assert(result == VK_SUCCESS);
-    VkComputePipelineCreateInfo compute_pipeline_create_info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage =
-            (VkPipelineShaderStageCreateInfo){
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = ctx_nsgt->compute_shader,
-                .pName = "main",
-            },
-        .layout = ctx_nsgt->compute_pipeline_layout,
-    };
-    result = vkCreateComputePipelines(device,
-                                      VK_NULL_HANDLE,
-                                      1,
-                                      &compute_pipeline_create_info,
-                                      NULL,
-                                      &ctx_nsgt->compute_pipeline);
-    assert(result == VK_SUCCESS);
-    VkPushConstantRange graphics_push_constant_range = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-        .offset = 0,
-        .size = sizeof(war_nsgt_graphics_push_constant),
-    };
-    VkPipelineLayoutCreateInfo graphics_pipeline_layout_create_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &ctx_nsgt->descriptor_set_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &graphics_push_constant_range,
-    };
-    result = vkCreatePipelineLayout(device,
-                                    &graphics_pipeline_layout_create_info,
-                                    NULL,
-                                    &ctx_nsgt->graphics_pipeline_layout);
-    assert(result == VK_SUCCESS);
-    VkPipelineShaderStageCreateInfo*
-        graphics_pipeline_shader_stage_create_info =
-            (VkPipelineShaderStageCreateInfo[2]){
-                (VkPipelineShaderStageCreateInfo){
-                    .sType =
-                        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    .stage = VK_SHADER_STAGE_VERTEX_BIT,
-                    .module = ctx_nsgt->vertex_shader,
-                    .pName = "main",
-                },
-                (VkPipelineShaderStageCreateInfo){
-                    .sType =
-                        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                    .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-                    .module = ctx_nsgt->fragment_shader,
-                    .pName = "main",
-                },
-            };
-    VkPipelineVertexInputStateCreateInfo
-        graphics_pipeline_vertex_input_state_create_info = {0};
-    graphics_pipeline_vertex_input_state_create_info.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    VkPipelineInputAssemblyStateCreateInfo
-        graphics_pipeline_input_assembly_state_create_info = {0};
-    graphics_pipeline_input_assembly_state_create_info.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    graphics_pipeline_input_assembly_state_create_info.topology =
-        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    VkPipelineViewportStateCreateInfo
-        graphics_pipeline_viewport_state_create_info = {0};
-    graphics_pipeline_viewport_state_create_info.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    graphics_pipeline_viewport_state_create_info.viewportCount = 1;
-    graphics_pipeline_viewport_state_create_info.scissorCount = 1;
-    VkPipelineRasterizationStateCreateInfo
-        graphics_pipeline_rasterization_state_create_info = {0};
-    graphics_pipeline_rasterization_state_create_info.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    graphics_pipeline_rasterization_state_create_info.polygonMode =
-        VK_POLYGON_MODE_FILL;
-    graphics_pipeline_rasterization_state_create_info.cullMode =
-        VK_CULL_MODE_NONE;
-    graphics_pipeline_rasterization_state_create_info.frontFace =
-        VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    graphics_pipeline_rasterization_state_create_info.lineWidth = 1.0f;
-    VkPipelineMultisampleStateCreateInfo
-        graphics_pipeline_multisample_state_create_info = {0};
-    graphics_pipeline_multisample_state_create_info.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    graphics_pipeline_multisample_state_create_info.rasterizationSamples =
-        VK_SAMPLE_COUNT_1_BIT;
-    VkPipelineDepthStencilStateCreateInfo
-        graphics_pipeline_depth_stencil_state_create_info = {0};
-    graphics_pipeline_depth_stencil_state_create_info.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    graphics_pipeline_depth_stencil_state_create_info.depthTestEnable =
-        VK_FALSE;
-    graphics_pipeline_depth_stencil_state_create_info.depthWriteEnable =
-        VK_FALSE;
-    VkPipelineColorBlendStateCreateInfo
-        graphics_pipeline_color_blend_state_create_info = {0};
-    VkPipelineColorBlendAttachmentState
-        graphics_pipeline_color_blend_attachment_state = {
-            .colorWriteMask =
-                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-            .blendEnable = VK_FALSE,
+    for (uint32_t i = 0; i < ctx_nsgt->descriptor_set_count; i++) {
+        for (uint32_t k = 0; k < ctx_nsgt->descriptor_count; k++) {
+            VkImageUsageFlags image_usage_flags =
+                ctx_nsgt->image_usage_flags[k];
+            if ((image_usage_flags & (VK_IMAGE_USAGE_STORAGE_BIT |
+                                      VK_IMAGE_USAGE_SAMPLED_BIT)) != 0) {
+                goto image_descriptor_type;
+            }
+            continue;
+        image_descriptor_type:
+            ctx_nsgt->descriptor_set_layout_binding[k].descriptorType =
+                ctx_nsgt->image_descriptor_type[i];
+        }
+        VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = ctx_nsgt->descriptor_count,
+            .pBindings = ctx_nsgt->descriptor_set_layout_binding,
         };
-    graphics_pipeline_color_blend_state_create_info.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    graphics_pipeline_color_blend_state_create_info.attachmentCount = 1;
-    graphics_pipeline_color_blend_state_create_info.pAttachments =
-        &graphics_pipeline_color_blend_attachment_state;
-    VkDynamicState graphics_dynamic_state[] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                               VK_DYNAMIC_STATE_SCISSOR};
-    VkPipelineDynamicStateCreateInfo
-        graphics_pipeline_dynamic_state_create_info = {0};
-    graphics_pipeline_dynamic_state_create_info.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    graphics_pipeline_dynamic_state_create_info.dynamicStateCount = 2;
-    graphics_pipeline_dynamic_state_create_info.pDynamicStates =
-        graphics_dynamic_state;
-    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .stageCount = 2,
-        .pStages = graphics_pipeline_shader_stage_create_info,
-        .layout = ctx_nsgt->graphics_pipeline_layout,
-        .pVertexInputState = &graphics_pipeline_vertex_input_state_create_info,
-        .pInputAssemblyState =
-            &graphics_pipeline_input_assembly_state_create_info,
-        .pViewportState = &graphics_pipeline_viewport_state_create_info,
-        .pRasterizationState =
-            &graphics_pipeline_rasterization_state_create_info,
-        .pMultisampleState = &graphics_pipeline_multisample_state_create_info,
-        .pDepthStencilState =
-            &graphics_pipeline_depth_stencil_state_create_info,
-        .pColorBlendState = &graphics_pipeline_color_blend_state_create_info,
-        .pDynamicState = &graphics_pipeline_dynamic_state_create_info,
-        .renderPass = render_pass,
-        .subpass = 0,
-    };
-    result = vkCreateGraphicsPipelines(device,
-                                       VK_NULL_HANDLE,
-                                       1,
-                                       &graphics_pipeline_create_info,
-                                       NULL,
-                                       &ctx_nsgt->graphics_pipeline);
-    assert(result == VK_SUCCESS);
+        result =
+            vkCreateDescriptorSetLayout(device,
+                                        &descriptor_set_layout_create_info,
+                                        NULL,
+                                        &ctx_nsgt->descriptor_set_layout[i]);
+        assert(result == VK_SUCCESS);
+        VkDescriptorPoolSize descriptor_pool_size[2] = {
+            (VkDescriptorPoolSize){
+                .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                .descriptorCount = ctx_nsgt->descriptor_count -
+                                   ctx_nsgt->descriptor_image_count,
+            },
+            (VkDescriptorPoolSize){
+                .type = ctx_nsgt->image_descriptor_type[i],
+                .descriptorCount = ctx_nsgt->descriptor_image_count,
+            },
+        };
+        VkDescriptorPoolCreateInfo descriptor_pool_create_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .poolSizeCount = 2,
+            .pPoolSizes = descriptor_pool_size,
+            .maxSets = 1,
+        };
+        result = vkCreateDescriptorPool(device,
+                                        &descriptor_pool_create_info,
+                                        NULL,
+                                        &ctx_nsgt->descriptor_pool[i]);
+        assert(result == VK_SUCCESS);
+        VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = ctx_nsgt->descriptor_pool[i],
+            .descriptorSetCount = 1,
+            .pSetLayouts = &ctx_nsgt->descriptor_set_layout[i],
+        };
+        result = vkAllocateDescriptorSets(device,
+                                          &descriptor_set_allocate_info,
+                                          &ctx_nsgt->descriptor_set[i]);
+        assert(result == VK_SUCCESS);
+        for (uint32_t k = 0; k < ctx_nsgt->descriptor_count; k++) {
+            VkImageUsageFlags image_usage_flags =
+                ctx_nsgt->image_usage_flags[k];
+            if ((image_usage_flags & (VK_IMAGE_USAGE_STORAGE_BIT |
+                                      VK_IMAGE_USAGE_SAMPLED_BIT)) != 0) {
+                goto descriptor_image;
+            }
+            // descriptor buffer info
+            ctx_nsgt->descriptor_buffer_info[k].buffer = ctx_nsgt->buffer[k];
+            ctx_nsgt->descriptor_buffer_info[k].offset = 0;
+            ctx_nsgt->descriptor_buffer_info[k].range = ctx_nsgt->capacity[k];
+            /// write descriptor set
+            ctx_nsgt->write_descriptor_set[k].sType =
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            ctx_nsgt->write_descriptor_set[k].dstBinding = k;
+            ctx_nsgt->write_descriptor_set[k].descriptorCount = 1;
+            ctx_nsgt->write_descriptor_set[k].descriptorType =
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            ctx_nsgt->write_descriptor_set[k].pBufferInfo =
+                &ctx_nsgt->descriptor_buffer_info[k];
+            ctx_nsgt->write_descriptor_set[k].dstSet =
+                ctx_nsgt->descriptor_set[i];
+            // pipeline stage flags
+            ctx_nsgt->pipeline_stage_flags[k] =
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            continue;
+        descriptor_image:
+            // descriptor_image_info
+            ctx_nsgt->descriptor_image_info[k].imageView =
+                ctx_nsgt->image_view[k];
+            ctx_nsgt->descriptor_image_info[k].sampler = ctx_nsgt->sampler;
+            ctx_nsgt->descriptor_image_info[k].imageLayout =
+                ctx_nsgt->descriptor_image_layout[i];
+            // write_descriptor_set
+            ctx_nsgt->write_descriptor_set[k].sType =
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            ctx_nsgt->write_descriptor_set[k].dstBinding = k;
+            ctx_nsgt->write_descriptor_set[k].descriptorCount = 1;
+            ctx_nsgt->write_descriptor_set[k].pImageInfo =
+                &ctx_nsgt->descriptor_image_info[k];
+            ctx_nsgt->write_descriptor_set[k].descriptorType =
+                ctx_nsgt->image_descriptor_type[i];
+            ctx_nsgt->write_descriptor_set[k].dstSet =
+                ctx_nsgt->descriptor_set[i];
+            // image layout
+            ctx_nsgt->image_layout[k] = VK_IMAGE_LAYOUT_UNDEFINED;
+            // pipeline stage flags
+            ctx_nsgt->pipeline_stage_flags[k] =
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        }
+        vkUpdateDescriptorSets(device,
+                               ctx_nsgt->descriptor_count,
+                               ctx_nsgt->write_descriptor_set,
+                               0,
+                               NULL);
+    }
+    for (uint32_t i = 0; i < ctx_nsgt->shader_count; i++) {
+        uint8_t fn_result = war_vulkan_get_shader_module(
+            device,
+            &ctx_nsgt->shader_module[i],
+            &ctx_nsgt->shader_path[i * ctx_nsgt->path_limit]);
+        assert(fn_result);
+    }
+    for (uint32_t i = 0; i < ctx_nsgt->pipeline_count; i++) {
+        VkPushConstantRange push_constant_range;
+        push_constant_range.stageFlags =
+            ctx_nsgt->push_constant_shader_stage_flags[i];
+        push_constant_range.offset = 0;
+        push_constant_range.size = ctx_nsgt->push_constant_size[i];
+        VkPipelineLayoutCreateInfo pipeline_layout_create_info;
+        pipeline_layout_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipeline_layout_create_info.setLayoutCount = 1;
+        pipeline_layout_create_info.pSetLayouts =
+            &ctx_nsgt->descriptor_set_layout
+                 [ctx_nsgt
+                      ->pipeline_set_idx[i * ctx_nsgt->descriptor_set_count]];
+        pipeline_layout_create_info.pushConstantRangeCount = 1;
+        pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
+        result = vkCreatePipelineLayout(device,
+                                        &pipeline_layout_create_info,
+                                        NULL,
+                                        &ctx_nsgt->pipeline_layout[i]);
+        assert(result == VK_SUCCESS);
+        uint32_t pipeline_shader_count = 0;
+        uint32_t pipeline_shader_idx = 0;
+        for (uint32_t k = 0; k < ctx_nsgt->shader_count; k++) {
+            uint32_t tmp_pipeline_shader_idx =
+                ctx_nsgt->pipeline_shader_idx[i * ctx_nsgt->shader_count + k];
+            if (tmp_pipeline_shader_idx == UINT32_MAX) { continue; }
+            pipeline_shader_idx = tmp_pipeline_shader_idx;
+            ctx_nsgt->pipeline_shader_stage_create_info[pipeline_shader_count]
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            ctx_nsgt->pipeline_shader_stage_create_info[pipeline_shader_count]
+                .stage = ctx_nsgt->shader_stage_flag_bits[pipeline_shader_idx];
+            ctx_nsgt->pipeline_shader_stage_create_info[pipeline_shader_count]
+                .module = ctx_nsgt->shader_module[pipeline_shader_idx];
+            ctx_nsgt->pipeline_shader_stage_create_info[pipeline_shader_count]
+                .pName = "main";
+            pipeline_shader_count++;
+        }
+        if (pipeline_shader_count > 1 ||
+            (pipeline_shader_count == 1 &&
+             ctx_nsgt->shader_stage_flag_bits[pipeline_shader_idx] ==
+                 VK_SHADER_STAGE_VERTEX_BIT)) {
+            goto graphics_pipeline;
+        }
+        // compute pipeline
+        assert(pipeline_shader_count == 1 &&
+               ctx_nsgt->shader_stage_flag_bits[pipeline_shader_idx] ==
+                   VK_SHADER_STAGE_COMPUTE_BIT);
+        VkComputePipelineCreateInfo compute_pipeline_create_info = {
+            .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+            .stage =
+                (VkPipelineShaderStageCreateInfo){
+                    .sType =
+                        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module = ctx_nsgt->shader_module[pipeline_shader_idx],
+                    .pName = "main",
+                },
+            .layout = ctx_nsgt->pipeline_layout[i],
+        };
+        result = vkCreateComputePipelines(device,
+                                          VK_NULL_HANDLE,
+                                          1,
+                                          &compute_pipeline_create_info,
+                                          NULL,
+                                          &ctx_nsgt->pipeline[i]);
+        assert(result == VK_SUCCESS);
+        continue;
+    graphics_pipeline:
+        VkPipelineVertexInputStateCreateInfo
+            graphics_pipeline_vertex_input_state_create_info = {0};
+        graphics_pipeline_vertex_input_state_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        VkPipelineInputAssemblyStateCreateInfo
+            graphics_pipeline_input_assembly_state_create_info = {0};
+        graphics_pipeline_input_assembly_state_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        graphics_pipeline_input_assembly_state_create_info.topology =
+            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        VkPipelineViewportStateCreateInfo
+            graphics_pipeline_viewport_state_create_info = {0};
+        graphics_pipeline_viewport_state_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        graphics_pipeline_viewport_state_create_info.viewportCount = 1;
+        graphics_pipeline_viewport_state_create_info.scissorCount = 1;
+        VkPipelineRasterizationStateCreateInfo
+            graphics_pipeline_rasterization_state_create_info = {0};
+        graphics_pipeline_rasterization_state_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        graphics_pipeline_rasterization_state_create_info.polygonMode =
+            VK_POLYGON_MODE_FILL;
+        graphics_pipeline_rasterization_state_create_info.cullMode =
+            VK_CULL_MODE_NONE;
+        graphics_pipeline_rasterization_state_create_info.frontFace =
+            VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        graphics_pipeline_rasterization_state_create_info.lineWidth = 1.0f;
+        VkPipelineMultisampleStateCreateInfo
+            graphics_pipeline_multisample_state_create_info = {0};
+        graphics_pipeline_multisample_state_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        graphics_pipeline_multisample_state_create_info.rasterizationSamples =
+            VK_SAMPLE_COUNT_1_BIT;
+        VkPipelineDepthStencilStateCreateInfo
+            graphics_pipeline_depth_stencil_state_create_info = {0};
+        graphics_pipeline_depth_stencil_state_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        graphics_pipeline_depth_stencil_state_create_info.depthTestEnable =
+            VK_TRUE;
+        graphics_pipeline_depth_stencil_state_create_info.depthWriteEnable =
+            VK_TRUE;
+        graphics_pipeline_depth_stencil_state_create_info.depthCompareOp =
+            VK_COMPARE_OP_GREATER_OR_EQUAL;
+        VkPipelineColorBlendStateCreateInfo
+            graphics_pipeline_color_blend_state_create_info = {0};
+        VkPipelineColorBlendAttachmentState
+            graphics_pipeline_color_blend_attachment_state = {
+                .colorWriteMask =
+                    VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                    VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+                .blendEnable = VK_FALSE,
+            };
+        graphics_pipeline_color_blend_state_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        graphics_pipeline_color_blend_state_create_info.attachmentCount = 1;
+        graphics_pipeline_color_blend_state_create_info.pAttachments =
+            &graphics_pipeline_color_blend_attachment_state;
+        VkDynamicState graphics_dynamic_state[] = {VK_DYNAMIC_STATE_VIEWPORT,
+                                                   VK_DYNAMIC_STATE_SCISSOR};
+        VkPipelineDynamicStateCreateInfo
+            graphics_pipeline_dynamic_state_create_info = {0};
+        graphics_pipeline_dynamic_state_create_info.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        graphics_pipeline_dynamic_state_create_info.dynamicStateCount = 2;
+        graphics_pipeline_dynamic_state_create_info.pDynamicStates =
+            graphics_dynamic_state;
+        VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .stageCount = pipeline_shader_count,
+            .pStages = ctx_nsgt->pipeline_shader_stage_create_info,
+            .layout = ctx_nsgt->pipeline_layout[i],
+            .pVertexInputState =
+                &graphics_pipeline_vertex_input_state_create_info,
+            .pInputAssemblyState =
+                &graphics_pipeline_input_assembly_state_create_info,
+            .pViewportState = &graphics_pipeline_viewport_state_create_info,
+            .pRasterizationState =
+                &graphics_pipeline_rasterization_state_create_info,
+            .pMultisampleState =
+                &graphics_pipeline_multisample_state_create_info,
+            .pDepthStencilState =
+                &graphics_pipeline_depth_stencil_state_create_info,
+            .pColorBlendState =
+                &graphics_pipeline_color_blend_state_create_info,
+            .pDynamicState = &graphics_pipeline_dynamic_state_create_info,
+            .renderPass = render_pass,
+            .subpass = 0,
+        };
+        result = vkCreateGraphicsPipelines(device,
+                                           VK_NULL_HANDLE,
+                                           1,
+                                           &graphics_pipeline_create_info,
+                                           NULL,
+                                           &ctx_nsgt->pipeline[i]);
+        assert(result == VK_SUCCESS);
+    }
     //-------------------------------------------------------------------------
-    // COPY OVER TO MAP
+    // FLUSH
     //-------------------------------------------------------------------------
-    VkMappedMemoryRange mapped_memory_range[6];
     memcpy(ctx_nsgt->map[ctx_nsgt->idx_offset_stage],
            offset,
            ctx_nsgt->offset_capacity);
-    mapped_memory_range[0].offset = 0;
-    mapped_memory_range[0].size = VK_WHOLE_SIZE;
-    mapped_memory_range[0].memory =
-        ctx_nsgt->device_memory[ctx_nsgt->idx_offset_stage];
-    mapped_memory_range[0].pNext = NULL;
-    mapped_memory_range[0].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
     memcpy(ctx_nsgt->map[ctx_nsgt->idx_hop_stage], hop, ctx_nsgt->hop_capacity);
-    mapped_memory_range[1].offset = 0;
-    mapped_memory_range[1].size = VK_WHOLE_SIZE;
-    mapped_memory_range[1].memory =
-        ctx_nsgt->device_memory[ctx_nsgt->idx_hop_stage];
-    mapped_memory_range[1].pNext = NULL;
-    mapped_memory_range[1].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
     memcpy(ctx_nsgt->map[ctx_nsgt->idx_length_stage],
            length,
            ctx_nsgt->length_capacity);
-    mapped_memory_range[2].offset = 0;
-    mapped_memory_range[2].size = VK_WHOLE_SIZE;
-    mapped_memory_range[2].memory =
-        ctx_nsgt->device_memory[ctx_nsgt->idx_length_stage];
-    mapped_memory_range[2].pNext = NULL;
-    mapped_memory_range[2].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
     memcpy(ctx_nsgt->map[ctx_nsgt->idx_window_stage],
            window,
            ctx_nsgt->window_capacity);
-    mapped_memory_range[3].offset = 0;
-    mapped_memory_range[3].size = VK_WHOLE_SIZE;
-    mapped_memory_range[3].memory =
-        ctx_nsgt->device_memory[ctx_nsgt->idx_window_stage];
-    mapped_memory_range[3].pNext = NULL;
-    mapped_memory_range[3].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
     memcpy(ctx_nsgt->map[ctx_nsgt->idx_dual_window_stage],
            dual_window,
            ctx_nsgt->window_capacity);
-    mapped_memory_range[4].offset = 0;
-    mapped_memory_range[4].size = VK_WHOLE_SIZE;
-    mapped_memory_range[4].memory =
-        ctx_nsgt->device_memory[ctx_nsgt->idx_dual_window_stage];
-    mapped_memory_range[4].pNext = NULL;
-    mapped_memory_range[4].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
     memcpy(ctx_nsgt->map[ctx_nsgt->idx_frequency_stage],
            frequency,
            ctx_nsgt->frequency_capacity);
-    mapped_memory_range[5].offset = 0;
-    mapped_memory_range[5].size = VK_WHOLE_SIZE;
-    mapped_memory_range[5].memory =
-        ctx_nsgt->device_memory[ctx_nsgt->idx_frequency_stage];
-    mapped_memory_range[5].pNext = NULL;
-    mapped_memory_range[5].sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-    vkFlushMappedMemoryRanges(device, 6, mapped_memory_range);
+    ctx_nsgt->src_idx[0] = ctx_nsgt->idx_offset_stage;
+    ctx_nsgt->src_idx[1] = ctx_nsgt->idx_hop_stage;
+    ctx_nsgt->src_idx[2] = ctx_nsgt->idx_length_stage;
+    ctx_nsgt->src_idx[3] = ctx_nsgt->idx_window_stage;
+    ctx_nsgt->src_idx[4] = ctx_nsgt->idx_dual_window_stage;
+    ctx_nsgt->src_idx[5] = ctx_nsgt->idx_frequency_stage;
+    ctx_nsgt->fn_idx_count = 6;
+    war_nsgt_flush(ctx_nsgt->fn_idx_count,
+                   ctx_nsgt->src_idx,
+                   NULL,
+                   NULL,
+                   device,
+                   ctx_nsgt);
     // cleanup
     free(offset);
     free(hop);
@@ -3340,6 +3587,85 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     free(window);
     free(dual_window);
     free(frequency);
+    //-------------------------------------------------------------------------
+    // RIGHT AFTER INITIALIZATION (ONE TIME) UNDEFINED -> GENERAL
+    //-------------------------------------------------------------------------
+    VkCommandBufferBeginInfo cmd_buffer_begin_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
+    result = vkBeginCommandBuffer(cmd_buffer, &cmd_buffer_begin_info);
+    assert(result == VK_SUCCESS);
+    // images
+    ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
+    ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
+    ctx_nsgt->fn_idx_count = 2;
+    war_nsgt_image_barrier(ctx_nsgt->fn_idx_count,
+                           ctx_nsgt->src_idx,
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                           VK_ACCESS_SHADER_WRITE_BIT |
+                               VK_ACCESS_SHADER_READ_BIT,
+                           VK_IMAGE_LAYOUT_GENERAL,
+                           cmd_buffer,
+                           ctx_nsgt);
+    // buffers
+    //  src
+    ctx_nsgt->src_idx[0] = ctx_nsgt->idx_offset_stage;
+    ctx_nsgt->src_idx[1] = ctx_nsgt->idx_hop_stage;
+    ctx_nsgt->src_idx[2] = ctx_nsgt->idx_length_stage;
+    ctx_nsgt->src_idx[3] = ctx_nsgt->idx_window_stage;
+    ctx_nsgt->src_idx[4] = ctx_nsgt->idx_dual_window_stage;
+    ctx_nsgt->src_idx[5] = ctx_nsgt->idx_frequency_stage;
+    // dst
+    ctx_nsgt->dst_idx[0] = ctx_nsgt->idx_offset;
+    ctx_nsgt->dst_idx[1] = ctx_nsgt->idx_hop;
+    ctx_nsgt->dst_idx[2] = ctx_nsgt->idx_length;
+    ctx_nsgt->dst_idx[3] = ctx_nsgt->idx_window;
+    ctx_nsgt->dst_idx[4] = ctx_nsgt->idx_dual_window;
+    ctx_nsgt->dst_idx[5] = ctx_nsgt->idx_frequency;
+    // size
+    ctx_nsgt->fn_idx_count = 6;
+    for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+        ctx_nsgt->size[i] = ctx_nsgt->capacity[ctx_nsgt->src_idx[i]];
+    }
+    for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+        war_nsgt_copy(cmd_buffer,
+                      ctx_nsgt->src_idx[i],
+                      ctx_nsgt->dst_idx[i],
+                      0,
+                      0,
+                      ctx_nsgt->size[i],
+                      ctx_nsgt);
+    }
+    war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
+                            ctx_nsgt->dst_idx,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            VK_ACCESS_SHADER_READ_BIT |
+                                VK_ACCESS_SHADER_WRITE_BIT,
+                            cmd_buffer,
+                            ctx_nsgt);
+    result = vkEndCommandBuffer(cmd_buffer);
+    assert(result == VK_SUCCESS);
+    VkSubmitInfo submit_info = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cmd_buffer,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = NULL,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = NULL,
+    };
+    result = vkResetFences(device, 1, &fence);
+    assert(result == VK_SUCCESS);
+    result = vkQueueSubmit(queue, 1, &submit_info, fence);
+    assert(result == VK_SUCCESS);
+    result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+    assert(result == VK_SUCCESS);
+    //-------------------------------------------------------------------------
+    // FLAGS
+    //-------------------------------------------------------------------------
+    ctx_nsgt->dirty_compute = 1;
     end("war_nsgt_init");
 }
 

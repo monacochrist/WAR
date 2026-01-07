@@ -134,13 +134,16 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(VK_GLYPH_COUNT)
     LOAD_INT(VK_MAX_FRAMES)
     LOAD_INT(VK_ALIGNMENT)
-    // compute
-    LOAD_INT(VK_NSGT_BIN_CAPACITY)
-    LOAD_INT(VK_NSGT_FRAME_CAPACITY)
-    LOAD_INT(VK_NSGT_COMPUTE_RESOURCE_COUNT)
-    LOAD_INT(VK_NSGT_FREQUENCY_MIN)
-    LOAD_INT(VK_NSGT_FREQUENCY_MAX)
-    LOAD_INT(VK_NSGT_WINDOW_LENGTH_MIN)
+    // nsgt
+    LOAD_INT(NSGT_BIN_CAPACITY)
+    LOAD_INT(NSGT_FRAME_CAPACITY)
+    LOAD_INT(NSGT_FREQUENCY_MIN)
+    LOAD_INT(NSGT_FREQUENCY_MAX)
+    LOAD_INT(NSGT_WINDOW_LENGTH_MIN)
+    LOAD_INT(NSGT_RESOURCE_COUNT)
+    LOAD_INT(NSGT_DESCRIPTOR_SET_COUNT)
+    LOAD_INT(NSGT_SHADER_COUNT)
+    LOAD_INT(NSGT_PIPELINE_COUNT)
     // nsgt visual
     LOAD_INT(VK_NSGT_VISUAL_QUAD_CAPACITY)
     LOAD_INT(VK_NSGT_VISUAL_RESOURCE_COUNT)
@@ -183,8 +186,8 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_FLOAT(DEFAULT_WINDOWED_ALPHA_SCALE)
     LOAD_FLOAT(WR_COLOR_STEP)
     // vk nsgt
-    LOAD_FLOAT(VK_NSGT_ALPHA)
-    LOAD_FLOAT(VK_NSGT_SHAPE_FACTOR)
+    LOAD_FLOAT(NSGT_ALPHA)
+    LOAD_FLOAT(NSGT_SHAPE_FACTOR)
 
 #undef LOAD_FLOAT
 
@@ -363,6 +366,8 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(VkFence*);
             else if (strcmp(type, "VkFence") == 0)
                 type_size = sizeof(VkFence);
+            else if (strcmp(type, "VkDescriptorSet") == 0)
+                type_size = sizeof(VkDescriptorSet);
             else if (strcmp(type, "war_glyph_info*") == 0)
                 type_size = sizeof(war_glyph_info*);
             else if (strcmp(type, "war_glyph_info") == 0)
@@ -377,8 +382,6 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(war_undo_node*);
             else if (strcmp(type, "war_undo_node") == 0)
                 type_size = sizeof(war_undo_node);
-
-            /* --- WR-specific structs --- */
             else if (strcmp(type, "war_fsm_context") == 0)
                 type_size = sizeof(war_fsm_context);
             else if (strcmp(type, "war_quad_vertex") == 0)
@@ -417,6 +420,16 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(VkDescriptorImageInfo);
             else if (strcmp(type, "VkImage") == 0)
                 type_size = sizeof(VkImage);
+            else if (strcmp(type, "VkStructureType") == 0)
+                type_size = sizeof(VkStructureType);
+            else if (strcmp(type, "VkShaderStageFlags") == 0)
+                type_size = sizeof(VkShaderStageFlags);
+            else if (strcmp(type, "VkPipelineShaderStageCreateInfo") == 0)
+                type_size = sizeof(VkPipelineShaderStageCreateInfo);
+            else if (strcmp(type, "VkShaderStageFlagBits") == 0)
+                type_size = sizeof(VkShaderStageFlagBits);
+            else if (strcmp(type, "VkPipelineBindPoint") == 0)
+                type_size = sizeof(VkPipelineBindPoint);
             else if (strcmp(type, "VkImageView") == 0)
                 type_size = sizeof(VkImageView);
             else if (strcmp(type, "VkFormat") == 0)
@@ -437,6 +450,24 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(VkDeviceSize);
             else if (strcmp(type, "VkDescriptorSetLayoutBinding") == 0)
                 type_size = sizeof(VkDescriptorSetLayoutBinding);
+            else if (strcmp(type, "VkDescriptorSetLayout") == 0)
+                type_size = sizeof(VkDescriptorSetLayout);
+            else if (strcmp(type, "VkDescriptorType") == 0)
+                type_size = sizeof(VkDescriptorType);
+            else if (strcmp(type, "VkDescriptorPool") == 0)
+                type_size = sizeof(VkDescriptorPool);
+            else if (strcmp(type, "VkImageLayout") == 0)
+                type_size = sizeof(VkImageLayout);
+            else if (strcmp(type, "VkShaderModule") == 0)
+                type_size = sizeof(VkShaderModule);
+            else if (strcmp(type, "VkPipeline") == 0)
+                type_size = sizeof(VkPipeline);
+            else if (strcmp(type, "VkPipelineLayout") == 0)
+                type_size = sizeof(VkPipelineLayout);
+            else if (strcmp(type, "VkAccessFlags") == 0)
+                type_size = sizeof(VkAccessFlags);
+            else if (strcmp(type, "VkPipelineStageFlags") == 0)
+                type_size = sizeof(VkPipelineStageFlags);
             else if (strcmp(type, "VkWriteDescriptorSet") == 0)
                 type_size = sizeof(VkWriteDescriptorSet);
             else if (strcmp(type, "VkShaderStageFlags") == 0)
@@ -461,9 +492,6 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(war_payload_union);
             else if (strcmp(type, "war_vulkan_context") == 0)
                 type_size = sizeof(war_vulkan_context);
-
-            /* --- Pointer variants (optional but useful if you define them in
-             * Lua) --- */
             else if (strcmp(type, "uint8_t*") == 0)
                 type_size = sizeof(uint8_t*);
             else if (strcmp(type, "uint16_t*") == 0)
@@ -500,33 +528,6 @@ static inline void* war_pool_alloc(war_pool* pool, size_t size) {
     void* ptr = pool->pool_ptr;
     pool->pool_ptr += size;
     return ptr;
-}
-
-static inline VkDeviceSize war_vulkan_align_size_up(VkDeviceSize size,
-                                                    VkDeviceSize alignment,
-                                                    VkDeviceSize capacity) {
-    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
-        call_king_terry("ERROR: alignment is not power-of-2");
-        return 0;
-    }
-    VkDeviceSize aligned = (size + alignment - 1) & ~(alignment - 1);
-    if (aligned > capacity) { aligned = capacity; }
-    return aligned;
-}
-
-static inline VkDeviceSize war_vulkan_align_offset_down(VkDeviceSize offset,
-                                                        VkDeviceSize alignment,
-                                                        VkDeviceSize capacity) {
-    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
-        call_king_terry("ERROR: alignment is not power-of-2");
-        return 0;
-    }
-    VkDeviceSize aligned = offset & ~(alignment - 1);
-    if (aligned > capacity) {
-        call_king_terry("ERROR: aligned offset exceeds capacity");
-        return 0;
-    }
-    return aligned;
 }
 
 static inline void war_layer_flux(war_window_render_context* ctx_wr,

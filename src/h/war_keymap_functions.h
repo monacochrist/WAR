@@ -2882,6 +2882,14 @@ static inline void war_capture_mode(war_env* env) {
     ctx_command->prompt_text_size = ctx_capture->prompt_fname_text_size;
 }
 
+static inline void war_capture_reload(war_env* env) {
+    call_king_terry("war_capture_reload");
+    war_window_render_context* ctx_wr = env->ctx_wr;
+    war_nsgt_context* ctx_nsgt = env->ctx_nsgt;
+    ctx_nsgt->dirty_compute = 1;
+    ctx_wr->numeric_prefix = 0;
+}
+
 static inline void war_roll_space(war_env* env) {
     call_king_terry("war_roll_space");
     war_window_render_context* ctx_wr = env->ctx_wr;

@@ -52,7 +52,27 @@ layout(push_constant) uniform pc {
     layout(offset = 20) int frame_end;
     layout(offset = 24) float param1;
     layout(offset = 28) float param2;
+    layout(offset = 32) uint bin_capacity;
+    layout(offset = 36) uint frame_capacity;
 } push_constant;
 
 void main() {
+    // Compute global index
+    uint gid = gl_GlobalInvocationID.x;
+    uint total_threads = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+
+    // Simple placeholder: fill image with a gradient
+    for (uint f = 0; f < push_constant.frame_capacity; f++) {
+        for (uint b = 0; b < push_constant.bin_capacity; b++) {
+            if ((b * push_constant.frame_capacity + f) % total_threads == gid) {
+                // L channel: horizontal gradient
+                float l_val = float(f) / float(push_constant.frame_capacity);
+                imageStore(l_image, ivec2(f, b), vec4(l_val, 0.0, 0.0, 1.0));
+
+                // R channel: vertical gradient
+                float r_val = float(b) / float(push_constant.bin_capacity);
+                imageStore(r_image, ivec2(f, b), vec4(r_val, 0.0, 0.0, 1.0));
+            }
+        }
+    }
 }
