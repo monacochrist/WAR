@@ -1181,8 +1181,6 @@ typedef struct war_vulkan_context {
     VkPipeline transparent_quad_pipeline;
     VkPipelineLayout pipeline_layout;
     VkImageView image_view;
-    VkSemaphore image_available_semaphore;
-    VkSemaphore render_finished_semaphore;
     VkBuffer quads_vertex_buffer;
     VkMemoryRequirements quads_vertex_buffer_memory_requirements;
     VkDeviceMemory quads_vertex_buffer_memory;
@@ -1250,6 +1248,23 @@ typedef struct war_vulkan_context {
     VkDeviceSize min_memory_map_alignment;            // vkMapMemory offsets
     VkDeviceSize min_uniform_buffer_offset_alignment; // dynamic UBO offsets
     VkDeviceSize min_storage_buffer_offset_alignment; // dynamic SSBO offsets
+    // acquire
+    VkSemaphore acquire_semaphore;
+    uint32_t acquire_timeline_id;
+    int acquire_timeline_fd;
+    uint32_t acquire_syncobj_handle;
+    uint64_t acquire_point;
+    // release
+    VkSemaphore release_semaphore;
+    uint32_t release_timeline_id;
+    int release_timeline_fd;
+    uint32_t release_syncobj_handle;
+    uint64_t release_point;
+    // misc
+    int drm_fd;
+    // PFN
+    PFN_vkGetSemaphoreFdKHR vkGetSemaphoreFdKHR;
+    PFN_vkImportSemaphoreFdKHR vkImportSemaphoreFdKHR;
 } war_vulkan_context;
 
 typedef struct war_env war_env;

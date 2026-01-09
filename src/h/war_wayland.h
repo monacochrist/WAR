@@ -124,7 +124,6 @@ static inline void war_wayland_registry_bind(int fd,
                                              uint16_t size,
                                              uint16_t new_id) {
     header("war_wayland_registry_bind");
-
     uint8_t bind[128];
     assert(size + 4 <= 128);
     memcpy(bind, msg_buffer + msg_buffer_offset, size);
@@ -134,9 +133,10 @@ static inline void war_wayland_registry_bind(int fd,
     war_write_le16(bind + 6, total_size);
     war_write_le32(bind + size, new_id);
 
-    // dump_bytes("bind request", bind, size + 4);
-    // call_king_terry("bound: %s", (const char*)msg_buffer + msg_buffer_offset
-    // + 16); call_king_terry("to id: %u", new_id);
+    dump_bytes("bind request", bind, size + 4);
+    call_king_terry("bound: %s",
+                    (const char*)msg_buffer + msg_buffer_offset + 16);
+    call_king_terry("to id: %u", new_id);
 
     ssize_t bind_written = write(fd, bind, size + 4);
     assert(bind_written == size + 4);
@@ -144,15 +144,57 @@ static inline void war_wayland_registry_bind(int fd,
     end("war_wayland_registry_bind");
 }
 
-static inline void war_wayland_holy_trinity(int fd,
-                                            uint32_t wl_surface_id,
-                                            uint32_t wl_buffer_id,
-                                            uint32_t attach_x,
-                                            uint32_t attach_y,
-                                            uint32_t damage_x,
-                                            uint32_t damage_y,
-                                            uint32_t width,
-                                            uint32_t height) {
+static inline void
+war_wayland_set_acquire_point(int fd,
+                              uint32_t wp_linux_drm_syncobj_surface_v1_id,
+                              uint32_t wp_linux_drm_syncobj_timeline_v1_id,
+                              uint32_t point_hi,
+                              uint32_t point_lo) {
+    call_king_terry("war_wayland_set_acquire_point");
+    uint8_t set_acquire_point[20];
+    war_write_le32(set_acquire_point, wp_linux_drm_syncobj_surface_v1_id);
+    war_write_le16(set_acquire_point + 4, 1);
+    war_write_le16(set_acquire_point + 6, 20);
+    war_write_le32(set_acquire_point + 8, wp_linux_drm_syncobj_timeline_v1_id);
+    war_write_le32(set_acquire_point + 12, point_hi);
+    war_write_le32(set_acquire_point + 16, point_lo);
+    dump_bytes("wp_linux_drm_syncobj_surface_v1:set_acquire_point request",
+               set_acquire_point,
+               20);
+    ssize_t set_acquire_point_written = write(fd, set_acquire_point, 20);
+    assert(set_acquire_point_written == 20);
+}
+
+static inline void
+war_wayland_set_release_point(int fd,
+                              uint32_t wp_linux_drm_syncobj_surface_v1_id,
+                              uint32_t wp_linux_drm_syncobj_timeline_v1_id,
+                              uint32_t point_hi,
+                              uint32_t point_lo) {
+    call_king_terry("war_wayland_set_release_point");
+    uint8_t set_release_point[20];
+    war_write_le32(set_release_point, wp_linux_drm_syncobj_surface_v1_id);
+    war_write_le16(set_release_point + 4, 2);
+    war_write_le16(set_release_point + 6, 20);
+    war_write_le32(set_release_point + 8, wp_linux_drm_syncobj_timeline_v1_id);
+    war_write_le32(set_release_point + 12, point_hi);
+    war_write_le32(set_release_point + 16, point_lo);
+    dump_bytes("wp_linux_drm_syncobj_surface_v1:set_release_point request",
+               set_release_point,
+               20);
+    ssize_t set_release_point_written = write(fd, set_release_point, 20);
+    assert(set_release_point_written == 20);
+}
+
+static inline void war_holy_trinity(int fd,
+                                    uint32_t wl_surface_id,
+                                    uint32_t wl_buffer_id,
+                                    uint32_t attach_x,
+                                    uint32_t attach_y,
+                                    uint32_t damage_x,
+                                    uint32_t damage_y,
+                                    uint32_t width,
+                                    uint32_t height) {
     war_wayland_wl_surface_attach(
         fd, wl_surface_id, wl_buffer_id, attach_x, attach_y);
     war_wayland_wl_surface_damage(

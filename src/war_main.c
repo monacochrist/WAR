@@ -705,6 +705,8 @@ void* war_window_render(void* args) {
     uint32_t wl_pointer_id = 0;
     uint32_t wl_touch_id = 0;
     uint32_t wp_linux_drm_syncobj_manager_v1_id = 0;
+    uint32_t wp_linux_drm_syncobj_timeline_v1_id = 0;
+    uint32_t wp_linux_drm_syncobj_surface_v1_id = 0;
     uint32_t zwp_idle_inhibit_manager_v1_id = 0;
     uint32_t zxdg_decoration_manager_v1_id = 0;
     uint32_t zwp_relative_pointer_manager_v1_id = 0;
@@ -1150,15 +1152,33 @@ skip_capture:
     if (ctx_wr->now - last_frame_time >= ctx_wr->frame_duration_us) {
         last_frame_time += ctx_wr->frame_duration_us;
         if (ctx_wr->trinity) {
-            war_wayland_holy_trinity(fd,
-                                     wl_surface_id,
-                                     wl_buffer_id,
-                                     0,
-                                     0,
-                                     0,
-                                     0,
-                                     physical_width,
-                                     physical_height);
+            war_wayland_wl_surface_attach(
+                fd, wl_surface_id, wl_buffer_id, 0, 0);
+            war_wayland_wl_surface_damage(
+                fd, wl_surface_id, 0, 0, physical_width, physical_height);
+            // war_wayland_set_acquire_point(fd,
+            //                               wp_linux_drm_syncobj_surface_v1_id,
+            //                               wp_linux_drm_syncobj_timeline_v1_id,
+            //                               ctx_vk->semaphore_value >> 32,
+            //                               ctx_vk->semaphore_value &
+            //                               0xFFFFFFFF);
+            // ctx_vk->semaphore_value++;
+            // war_wayland_set_release_point(fd,
+            //                               wp_linux_drm_syncobj_surface_v1_id,
+            //                               wp_linux_drm_syncobj_timeline_v1_id,
+            //                               ctx_vk->semaphore_value >> 32,
+            //                               ctx_vk->semaphore_value &
+            //                               0xFFFFFFFF);
+            war_wayland_wl_surface_commit(fd, wl_surface_id);
+            // war_holy_trinity(fd,
+            //                  wl_surface_id,
+            //                  wl_buffer_id,
+            //                  0,
+            //                  0,
+            //                  0,
+            //                  0,
+            //                  physical_width,
+            //                  physical_height);
         }
         // update roll position status text
         ctx_status->roll_position_index =
@@ -2143,7 +2163,6 @@ cmd_timeout_done:
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
                        0] = &&zxdg_toplevel_decoration_v1_configure;
                 new_id++;
-
                 //---------------------------------------------------------
                 // initial commit
                 //---------------------------------------------------------
@@ -3266,15 +3285,12 @@ cmd_timeout_done:
             vkCmdEndRenderPass(ctx_vk->cmd_buffer);
             result = vkEndCommandBuffer(ctx_vk->cmd_buffer);
             assert(result == VK_SUCCESS);
-            VkSubmitInfo submit_info = {
-                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .commandBufferCount = 1,
-                .pCommandBuffers = &ctx_vk->cmd_buffer,
-                .waitSemaphoreCount = 0,
-                .pWaitSemaphores = NULL,
-                .signalSemaphoreCount = 0,
-                .pSignalSemaphores = NULL,
-            };
+            VkSubmitInfo submit_info = {0};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = &ctx_vk->cmd_buffer;
+            // submit_info.signalSemaphoreCount = 1;
+            // submit_info.pSignalSemaphores = &ctx_vk->semaphore;
             result =
                 vkResetFences(ctx_vk->device,
                               1,
@@ -3286,56 +3302,20 @@ cmd_timeout_done:
                               &submit_info,
                               ctx_vk->in_flight_fences[ctx_vk->current_frame]);
             assert(result == VK_SUCCESS);
-            // result = vkWaitForFences(
-            //     ctx_vk->device,
-            //     1,
-            //     &ctx_vk->in_flight_fences[ctx_vk->current_frame],
-            //     VK_TRUE,
-            //     UINT64_MAX);
-            // assert(result == VK_SUCCESS);
-            //  vkQueueWaitIdle(ctx_vk->queue);
-            //  VkMappedMemoryRange nsgt_ranges[4] = {
-
-            //    {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-            //     .memory = ctx_vk->nsgt_compute_l_staging_memory,
-            //     .offset = 0,
-            //     .size = ctx_vk->nsgt_compute_buffer_capacity},
-            //    {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-            //     .memory = ctx_vk->nsgt_compute_r_staging_memory,
-            //     .offset = 0,
-            //     .size = ctx_vk->nsgt_compute_buffer_capacity},
-            //    {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-            //     .memory = ctx_vk->nsgt_compute_undo_diff_staging_memory,
-            //     .offset = 0,
-            //     .size = ctx_vk->nsgt_compute_diff_buffer_capacity},
-            //    {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-            //     .memory = ctx_vk->nsgt_compute_redo_diff_staging_memory,
-            //     .offset = 0,
-            //     .size = ctx_vk->nsgt_compute_diff_buffer_capacity},
-            //};
-            // result =
-            //    vkInvalidateMappedMemoryRanges(ctx_vk->device, 4,
-            //    nsgt_ranges);
-            // assert(result == VK_SUCCESS);
-            // float* l_buffer_data = (float*)(ctx_vk->nsgt_compute_map_l);
-            // float* r_buffer_data = (float*)(ctx_vk->nsgt_compute_map_r);
-            // uint32_t* undo_diff_buffer_data =
-            //    (uint32_t*)(ctx_vk->nsgt_compute_map_undo_diff);
-            // uint32_t* redo_diff_buffer_data =
-            //    (uint32_t*)(ctx_vk->nsgt_compute_map_redo_diff);
-            // call_king_terry("l_buffer_data[0]: %f", l_buffer_data[0]);
-            // call_king_terry("l_buffer_data[13]: %f", l_buffer_data[13]);
-            // call_king_terry("r_buffer_data[0]: %f", r_buffer_data[0]);
-            // call_king_terry("r_buffer_data[13]: %f", r_buffer_data[13]);
-            // call_king_terry("undo_diff_buffer_data[0]: %u",
-            //                undo_diff_buffer_data[0]);
-            // call_king_terry("undo_diff_buffer_data[13]: %u",
-            //                undo_diff_buffer_data[13]);
-            // call_king_terry("redo_diff_buffer_data[0]: %u",
-            //                redo_diff_buffer_data[0]);
-            // call_king_terry("redo_diff_buffer_data[13]: %u",
-            //                redo_diff_buffer_data[13]);
             ctx_wr->trinity = 1;
+            // if (ctx_vk->timeline_fd <= 0) {
+            //     VkSemaphoreGetFdInfoKHR semaphore_get_fd_info_khr = {0};
+            //     semaphore_get_fd_info_khr.sType =
+            //         VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+            //     semaphore_get_fd_info_khr.semaphore = ctx_vk->semaphore;
+            //     semaphore_get_fd_info_khr.handleType =
+            //         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+            //     result = ctx_vk->vkGetSemaphoreFdKHR(ctx_vk->device,
+            //                                          &semaphore_get_fd_info_khr,
+            //                                          &ctx_vk->timeline_fd);
+            //     assert(result == VK_SUCCESS);
+            //     assert(ctx_vk->timeline_fd >= 0);
+            // }
             goto wayland_done;
         }
         wl_display_error:
@@ -3433,7 +3413,7 @@ cmd_timeout_done:
                 assert(set_destination_written == 16);
             }
             //-------------------------------------------------------------
-            // initial attach, initial frame, commit
+            // second attach, first frame, commit
             //-------------------------------------------------------------
             war_wayland_wl_surface_attach(
                 fd, wl_surface_id, wl_buffer_id, 0, 0);
@@ -3446,6 +3426,67 @@ cmd_timeout_done:
                 new_id++;
             }
             war_wayland_wl_surface_commit(fd, wl_surface_id);
+            // if (!wp_linux_drm_syncobj_surface_v1_id) {
+            //     uint8_t get_surface[16];
+            //     war_write_le32(get_surface,
+            //     wp_linux_drm_syncobj_manager_v1_id);
+            //     war_write_le16(get_surface + 4, 1);
+            //     war_write_le16(get_surface + 6, 16);
+            //     war_write_le32(get_surface + 8, new_id);
+            //     war_write_le32(get_surface + 12, wl_surface_id);
+            //     dump_bytes(
+            //         "wp_linux_drm_syncobj_manager_v1:get_surface request",
+            //         get_surface,
+            //         16);
+            //     call_king_terry("bound: wp_linux_drm_syncobj_surface_v1");
+            //     ssize_t get_surface_written = write(fd, get_surface, 16);
+            //     assert(get_surface_written == 16);
+            //     wp_linux_drm_syncobj_surface_v1_id = new_id;
+            //     obj_op[wp_linux_drm_syncobj_surface_v1_id *
+            //                atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
+            //            0] = &&wp_linux_drm_syncobj_surface_v1_jump;
+            //     new_id++;
+            // }
+            // if (!wp_linux_drm_syncobj_timeline_v1_id) {
+            //     uint8_t start[12];
+            //     war_write_le32(start, wp_linux_drm_syncobj_manager_v1_id);
+            //     war_write_le16(start + 4, 2);
+            //     war_write_le16(start + 6, 12);
+            //     war_write_le32(start + 8, new_id);
+            //     struct iovec iov[2] = {
+            //         {.iov_base = start, .iov_len = 12},
+            //     };
+            //     char cmsgbuf[CMSG_SPACE(sizeof(int))] = {0};
+            //     struct msghdr msg = {0};
+            //     msg.msg_iov = iov;
+            //     msg.msg_iovlen = 1;
+            //     msg.msg_control = cmsgbuf;
+            //     msg.msg_controllen = sizeof(cmsgbuf);
+            //     struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+            //     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+            //     cmsg->cmsg_level = SOL_SOCKET;
+            //     cmsg->cmsg_type = SCM_RIGHTS;
+            //     *((int*)CMSG_DATA(cmsg)) = ctx_vk->timeline_fd;
+            //     ssize_t timeline_fd_sent = sendmsg(fd, &msg, 0);
+            //     if (timeline_fd_sent < 0) perror("sendmsg");
+            //     assert(timeline_fd_sent == 12);
+            //     wp_linux_drm_syncobj_timeline_v1_id = new_id;
+            //     new_id++;
+            //     call_king_terry("hiiiiiiiiiiiii");
+            // }
+            //  war_wayland_set_acquire_point(fd,
+            //                                wp_linux_drm_syncobj_surface_v1_id,
+            //                                wp_linux_drm_syncobj_timeline_v1_id,
+            //                                ctx_vk->semaphore_value >> 32,
+            //                                ctx_vk->semaphore_value &
+            //                                0xFFFFFFFF);
+            //  ctx_vk->semaphore_value++;
+            //  war_wayland_set_release_point(fd,
+            //                                wp_linux_drm_syncobj_surface_v1_id,
+            //                                wp_linux_drm_syncobj_timeline_v1_id,
+            //                                ctx_vk->semaphore_value >> 32,
+            //                                ctx_vk->semaphore_value &
+            //                                0xFFFFFFFF);
             goto wayland_done;
         xdg_toplevel_configure:
             // dump_bytes("xdg_toplevel_configure event",
@@ -3695,6 +3736,16 @@ cmd_timeout_done:
                        msg_buffer + msg_buffer_offset,
                        size);
             goto wayland_done;
+        wp_linux_drm_syncobj_timeline_v1_jump:
+            dump_bytes("wp_linux_drm_syncobj_timeline_v1_jump event",
+                       msg_buffer + msg_buffer_offset,
+                       size);
+            goto wayland_done;
+        wp_linux_drm_syncobj_surface_v1_jump:
+            dump_bytes("wp_linux_drm_syncobj_timeline_v1_jump event",
+                       msg_buffer + msg_buffer_offset,
+                       size);
+            goto wayland_done;
         wl_compositor_jump:
             dump_bytes("wl_compositor_jump event",
                        msg_buffer + msg_buffer_offset,
@@ -3724,16 +3775,6 @@ cmd_timeout_done:
                 "wl_surface::set_buffer_scale request", set_buffer_scale, 12);
             ssize_t set_buffer_scale_written = write(fd, set_buffer_scale, 12);
             assert(set_buffer_scale_written == 12);
-
-            war_wayland_holy_trinity(fd,
-                                     wl_surface_id,
-                                     wl_buffer_id,
-                                     0,
-                                     0,
-                                     0,
-                                     0,
-                                     physical_width,
-                                     physical_height);
             goto wayland_done;
         wl_surface_preferred_buffer_transform:
             dump_bytes("wl_surface_preferred_buffer_transform event",
@@ -3753,15 +3794,6 @@ cmd_timeout_done:
             ssize_t set_buffer_transform_written =
                 write(fd, set_buffer_transform, 12);
             assert(set_buffer_transform_written == 12);
-            war_wayland_holy_trinity(fd,
-                                     wl_surface_id,
-                                     wl_buffer_id,
-                                     0,
-                                     0,
-                                     0,
-                                     0,
-                                     physical_width,
-                                     physical_height);
             goto wayland_done;
         zwp_idle_inhibit_manager_v1_jump:
             dump_bytes("zwp_idle_inhibit_manager_v1_jump event",
@@ -4597,15 +4629,6 @@ cmd_timeout_done:
             // dump_bytes("wl_pointer_frame event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            war_wayland_holy_trinity(fd,
-                                     wl_surface_id,
-                                     wl_buffer_id,
-                                     0,
-                                     0,
-                                     0,
-                                     0,
-                                     physical_width,
-                                     physical_height);
             goto wayland_done;
         wl_pointer_axis_source:
             dump_bytes("wl_pointer_axis_source event",

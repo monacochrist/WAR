@@ -291,6 +291,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     };
     const char* instance_extensions[] = {
         VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
     };
     VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -365,6 +366,9 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
         VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME,
         VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
+        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
     };
     uint32_t extension_count = 0;
     vkEnumerateDeviceExtensionProperties(
@@ -422,16 +426,30 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
             .pQueuePriorities = &queue_priority,
         },
     };
+    VkPhysicalDeviceVulkan12Features physical_device_vulkan_12_features = {0};
+    physical_device_vulkan_12_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    physical_device_vulkan_12_features.timelineSemaphore = VK_TRUE;
     device_info = (VkDeviceCreateInfo){
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = queue_infos,
-        .enabledExtensionCount = 4,
+        .enabledExtensionCount =
+            sizeof(device_extensions) / sizeof(device_extensions[0]),
         .ppEnabledExtensionNames = device_extensions,
+        .pNext = &physical_device_vulkan_12_features,
     };
     result = vkCreateDevice(
         ctx_vk->physical_device, &device_info, NULL, &ctx_vk->device);
     assert(result == VK_SUCCESS);
+    ctx_vk->vkGetSemaphoreFdKHR = (PFN_vkGetSemaphoreFdKHR)vkGetDeviceProcAddr(
+        ctx_vk->device, "vkGetSemaphoreFdKHR");
+    assert(ctx_vk->vkGetSemaphoreFdKHR && "failed to load vkGetSemaphoreFdKHR");
+    ctx_vk->vkImportSemaphoreFdKHR =
+        (PFN_vkImportSemaphoreFdKHR)vkGetDeviceProcAddr(
+            ctx_vk->device, "vkImportSemaphoreFdKHR");
+    assert(ctx_vk->vkGetSemaphoreFdKHR &&
+           "failed to load vkImportSemaphoreFdKHR");
     VkFormat quad_depth_format = VK_FORMAT_D32_SFLOAT;
     VkImageCreateInfo quad_depth_image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -596,7 +614,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
         .memory = ctx_vk->memory,
         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
     };
-    int dmabuf_fd;
+    int dmabuf_fd = -1;
     PFN_vkGetMemoryFdKHR vkGetMemoryFdKHR =
         (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(ctx_vk->device,
                                                   "vkGetMemoryFdKHR");
@@ -1028,20 +1046,6 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     };
     vkQueueSubmit(ctx_vk->queue, 1, &submit, VK_NULL_HANDLE);
     vkQueueWaitIdle(ctx_vk->queue);
-    // no need for semaphores becasue wayalnd
-    VkSemaphoreCreateInfo semaphore_info = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-    };
-    vkCreateSemaphore(ctx_vk->device,
-                      &semaphore_info,
-                      NULL,
-                      &ctx_vk->image_available_semaphore);
-    vkCreateSemaphore(ctx_vk->device,
-                      &semaphore_info,
-                      NULL,
-                      &ctx_vk->render_finished_semaphore);
     VkFenceCreateInfo fence_info = {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .flags = VK_FENCE_CREATE_SIGNALED_BIT,
@@ -2243,269 +2247,11 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
                                        &ctx_vk->transparent_quad_pipeline);
     assert(result == VK_SUCCESS);
     //-------------------------------------------------------------------------
-    //  NSGT VISUAL PIPELINE
+    // WP_LINUX_DRM_SYNCOBJ
     //-------------------------------------------------------------------------
-    // uint8_t fn_result = war_vulkan_get_shader_module(ctx_vk->device,
-    //                                         &ctx_vk->nsgt_visual_vertex_shader,
-    //                                         "build/spv/war_nsgt_vertex.spv");
-    // assert(fn_result);
-    // fn_result =
-    //    war_vulkan_get_shader_module(ctx_vk->device,
-    //                                 &ctx_vk->nsgt_visual_fragment_shader,
-    //                                 "build/spv/war_nsgt_fragment.spv");
-    // assert(fn_result);
-    // VkDescriptorSetLayoutBinding* nsgt_visual_bindings =
-    //    (VkDescriptorSetLayoutBinding[2]){
-    //        // L buffer
-    //        {0,
-    //         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-    //         1,
-    //         VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
-    //         NULL},
-    //        // R buffer
-    //        {1,
-    //         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-    //         1,
-    //         VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
-    //         NULL},
-    //    };
-    // VkDescriptorSetLayoutCreateInfo nsgt_visual_descriptor_set_layout_info =
-    // {
-    //    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-    //    .bindingCount = 2,
-    //    .pBindings = nsgt_visual_bindings};
-    // result =
-    //    vkCreateDescriptorSetLayout(ctx_vk->device,
-    //                                &nsgt_visual_descriptor_set_layout_info,
-    //                                NULL,
-    //                                &ctx_vk->nsgt_visual_descriptor_set_layout);
-    // assert(result == VK_SUCCESS);
-    // VkPushConstantRange nsgt_visual_push_constant_range = {
-    //    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT |
-    //    VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size =
-    //    sizeof(war_nsgt_visual_push_constant),
-    //};
-    // VkPipelineLayoutCreateInfo nsgt_visual_pipeline_layout_create_info = {
-    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-    //    .setLayoutCount = 1,
-    //    .pSetLayouts = &ctx_vk->nsgt_visual_descriptor_set_layout,
-    //    .pushConstantRangeCount = 1,
-    //    .pPushConstantRanges = &nsgt_visual_push_constant_range,
-    //};
-    // result = vkCreatePipelineLayout(ctx_vk->device,
-    //                                &nsgt_visual_pipeline_layout_create_info,
-    //                                NULL,
-    //                                &ctx_vk->nsgt_visual_pipeline_layout);
-    // assert(result == VK_SUCCESS);
-    // VkPipelineShaderStageCreateInfo nsgt_visual_pipeline_shader_stages[2] = {
-    //    {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-    //     .stage = VK_SHADER_STAGE_VERTEX_BIT,
-    //     .module = ctx_vk->nsgt_visual_vertex_shader,
-    //     .pName = "main"},
-    //    {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-    //     .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-    //     .module = ctx_vk->nsgt_visual_fragment_shader,
-    //     .pName = "main"}};
-    // VkPipelineRasterizationStateCreateInfo nsgt_visual_rasterizer = {
-    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-    //    .depthClampEnable = VK_FALSE,
-    //    .rasterizerDiscardEnable = VK_FALSE,
-    //    .polygonMode = VK_POLYGON_MODE_FILL,
-    //    .lineWidth = 1.0f,
-    //    .cullMode = VK_CULL_MODE_NONE,
-    //    .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-    //    .depthBiasEnable = VK_FALSE,
-    //};
-    // VkPipelineMultisampleStateCreateInfo nsgt_visual_multisampling = {
-    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-    //    .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-    //    .sampleShadingEnable = VK_FALSE,
-    //};
-    // VkViewport nsgt_visual_viewport = {
-    //    .x = 0.0f,
-    //    .y = 0.0f,
-    //    .width = width,
-    //    .height = height,
-    //    .minDepth = 0.0f,
-    //    .maxDepth = 1.0f,
-    //};
-    // VkRect2D nsgt_visual_scissor = {
-    //    .offset = {0, 0},
-    //    .extent = {width, height},
-    //};
-    // VkPipelineViewportStateCreateInfo nsgt_visual_viewport_state = {
-    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-    //    .viewportCount = 1,
-    //    .pViewports = &nsgt_visual_viewport,
-    //    .scissorCount = 1,
-    //    .pScissors = &nsgt_visual_scissor,
-    //};
-    // VkVertexInputBindingDescription nsgt_visual_vertex_binding = {
-    //    .binding = 0,
-    //    .stride = sizeof(war_nsgt_vertex),
-    //    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    //};
-    // VkVertexInputAttributeDescription nsgt_visual_vertex_attributes[2] = {
-
-    //    {
-    //        .location = 0,
-    //        .binding = 0,
-    //        .format = VK_FORMAT_R32G32_SFLOAT,
-    //        .offset = offsetof(war_nsgt_vertex, uv),
-    //    },
-    //    {
-    //        .location = 1,
-    //        .binding = 0,
-    //        .format = VK_FORMAT_R32G32B32_SFLOAT,
-    //        .offset = offsetof(war_nsgt_vertex, pos),
-    //    },
-    //};
-    // VkPipelineVertexInputStateCreateInfo nsgt_vertex_input_info = {
-    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-    //    .vertexBindingDescriptionCount = 1,
-    //    .pVertexBindingDescriptions = &nsgt_visual_vertex_binding,
-    //    .vertexAttributeDescriptionCount = 2,
-    //    .pVertexAttributeDescriptions = nsgt_visual_vertex_attributes,
-    //};
-    // VkPipelineInputAssemblyStateCreateInfo nsgt_visual_input_assembly = {
-    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-    //    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-    //    .primitiveRestartEnable = VK_FALSE,
-    //};
-    // VkPipelineColorBlendAttachmentState nsgt_visual_color_blend_attachment =
-    // {
-    //    .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
-    //    |
-    //                      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-    //    .blendEnable = VK_FALSE,
-    //};
-    // VkPipelineColorBlendStateCreateInfo nsgt_visual_color_blending = {
-    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-    //    .logicOpEnable = VK_FALSE,
-    //    .attachmentCount = 1,
-    //    .pAttachments = &nsgt_visual_color_blend_attachment,
-    //};
-    // VkPipelineDepthStencilStateCreateInfo nsgt_visual_depth_stencil = {
-    //    .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-    //    .depthTestEnable = VK_TRUE,
-    //    .depthWriteEnable = VK_TRUE,
-    //    .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
-    //    .stencilTestEnable = VK_FALSE,
-    //};
-    // VkGraphicsPipelineCreateInfo nsgt_visual_pipeline_info = {
-    //    .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-    //    .stageCount = 2,
-    //    .pStages = nsgt_visual_pipeline_shader_stages,
-    //    .layout = ctx_vk->nsgt_visual_pipeline_layout,
-    //    .renderPass = ctx_vk->render_pass, // must be created beforehand
-    //    // other fixed-function state (vertex input, rasterization, viewport,
-    //    // blending)
-    //    .pVertexInputState = &nsgt_vertex_input_info,
-    //    .pRasterizationState = &nsgt_visual_rasterizer,
-    //    .pMultisampleState = &nsgt_visual_multisampling,
-    //    .pViewportState = &nsgt_visual_viewport_state,
-    //    .pInputAssemblyState = &nsgt_visual_input_assembly,
-    //    .pColorBlendState = &nsgt_visual_color_blending,
-    //    .pDepthStencilState = &nsgt_visual_depth_stencil,
-    //};
-    // result = vkCreateGraphicsPipelines(ctx_vk->device,
-    //                                   VK_NULL_HANDLE,
-    //                                   1,
-    //                                   &nsgt_visual_pipeline_info,
-    //                                   NULL,
-    //                                   &ctx_vk->nsgt_visual_pipeline);
-    // assert(result == VK_SUCCESS);
-    // VkDescriptorPoolSize nsgt_visual_descriptor_pool_sizes[1] = {
-    //    (VkDescriptorPoolSize){
-    //        .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-    //        .descriptorCount = 2,
-    //    },
-    //};
-    // VkDescriptorPoolCreateInfo nsgt_visual_descriptor_pool_info = {
-    //    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-    //    .poolSizeCount = 1,
-    //    .pPoolSizes = nsgt_visual_descriptor_pool_sizes,
-    //    .maxSets = 1,
-    //};
-    // result = vkCreateDescriptorPool(ctx_vk->device,
-    //                                &nsgt_visual_descriptor_pool_info,
-    //                                NULL,
-    //                                &ctx_vk->nsgt_visual_descriptor_pool);
-    // assert(result == VK_SUCCESS);
-    // VkDescriptorSetAllocateInfo nsgt_visual_descriptor_set_alloc_info = {
-    //    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-    //    .descriptorPool = ctx_vk->nsgt_visual_descriptor_pool,
-    //    .descriptorSetCount = 1,
-    //    .pSetLayouts = &ctx_vk->nsgt_visual_descriptor_set_layout,
-    //};
-    // result = vkAllocateDescriptorSets(ctx_vk->device,
-    //                                  &nsgt_visual_descriptor_set_alloc_info,
-    //                                  &ctx_vk->nsgt_visual_descriptor_set);
-    // assert(result == VK_SUCCESS);
-    // VkWriteDescriptorSet nsgt_visual_write_descriptor_set[2] = {
-    //    {
-    //        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-    //        .dstSet = ctx_vk->nsgt_visual_descriptor_set,
-    //        .dstBinding = 0,
-    //        .descriptorCount = 1,
-    //        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-    //        .pBufferInfo = &ctx_vk->nsgt_compute_l_buffer_info,
-    //    },
-    //    {
-    //        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-    //        .dstSet = ctx_vk->nsgt_visual_descriptor_set,
-    //        .dstBinding = 1,
-    //        .descriptorCount = 1,
-    //        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-    //        .pBufferInfo = &ctx_vk->nsgt_compute_r_buffer_info,
-    //    },
-    //};
-    // vkUpdateDescriptorSets(
-    //    ctx_vk->device, 2, nsgt_visual_write_descriptor_set, 0, NULL);
-    // ctx_vk->nsgt_visual_quad_capacity =
-    //    atomic_load(&ctx_lua->VK_NSGT_VISUAL_QUAD_CAPACITY);
-    // ctx_vk->nsgt_visual_vertex_buffer_capacity =
-    //    ctx_vk->nsgt_visual_quad_capacity * 4 * sizeof(war_nsgt_vertex);
-    // ctx_vk->nsgt_visual_index_buffer_capacity =
-    //    ctx_vk->nsgt_visual_quad_capacity * 6 * sizeof(uint32_t);
-    // fn_result = war_vulkan_create_buffer(
-    //    ctx_vk->device,
-    //    ctx_vk->physical_device,
-    //    ctx_vk->nsgt_visual_vertex_buffer_capacity,
-    //    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-    //    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-    //        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    //    &ctx_vk->nsgt_visual_vertex_buffer,
-    //    &ctx_vk->nsgt_visual_vertex_buffer_memory,
-    //    &ctx_vk->nsgt_visual_vertex_buffer_memory_requirements);
-    // assert(fn_result);
-    // fn_result = war_vulkan_create_buffer(
-    //    ctx_vk->device,
-    //    ctx_vk->physical_device,
-    //    ctx_vk->nsgt_visual_index_buffer_capacity,
-    //    VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-    //    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-    //        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-    //    &ctx_vk->nsgt_visual_index_buffer,
-    //    &ctx_vk->nsgt_visual_index_buffer_memory,
-    //    &ctx_vk->nsgt_visual_index_buffer_memory_requirements);
-    // assert(fn_result);
-    // result = vkMapMemory(ctx_vk->device,
-    //                     ctx_vk->nsgt_visual_vertex_buffer_memory,
-    //                     0,
-    //                     VK_WHOLE_SIZE,
-    //                     0,
-    //                     &ctx_vk->nsgt_visual_map_vertex);
-    // assert(result == VK_SUCCESS);
-    // result = vkMapMemory(ctx_vk->device,
-    //                     ctx_vk->nsgt_visual_index_buffer_memory,
-    //                     0,
-    //                     VK_WHOLE_SIZE,
-    //                     0,
-    //                     &ctx_vk->nsgt_visual_map_index);
-    // assert(result == VK_SUCCESS);
+    // maybe another time    
     //-------------------------------------------------------------------------
-    // END
+    // END WP_LINUX_DRM_SYNCOBJ
     //-------------------------------------------------------------------------
     free(instance_extensions_properties);
     free(device_extensions_properties);
