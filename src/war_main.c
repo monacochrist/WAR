@@ -1152,33 +1152,15 @@ skip_capture:
     if (ctx_wr->now - last_frame_time >= ctx_wr->frame_duration_us) {
         last_frame_time += ctx_wr->frame_duration_us;
         if (ctx_wr->trinity) {
-            war_wayland_wl_surface_attach(
-                fd, wl_surface_id, wl_buffer_id, 0, 0);
-            war_wayland_wl_surface_damage(
-                fd, wl_surface_id, 0, 0, physical_width, physical_height);
-            // war_wayland_set_acquire_point(fd,
-            //                               wp_linux_drm_syncobj_surface_v1_id,
-            //                               wp_linux_drm_syncobj_timeline_v1_id,
-            //                               ctx_vk->semaphore_value >> 32,
-            //                               ctx_vk->semaphore_value &
-            //                               0xFFFFFFFF);
-            // ctx_vk->semaphore_value++;
-            // war_wayland_set_release_point(fd,
-            //                               wp_linux_drm_syncobj_surface_v1_id,
-            //                               wp_linux_drm_syncobj_timeline_v1_id,
-            //                               ctx_vk->semaphore_value >> 32,
-            //                               ctx_vk->semaphore_value &
-            //                               0xFFFFFFFF);
-            war_wayland_wl_surface_commit(fd, wl_surface_id);
-            // war_holy_trinity(fd,
-            //                  wl_surface_id,
-            //                  wl_buffer_id,
-            //                  0,
-            //                  0,
-            //                  0,
-            //                  0,
-            //                  physical_width,
-            //                  physical_height);
+            war_holy_trinity(fd,
+                             wl_surface_id,
+                             wl_buffer_id,
+                             0,
+                             0,
+                             0,
+                             0,
+                             physical_width,
+                             physical_height);
         }
         // update roll position status text
         ctx_status->roll_position_index =
@@ -2511,9 +2493,9 @@ cmd_timeout_done:
                     }
                     float alpha_factor = ctx_wr->alpha_scale;
                     uint8_t color_alpha = (cursor_color >> 24) & 0xFF;
-                    cursor_color =
-                        ((uint8_t)(color_alpha * alpha_factor) << 24) |
-                        (cursor_color & 0x00FFFFFF);
+                    //cursor_color =
+                    //    ((uint8_t)(color_alpha * alpha_factor) << 24) |
+                    //    (cursor_color & 0x00FFFFFF);
                     war_make_quad(
                         quad_vertices,
                         quad_indices,
@@ -2524,9 +2506,9 @@ cmd_timeout_done:
                                    offset_row + views->warpoon_hud_rows +
                                        views->warpoon_row -
                                        views->warpoon_bottom_row,
-                                   ctx_wr->z_layers[LAYER_POPUP_CURSOR]},
+                                   ctx_wr->z_layers[LAYER_POPUP_TEXT]},
                         (float[2]){cursor_span_x, 1},
-                        cursor_color_transparent,
+                        cursor_color,
                         0,
                         0,
                         (float[2]){0.0f, 0.0f},
@@ -2584,7 +2566,7 @@ cmd_timeout_done:
                                            col,
                                        offset_row + views->warpoon_hud_rows +
                                            row - views->warpoon_bottom_row,
-                                       ctx_wr->z_layers[LAYER_POPUP_CURSOR]},
+                                       ctx_wr->z_layers[LAYER_POPUP_TEXT]},
                             (float[2]){1, 1},
                             views->warpoon_color_text,
                             &ctx_vk->glyphs[(int)views

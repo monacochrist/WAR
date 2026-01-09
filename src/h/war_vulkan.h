@@ -2166,7 +2166,7 @@ static inline void war_vulkan_init(war_vulkan_context* ctx_vk,
     VkPipelineDepthStencilStateCreateInfo transparent_depth_stencil = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,  // enable depth testing
-        .depthWriteEnable = VK_TRUE, // enable writing to depth buffer
+        .depthWriteEnable = VK_FALSE,
         .depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL,
         .stencilTestEnable = VK_FALSE,
     };
