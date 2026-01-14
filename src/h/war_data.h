@@ -1,18 +1,6 @@
 //-----------------------------------------------------------------------------
 //
-// WAR - make music with vim motions
-// Copyright (C) 2025 Nick Monaco
-//
-// This file is part of WAR 1.0 software.
-// WAR 1.0 software is licensed under the GNU Affero General Public License
-// version 3, with the following modification: attribution to the original
-// author is waived.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-//
-// For the full license text, see LICENSE-AGPL and LICENSE-CC-BY-SA and LICENSE.
+// See LICENSE
 //
 //-----------------------------------------------------------------------------
 
@@ -50,30 +38,6 @@ enum war_mods {
     MOD_CAPS = (1 << 4),
     MOD_NUM = (1 << 5),
     MOD_FN = (1 << 6),
-};
-
-enum war_keysyms {
-    KEYSYM_ESCAPE = 256,
-    KEYSYM_LEFT = 257,
-    KEYSYM_UP = 258,
-    KEYSYM_RIGHT = 259,
-    KEYSYM_DOWN = 260,
-    KEYSYM_RETURN = 261,
-    KEYSYM_SPACE = 262,
-    KEYSYM_TAB = 263,
-    KEYSYM_MINUS = 264,
-    KEYSYM_LEFTBRACKET = 265,
-    KEYSYM_RIGHTBRACKET = 266,
-    KEYSYM_SEMICOLON = 267,
-    KEYSYM_PLUS = 268,
-    KEYSYM_EQUAL = 269,
-    KEYSYM_BACKSPACE = 270,
-    KEYSYM_APOSTROPHE = 271,
-    KEYSYM_COMMA = 272,
-    KEYSYM_UNDERSCORE = 273,
-    KEYSYM_DEFAULT = 511,
-    MAX_KEYSYM = 512,
-    MAX_MOD = 16,
 };
 
 enum war_misc {
@@ -428,6 +392,8 @@ typedef struct war_lua_context {
     _Atomic int NSGT_DESCRIPTOR_SET_COUNT;
     _Atomic int NSGT_SHADER_COUNT;
     _Atomic int NSGT_PIPELINE_COUNT;
+    _Atomic int NSGT_GRAPHICS_FPS;
+    _Atomic int NSGT_GROUPS;
     // nsgt visual
     _Atomic int VK_NSGT_VISUAL_QUAD_CAPACITY;
     _Atomic int VK_NSGT_VISUAL_RESOURCE_COUNT;
@@ -1020,14 +986,8 @@ typedef struct war_quad_push_constant {
 } war_quad_push_constant;
 
 typedef struct war_nsgt_compute_push_constant {
-    int operation_type;
-    int channel;
-    int bin_start;
-    int bin_end;
-    int frame_start;
-    int frame_end;
-    float param1;
-    float param2;
+    uint arg_1;
+    uint window_length_max;
     uint bin_capacity;
     uint frame_capacity;
 } war_nsgt_compute_push_constant;
@@ -1045,11 +1005,17 @@ typedef struct war_nsgt_graphics_push_constant {
     int frame_capacity;
     float z_layer;
     int _pad1;
+    int frame_offset;
+    int frame_count;
 } war_nsgt_graphics_push_constant;
 
 typedef struct war_nsgt_context {
     // pipeline
-    uint32_t pipeline_idx_compute;
+    uint32_t pipeline_idx_compute_nsgt;
+    uint32_t pipeline_idx_compute_magnitude;
+    uint32_t pipeline_idx_compute_transient;
+    uint32_t pipeline_idx_compute_image;
+    uint32_t pipeline_idx_compute_wav;
     uint32_t pipeline_idx_graphics;
     VkPipeline* pipeline;
     VkPipelineLayout* pipeline_layout;
@@ -1059,10 +1025,20 @@ typedef struct war_nsgt_context {
     uint32_t* push_constant_size;
     uint32_t* pipeline_set_idx;
     uint32_t* pipeline_shader_idx;
+    uint32_t* pipeline_dispatch_group;
+    uint32_t* pipeline_local_size;
     VkPipelineBindPoint* pipeline_bind_point;
+    war_nsgt_compute_push_constant compute_push_constant;
+    war_nsgt_graphics_push_constant graphics_push_constant;
+    VkViewport graphics_viewport;
+    VkRect2D graphics_rect_2d;
     VkDeviceSize pipeline_count;
     // shaders
-    uint32_t shader_idx_compute;
+    uint32_t shader_idx_compute_nsgt;
+    uint32_t shader_idx_compute_image;
+    uint32_t shader_idx_compute_magnitude;
+    uint32_t shader_idx_compute_wav;
+    uint32_t shader_idx_compute_transient;
     uint32_t shader_idx_vertex;
     uint32_t shader_idx_fragment;
     VkShaderModule* shader_module;
@@ -1076,30 +1052,30 @@ typedef struct war_nsgt_context {
     uint32_t idx_window;
     uint32_t idx_dual_window;
     uint32_t idx_frequency;
-    uint32_t idx_l;
-    uint32_t idx_r;
-    uint32_t idx_l_nsgt_temp;
-    uint32_t idx_r_nsgt_temp;
-    uint32_t idx_l_nsgt;
-    uint32_t idx_r_nsgt;
-    uint32_t idx_l_magnitude_temp;
-    uint32_t idx_r_magnitude_temp;
-    uint32_t idx_l_magnitude;
-    uint32_t idx_r_magnitude;
-    uint32_t idx_l_image;
-    uint32_t idx_r_image;
-    uint32_t idx_l_stage;
-    uint32_t idx_r_stage;
+    uint32_t idx_cis;
+    uint32_t idx_wav_temp;
+    uint32_t idx_wav;
+    uint32_t idx_nsgt_temp;
+    uint32_t idx_nsgt;
+    uint32_t idx_magnitude_temp;
+    uint32_t idx_magnitude;
+    uint32_t idx_transient_temp;
+    uint32_t idx_transient;
+    uint32_t idx_image_temp;
+    uint32_t idx_image;
+    uint32_t idx_wav_stage;
     uint32_t idx_offset_stage;
     uint32_t idx_hop_stage;
     uint32_t idx_length_stage;
     uint32_t idx_window_stage;
     uint32_t idx_dual_window_stage;
     uint32_t idx_frequency_stage;
+    uint32_t idx_cis_stage;
     VkDeviceSize* capacity;
     VkMemoryRequirements* memory_requirements;
     void** map;
     VkDeviceMemory* device_memory;
+    uint32_t* size;
     VkMemoryPropertyFlags* memory_property_flags;
     VkBufferUsageFlags* usage_flags;
     VkBuffer* buffer;
@@ -1132,17 +1108,23 @@ typedef struct war_nsgt_context {
     VkImageLayout* image_layout;
     VkAccessFlags* access_flags;
     VkPipelineStageFlags* pipeline_stage_flags;
-    uint32_t* src_idx;
-    uint32_t* dst_idx;
-    VkDeviceSize* size;
-    VkDeviceSize* offset;
+    uint32_t* fn_src_idx;
+    uint32_t* fn_dst_idx;
+    VkDeviceSize* fn_size;
+    VkDeviceSize* fn_src_offset;
+    VkDeviceSize* fn_dst_offset;
+    uint32_t* fn_data;
+    uint32_t* fn_data_2;
     uint32_t fn_idx_count;
     uint8_t dirty_compute;
     // misc
+    VkPhysicalDeviceProperties physical_device_properties;
     VkSampler sampler;
     float alpha;
     float shape_factor;
     uint32_t window_length_min;
+    uint32_t window_length_max;
+    uint32_t hop_min;
     VkDeviceSize bin_capacity;
     VkDeviceSize frame_capacity;
     VkDeviceSize sample_rate;
@@ -1150,15 +1132,24 @@ typedef struct war_nsgt_context {
     VkDeviceSize frequency_min;
     VkDeviceSize frequency_max;
     VkDeviceSize channel_count;
-    VkDeviceSize wav_channel_capacity;
-    VkDeviceSize nsgt_channel_capacity;
-    VkDeviceSize magnitude_channel_capacity;
+    VkDeviceSize wav_capacity;
+    VkDeviceSize nsgt_capacity;
+    VkDeviceSize magnitude_capacity;
     VkDeviceSize offset_capacity;
     VkDeviceSize length_capacity;
     VkDeviceSize window_capacity;
     VkDeviceSize frequency_capacity;
     VkDeviceSize hop_capacity;
     VkDeviceSize path_limit;
+    VkDeviceSize cis_capacity;
+    VkDeviceSize transient_capacity;
+    uint32_t groups;
+    // graphics fps
+    uint32_t graphics_fps;
+    uint64_t last_frame_time;
+    uint64_t last_write_time;
+    uint64_t write_count;
+    uint64_t rate_us;
 } war_nsgt_context;
 
 typedef struct war_vulkan_context {

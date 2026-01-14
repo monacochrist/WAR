@@ -1,51 +1,122 @@
-WAR LICENSE
-Version 1, August 31 2025
+WAR
+January 13, 2026
 
-PURPOSE
-  To unify licensing for music and software under one project,
-providing copyleft protections for both while waiving attribution to the
-original author.
+1.
+This license enshrines eternal source-code transparency while allowing absolute
+freedom to use, modify, commercialize, share, impose paywalls, require license
+keys, block execution, and redistribute. Its only binding principle is that the
+complete source code must always remain publicly available, including all
+mechanisms used to restrict, monetize, or control execution. All other freedoms
+are explicitly permitted.
 
-SCOPE
-  WAR 1.0 applies to the creative works of the project, including but not
+2.
+"Software"
+The Software encompasses all original works, including source code, build
+scripts, configuration files, license-verification logic, cryptographic checks,
+and documentation provided by the Licensor.
+"Source Code"
+The preferred form for human understanding and modification, including but not
 limited to:
-- Music (tracks, samples, compositions, remixes)
-- Software (code, scripts, tools, applications)
+All human-readable code
+Build systems and scripts
+Configuration logic
+License-verification or restriction algorithms
+Any code used to enforce payment, keys, DRM, or execution control
+"Binary"
+Any compiled, packaged, or non-source form of the Software.
+"Derivative Work"
+Any work based on, incorporating, modifying, extending, linking against,
+embedding, or otherwise derived from the Software, in whole or in part.
+"Publicly Available"
+Source code is considered publicly available if it is accessible to the general
+public without requiring payment, approval, or authentication beyond standard
+internet access.
 
-MUSIC
-  All music is licensed under CC BY-SA 4.0 with Attribution Waiver.
-Users may copy, remix, distribute, perform, or commercialize music.
-Derivative works must remain under the same license (share-alike / copyleft).
-Attribution to the original author is waived; credit is optional.
-No additional restrictions may be imposed.
+3.
+Bound by the spirit of this License, you are granted irrevocable, worldwide,
+royalty-free permission to:
+Use the Software for any purpose your heart desires
+Modify the Software
+Create Derivative Works
+Distribute the Software or Derivative Works
+Commercialize the Software or Derivative Works
+Sell access, binaries, licenses, subscriptions, or services
+Impose license keys, paywalls, DRM, execution blocking, or any other
+technical or contractual restriction on Binaries
+There are no restrictions on pricing, business models, or commercial terms.
 
-SOFTWARE
-  All software is licensed under AGPL-3.0 with Attribution Waiver.
-Users may copy, modify, distribute, or execute the software, including over a
-network.
-Derivatives must remain under WAR 1.0 (share-alike / copyleft).
-Attribution to the original author is waived; users are not required to
-credit the original author.
-No additional restrictions may be imposed beyond those required to maintain
-open-source status.
+4.
+Any Derivative Work must be licensed exclusively under this same WAR LICENSE.
+You may not:
+Re-license the Software or any Derivative Work under a different license
+Add additional restrictions that conflict with this License
+Remove or weaken the obligations defined in this License
+This requirement applies regardless of whether the Derivative Work is
+distributed for free or sold.
 
-GENERAL TERMS
-  Users are legally bound to the license terms applicable to the type of work
-they are using. This license does not restrict derivative works beyond the
-copyleft requirements. The author disclaims all warranties; the work is
-provided “as-is.”
+5.
+If you distribute the Software or any Derivative Work in any form, including
+Binaries:
+The complete Source Code must be made Publicly Available
+The Source Code must include:
+All modifications
+All added components
+All license-verification, monetization, or restriction logic
+The Source Code must be available at no cost
+The Source Code must be available for as long as the Binary is distributed or
+usable
+Providing only partial source code is not sufficient.
 
-DISTRIBUTION
-  Include this WAR 1.0 umbrella license with every copy of your work. Clearly
-indicate which portion of the work is music (CC BY-SA + attribution waiver)
-and which is software (AGPL-3.0 + attribution waiver).
+6.
+Unlike traditional licenses, this License explicitly permits:
+Blocking execution of the Software
+Requiring license keys or files
+Enforcing payment prior to execution
+Limiting functionality without authorization
+Implementing DRM or verification systems
+Provided that:
+All such mechanisms are fully disclosed in the publicly available Source Code.
 
-SUMMARY FOR USERS
-  Music → Copyleft: must remain open under the same license, credit optional
-(CC BY-SA + Attribution Waiver).
-Software → Must remain open-source under WAR 1.0, credit optional (AGPL-3.0 +
-Attribution Waiver).
+7.
+This License does not require that Binaries be provided free of charge. You may:
+Sell Binaries
+Paywall downloads
+Require payment for keys or access
+Refuse to distribute Binaries entirely
+The obligation applies only to Source Code availability, not Binary
+availability.
 
-This document serves as the official WAR 1.0 umbrella license. You can attach
-it to your music, software, or future projects. It’s immediately effective;
-no filings or approvals are required.
+8.
+All copies of the Software must retain:
+This License text
+Copyright notices
+Derivatives are **not required to provide attribution to the original author**.
+You may include additional attribution if desired, but it is entirely optional.
+Attribution notices from the original may remain, but may also be removed in
+derivatives.
+
+9.
+Derivatives may freely reuse, modify, or ignore trademarks, logos, and branding
+associated with the Software.
+
+10.
+Any violation of this License automatically terminates your rights under this
+License. Upon termination:
+You must cease distribution immediately
+Previously granted rights to compliant recipients remain valid
+
+11.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, OR NON-INFRINGEMENT.
+
+12.
+IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY DAMAGES ARISING FROM THE USE OR
+DISTRIBUTION OF THE SOFTWARE, INCLUDING LOST PROFITS, DATA LOSS, OR BUSINESS
+INTERRUPTION.
+
+13.
+If any provision of this License is held unenforceable, the remaining provisions
+shall remain in full force and effect.
+
+This License constitutes the entire agreement governing use of the Software.

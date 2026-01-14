@@ -1,18 +1,6 @@
 //-----------------------------------------------------------------------------
 //
-// WAR - make music with vim motions
-// Copyright (C) 2025 Nick Monaco
-//
-// This file is part of WAR 1.0 software.
-// WAR 1.0 software is licensed under the GNU Affero General Public License
-// version 3, with the following modification: attribution to the original
-// author is waived.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-//
-// For the full license text, see LICENSE-AGPL and LICENSE-CC-BY-SA and LICENSE.
+// See LICENSE
 //
 //-----------------------------------------------------------------------------
 
@@ -26,6 +14,7 @@
 #include "h/war_debug_macros.h"
 #include "h/war_functions.h"
 #include "h/war_keymap_functions.h"
+#include "h/war_nsgt.h"
 #include "h/war_vulkan.h"
 #include "h/war_wayland.h"
 
@@ -66,7 +55,7 @@ int main() {
     war_lua_context ctx_lua;
     ctx_lua.L = luaL_newstate();
     if (!ctx_lua.L) {
-        call_king_terry("failed to create Lua state");
+        // call_king_terry("failed to create Lua state");
         return -1;
     }
     luaL_openlibs(ctx_lua.L);
@@ -213,7 +202,8 @@ void* war_window_render(void* args) {
     war_lua_context* ctx_lua = args_ptrs[3];
     war_producer_consumer* pc_play = args_ptrs[4];
     war_producer_consumer* pc_capture = args_ptrs[5];
-    call_king_terry("ctx_lua WR_STATES: %i", atomic_load(&ctx_lua->WR_STATES));
+    // call_king_terry("ctx_lua WR_STATES: %i",
+    // atomic_load(&ctx_lua->WR_STATES));
     pool_wr->pool_alignment = atomic_load(&ctx_lua->POOL_ALIGNMENT);
     pool_wr->pool_size =
         war_get_pool_wr_size(pool_wr, ctx_lua, "src/lua/war_main.lua");
@@ -247,7 +237,15 @@ void* war_window_render(void* args) {
                   ctx_vk->render_pass,
                   ctx_vk->cmd_buffer,
                   ctx_vk->queue,
-                  ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+                  ctx_vk->in_flight_fences[ctx_vk->current_frame],
+                  physical_width,
+                  physical_height);
+    ctx_nsgt->graphics_fps = atomic_load(&ctx_lua->NSGT_GRAPHICS_FPS);
+    ctx_nsgt->rate_us =
+        (uint64_t)round((1.0 / (double)ctx_nsgt->graphics_fps) * 1000000.0);
+    ctx_nsgt->last_frame_time = war_get_monotonic_time_us();
+    ctx_nsgt->last_write_time = 0;
+    ctx_nsgt->write_count = 0;
     //-------------------------------------------------------------------------
     // COLOR CONTEXT
     //-------------------------------------------------------------------------
@@ -734,8 +732,8 @@ void* war_window_render(void* args) {
     war_write_le16(get_registry + 6, 12);
     war_write_le32(get_registry + 8, wl_registry_id);
     ssize_t written = write(fd, get_registry, 12);
-    call_king_terry("written size: %lu", written);
-    dump_bytes("written", get_registry, 12);
+    // call_king_terry("written size: %lu", written);
+    // dump_bytes("written", get_registry, 12);
     assert(written == 12);
     new_id = wl_registry_id + 1;
     uint32_t msg_buffer_alloc_size =
@@ -755,9 +753,10 @@ void* war_window_render(void* args) {
         pool_wr, sizeof(void*) * max_wayland_objects * max_wayland_opcodes);
     obj_op[wl_display_id * max_wayland_opcodes + 0] = &&wl_display_error;
     obj_op[wl_display_id * max_wayland_opcodes + 1] = &&wl_display_delete_id;
-    obj_op[wl_registry_id * max_wayland_opcodes + 0] = &&wl_registry_global;
+    obj_op[wl_registry_id * max_wayland_opcodes + 0] =
+        &&war_label_wl_registry_global;
     obj_op[wl_registry_id * max_wayland_opcodes + 1] =
-        &&wl_registry_global_remove;
+        &&war_label_wl_registry_global_remove;
     //-------------------------------------------------------------------------
     // NOTE QUADS
     //-------------------------------------------------------------------------
@@ -847,7 +846,7 @@ void* war_window_render(void* args) {
         war_pool_alloc(pool_wr, sizeof(uint8_t) * pc_control->size);
     void** pc_control_cmd =
         war_pool_alloc(pool_wr, sizeof(void*) * control_cmd_count);
-    pc_control_cmd[0] = &&end_wr;
+    pc_control_cmd[0] = &&war_label_end_wr;
     //-------------------------------------------------------------------------
     // CAPTURE WAV
     //-------------------------------------------------------------------------
@@ -868,10 +867,10 @@ void* war_window_render(void* args) {
     capture_wav->fname_size = strlen(capture_wav->fname);
     capture_wav->memfd = memfd_create(capture_wav->fname, MFD_CLOEXEC);
     if (capture_wav->memfd < 0) {
-        call_king_terry("memfd failed to open: %s", capture_wav->fname);
+        // call_king_terry("memfd failed to open: %s", capture_wav->fname);
     }
     if (ftruncate(capture_wav->memfd, capture_wav->memfd_capacity) == -1) {
-        call_king_terry("memfd ftruncate failed: %s", capture_wav->fname);
+        // call_king_terry("memfd ftruncate failed: %s", capture_wav->fname);
     }
     capture_wav->file = mmap(NULL,
                              capture_wav->memfd_capacity,
@@ -880,7 +879,7 @@ void* war_window_render(void* args) {
                              capture_wav->memfd,
                              0);
     if (capture_wav->file == MAP_FAILED) {
-        call_king_terry("mmap failed: %s", capture_wav->fname);
+        // call_king_terry("mmap failed: %s", capture_wav->fname);
     }
     war_riff_header init_riff_header = (war_riff_header){
         .chunk_id = "RIFF",
@@ -1030,7 +1029,7 @@ void* war_window_render(void* args) {
     env->cache = cache;
     env->pc_capture = pc_capture;
     env->ctx_nsgt = ctx_nsgt;
-wr: {
+war_label_wr: {
     if (war_pc_from_a(pc_control, &header, &size, control_payload)) {
         goto* pc_control_cmd[header];
     }
@@ -1040,7 +1039,7 @@ wr: {
     //-------------------------------------------------------------------------
     if (ctx_wr->now - ctx_play->last_frame_time >= ctx_play->rate_us) {
         ctx_play->last_frame_time += ctx_play->rate_us;
-        if (!ctx_play->play) { goto skip_play; }
+        if (!ctx_play->play) { goto war_label_skip_play; }
         if (ctx_wr->now - ctx_play->last_write_time >= 1000000) {
             atomic_store(&atomics->play_writer_rate,
                          (double)ctx_play->write_count);
@@ -1064,16 +1063,17 @@ wr: {
         //---------------------------------------------------------------------
         for (uint32_t i = 0; i < ctx_play->note_count; i++) {}
     }
-skip_play:
+war_label_skip_play:
     //-------------------------------------------------------------------------
     // CAPTURE READER
     //-------------------------------------------------------------------------
     if (ctx_wr->now - ctx_capture->last_frame_time >= ctx_capture->rate_us) {
         ctx_capture->last_frame_time += ctx_capture->rate_us;
-        if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) {
+        if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
+            ctx_fsm->current_mode != ctx_fsm->MODE_COMMAND) {
             pc_capture->i_from_a = pc_capture->i_to_a;
             ctx_capture->state = CAPTURE_WAITING;
-            goto skip_capture;
+            goto war_label_skip_capture;
         }
         if (ctx_wr->now - ctx_capture->last_read_time >= 1000000) {
             atomic_store(&atomics->capture_reader_rate,
@@ -1145,7 +1145,7 @@ skip_play:
             }
         }
     }
-skip_capture:
+war_label_skip_capture:
     //-------------------------------------------------------------------------
     // FPS
     //-------------------------------------------------------------------------
@@ -1228,7 +1228,7 @@ skip_capture:
         war_command_status(ctx_command, ctx_status);
         if (ctx_command->input_write_index == 0 ||
             ctx_command->input_read_index >= ctx_command->input_write_index) {
-            goto skip_command;
+            goto war_label_skip_command;
         }
         int input = ctx_command->input[ctx_command->input_read_index];
         if (input == '\b') { // ASCII backspace
@@ -1377,8 +1377,9 @@ skip_capture:
                 cache->memfd[cache_idx] = memfd_create(
                     map_wav->fname + idx * map_wav->name_limit, MFD_CLOEXEC);
                 if (cache->memfd[cache_idx] < 0) {
-                    call_king_terry("memfd_create failed: %s",
-                                    map_wav->fname + idx * map_wav->name_limit);
+                    // call_king_terry("memfd_create failed: %s",
+                    //                 map_wav->fname + idx *
+                    //                 map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     goto war_label_command_processed;
@@ -1390,8 +1391,9 @@ skip_capture:
                                               cache->memfd[cache_idx],
                                               0);
                 if (cache->file[cache_idx] == MAP_FAILED) {
-                    call_king_terry("mmap failed: %s",
-                                    map_wav->fname + idx * map_wav->name_limit);
+                    // call_king_terry("mmap failed: %s",
+                    //                 map_wav->fname + idx *
+                    //                 map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1402,8 +1404,9 @@ skip_capture:
                          O_RDWR | O_CREAT | O_TRUNC,
                          0644);
                 if (cache->fd[cache_idx] == -1) {
-                    call_king_terry("fd failed to open: %s",
-                                    map_wav->fname + idx * map_wav->name_limit);
+                    // call_king_terry("fd failed to open: %s",
+                    //                 map_wav->fname + idx *
+                    //                 map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1416,8 +1419,9 @@ skip_capture:
                 cache->fd_size[cache_idx] = capture_wav->memfd_size;
                 if (ftruncate(cache->fd[cache_idx],
                               cache->fd_size[cache_idx]) == -1) {
-                    call_king_terry("ftruncate failed: %s",
-                                    map_wav->fname + idx * map_wav->name_limit);
+                    // call_king_terry("ftruncate failed: %s",
+                    //                 map_wav->fname + idx *
+                    //                 map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1435,8 +1439,9 @@ skip_capture:
                                                 &offset_1,
                                                 cache->memfd_size[cache_idx]);
                 if (bytes_copied != (ssize_t)cache->memfd_size[cache_idx]) {
-                    call_king_terry("sendfile failed: %s",
-                                    map_wav->fname + idx * map_wav->name_limit);
+                    // call_king_terry("sendfile failed: %s",
+                    //                 map_wav->fname + idx *
+                    //                 map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1454,8 +1459,9 @@ skip_capture:
                                         &offset_2,
                                         cache->memfd_size[cache_idx]);
                 if (bytes_copied != (ssize_t)cache->memfd_size[cache_idx]) {
-                    call_king_terry("sendfile failed: %s",
-                                    map_wav->fname + idx * map_wav->name_limit);
+                    // call_king_terry("sendfile failed: %s",
+                    //                 map_wav->fname + idx *
+                    //                 map_wav->name_limit);
                     cache->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     close(cache->memfd[cache_idx]);
@@ -1514,8 +1520,8 @@ skip_capture:
                 memset(ctx_fsm->cwd, 0, ctx_fsm->name_limit);
                 getcwd(ctx_fsm->cwd, ctx_fsm->name_limit);
                 ctx_fsm->cwd_size = strlen(ctx_fsm->cwd);
-                call_king_terry("changed working directory to %s",
-                                ctx_fsm->cwd);
+                // call_king_terry("changed working directory to %s",
+                //                 ctx_fsm->cwd);
                 goto war_label_command_processed;
             } else if (strncmp(ctx_command->text, "e", 1) == 0) {
                 if (ctx_command->text[1] != ' ' &&
@@ -1553,10 +1559,10 @@ skip_capture:
                         break;
                     }
                 }
-                call_king_terry("file_path: %s", ctx_fsm->current_file_path);
+                // call_king_terry("file_path: %s", ctx_fsm->current_file_path);
             } else if (strcmp(ctx_command->text, "pwd") == 0) {
-                call_king_terry("pwd");
-                // reset without resettign status bar
+                // call_king_terry("pwd");
+                //  reset without resettign status bar
                 memset(ctx_command->text, 0, ctx_command->capacity);
                 ctx_command->text_size = 0;
                 ctx_command->text_write_index = 0;
@@ -1574,11 +1580,11 @@ skip_capture:
                 memcpy(ctx_status->middle, ctx_fsm->cwd, ctx_fsm->cwd_size);
                 goto war_label_skip_command_processed;
             } else if (strcmp(ctx_command->text, "q!") == 0) {
-                call_king_terry("q!");
-                goto xdg_toplevel_close;
+                // call_king_terry("q!");
+                goto war_label_xdg_toplevel_close;
             } else if (strcmp(ctx_command->text, "q") == 0) {
-                call_king_terry("q");
-                goto xdg_toplevel_close;
+                // call_king_terry("q");
+                goto war_label_xdg_toplevel_close;
             }
         war_label_command_processed:
             war_command_reset(ctx_command, ctx_status);
@@ -1619,7 +1625,7 @@ skip_capture:
         }
         ctx_command->input_read_index++;
     }
-skip_command:
+war_label_skip_command:
     // cursor blink
     if (ctx_wr->cursor_blink_state &&
         ctx_wr->now - ctx_wr->cursor_blink_previous_us >=
@@ -1670,7 +1676,7 @@ skip_command:
                                 merged;
                             ctx_command->input_write_index++;
                         }
-                        goto cmd_repeat_done; // Skip FSM processing
+                        goto war_label_cmd_repeat_done; // Skip FSM processing
                     }
                     uint32_t next_state_index =
                         ctx_fsm->next_state[FSM_3D_INDEX(
@@ -1693,7 +1699,7 @@ skip_command:
                             if (ctx_fsm->function_type[FSM_2D_MODE(
                                     temp, ctx_fsm->current_mode)] ==
                                 ctx_fsm->FUNCTION_NONE) {
-                                goto cmd_repeat_done;
+                                goto war_label_cmd_repeat_done;
                             }
                             if (ctx_fsm->function_type[FSM_2D_MODE(
                                     temp, ctx_fsm->current_mode)] ==
@@ -1702,10 +1708,10 @@ skip_command:
                                     ->function[FSM_2D_MODE(
                                         temp, ctx_fsm->current_mode)]
                                     .c(env);
-                                goto cmd_done;
+                                goto war_label_cmd_done;
                             }
                             // handle lua logic
-                            goto cmd_done;
+                            goto war_label_cmd_done;
                         }
                     }
                 }
@@ -1716,7 +1722,7 @@ skip_command:
         ctx_fsm->repeat_mod = 0;
         ctx_fsm->repeating = 0;
     }
-cmd_repeat_done:
+war_label_cmd_repeat_done:
     //--------------------------------------------------------------------
     // KEY TIMEOUTS
     //--------------------------------------------------------------------
@@ -1732,17 +1738,17 @@ cmd_repeat_done:
         ctx_fsm->state_last_event_us = ctx_wr->now;
         if (ctx_fsm->function_type[FSM_2D_MODE(temp, ctx_fsm->current_mode)] ==
             ctx_fsm->FUNCTION_NONE) {
-            goto cmd_timeout_done;
+            goto war_label_cmd_timeout_done;
         }
         if (ctx_fsm->function_type[FSM_2D_MODE(temp, ctx_fsm->current_mode)] ==
             ctx_fsm->FUNCTION_C) {
             ctx_fsm->function[FSM_2D_MODE(temp, ctx_fsm->current_mode)].c(env);
-            goto cmd_done;
+            goto war_label_cmd_done;
         }
         // handle lua logic
-        goto cmd_done;
+        goto war_label_cmd_done;
     }
-cmd_timeout_done:
+war_label_cmd_timeout_done:
     //---------------------------------------------------------------------
     // WAYLAND MESSAGE PARSING
     //---------------------------------------------------------------------
@@ -1750,8 +1756,9 @@ cmd_timeout_done:
     assert(ret >= 0);
     // if (ret == 0) { call_king_terry("timeout"); }
     if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        call_king_terry("wayland socket error or hangup: %s", strerror(errno));
-        goto end_wr;
+        // call_king_terry("wayland socket error or hangup: %s",
+        // strerror(errno));
+        goto war_label_end_wr;
     }
     if (pfd.revents & POLLIN) {
         struct msghdr poll_msg_hdr = {0};
@@ -1783,17 +1790,18 @@ cmd_timeout_done:
                 // call_king_terry(
                 //    "invalid object/op: id=%u, op=%u", object_id,
                 //    opcode);
-                goto wayland_done;
+                goto war_label_wayland_done;
             }
             size_t idx =
                 object_id * atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
                 opcode;
             if (obj_op[idx]) { goto* obj_op[idx]; }
-            goto wayland_default;
-        wl_registry_global:
-            dump_bytes("global event", msg_buffer + msg_buffer_offset, size);
-            call_king_terry("iname: %s",
-                            (const char*)msg_buffer + msg_buffer_offset + 16);
+            goto war_label_wayland_default;
+        war_label_wl_registry_global:
+            // dump_bytes("global event", msg_buffer + msg_buffer_offset, size);
+            // call_king_terry("iname: %s",
+            //                 (const char*)msg_buffer + msg_buffer_offset +
+            //                 16);
 
             const char* iname = (const char*)msg_buffer + msg_buffer_offset +
                                 16; // COMMENT OPTIMIZE: perfect hash
@@ -1803,7 +1811,7 @@ cmd_timeout_done:
                 wl_compositor_id = new_id;
                 obj_op[wl_compositor_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wl_compositor_jump;
+                       0] = &&war_label_wl_compositor_jump;
                 new_id++;
             } else if (strcmp(iname, "wl_output") == 0) {
                 war_wayland_registry_bind(
@@ -1811,22 +1819,22 @@ cmd_timeout_done:
                 wl_output_id = new_id;
                 obj_op[wl_output_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wl_output_geometry;
+                       0] = &&war_label_wl_output_geometry;
                 obj_op[wl_output_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&wl_output_mode;
+                       1] = &&war_label_wl_output_mode;
                 obj_op[wl_output_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       2] = &&wl_output_done;
+                       2] = &&war_label_wl_output_done;
                 obj_op[wl_output_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       3] = &&wl_output_scale;
+                       3] = &&war_label_wl_output_scale;
                 obj_op[wl_output_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       4] = &&wl_output_name;
+                       4] = &&war_label_wl_output_name;
                 obj_op[wl_output_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       5] = &&wl_output_description;
+                       5] = &&war_label_wl_output_description;
                 new_id++;
             } else if (strcmp(iname, "wl_seat") == 0) {
                 war_wayland_registry_bind(
@@ -1834,10 +1842,10 @@ cmd_timeout_done:
                 wl_seat_id = new_id;
                 obj_op[wl_seat_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wl_seat_capabilities;
+                       0] = &&war_label_wl_seat_capabilities;
                 obj_op[wl_seat_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&wl_seat_name;
+                       1] = &&war_label_wl_seat_name;
                 new_id++;
             } else if (strcmp(iname, "zwp_linux_dmabuf_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1845,10 +1853,10 @@ cmd_timeout_done:
                 zwp_linux_dmabuf_v1_id = new_id;
                 obj_op[zwp_linux_dmabuf_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwp_linux_dmabuf_v1_format;
+                       0] = &&war_label_zwp_linux_dmabuf_v1_format;
                 obj_op[zwp_linux_dmabuf_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&zwp_linux_dmabuf_v1_modifier;
+                       1] = &&war_label_zwp_linux_dmabuf_v1_modifier;
                 new_id++;
             } else if (strcmp(iname, "xdg_wm_base") == 0) {
                 war_wayland_registry_bind(
@@ -1856,7 +1864,7 @@ cmd_timeout_done:
                 xdg_wm_base_id = new_id;
                 obj_op[xdg_wm_base_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&xdg_wm_base_ping;
+                       0] = &&war_label_xdg_wm_base_ping;
                 new_id++;
             } else if (strcmp(iname, "wp_linux_drm_syncobj_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1864,7 +1872,7 @@ cmd_timeout_done:
                 wp_linux_drm_syncobj_manager_v1_id = new_id;
                 obj_op[wp_linux_drm_syncobj_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wp_linux_drm_syncobj_manager_v1_jump;
+                       0] = &&war_label_wp_linux_drm_syncobj_manager_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "zwp_idle_inhibit_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1872,7 +1880,7 @@ cmd_timeout_done:
                 zwp_idle_inhibit_manager_v1_id = new_id;
                 obj_op[zwp_idle_inhibit_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwp_idle_inhibit_manager_v1_jump;
+                       0] = &&war_label_zwp_idle_inhibit_manager_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "zxdg_decoration_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1880,7 +1888,7 @@ cmd_timeout_done:
                 zxdg_decoration_manager_v1_id = new_id;
                 obj_op[zxdg_decoration_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zxdg_decoration_manager_v1_jump;
+                       0] = &&war_label_zxdg_decoration_manager_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "zwp_relative_pointer_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1888,7 +1896,7 @@ cmd_timeout_done:
                 zwp_relative_pointer_manager_v1_id = new_id;
                 obj_op[zwp_relative_pointer_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwp_relative_pointer_manager_v1_jump;
+                       0] = &&war_label_zwp_relative_pointer_manager_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "zwp_pointer_constraints_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1896,7 +1904,7 @@ cmd_timeout_done:
                 zwp_pointer_constraints_v1_id = new_id;
                 obj_op[zwp_pointer_constraints_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwp_pointer_constraints_v1_jump;
+                       0] = &&war_label_zwp_pointer_constraints_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "zwlr_output_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1904,10 +1912,10 @@ cmd_timeout_done:
                 zwlr_output_manager_v1_id = new_id;
                 obj_op[zwlr_output_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwlr_output_manager_v1_head;
+                       0] = &&war_label_zwlr_output_manager_v1_head;
                 obj_op[zwlr_output_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&zwlr_output_manager_v1_done;
+                       1] = &&war_label_zwlr_output_manager_v1_done;
                 new_id++;
             } else if (strcmp(iname, "zwlr_data_control_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1915,7 +1923,7 @@ cmd_timeout_done:
                 zwlr_data_control_manager_v1_id = new_id;
                 obj_op[zwlr_data_control_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwlr_data_control_manager_v1_jump;
+                       0] = &&war_label_zwlr_data_control_manager_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "zwp_virtual_keyboard_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1923,7 +1931,7 @@ cmd_timeout_done:
                 zwp_virtual_keyboard_manager_v1_id = new_id;
                 obj_op[zwp_virtual_keyboard_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwp_virtual_keyboard_manager_v1_jump;
+                       0] = &&war_label_zwp_virtual_keyboard_manager_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "wp_viewporter") == 0) {
                 war_wayland_registry_bind(
@@ -1931,7 +1939,7 @@ cmd_timeout_done:
                 wp_viewporter_id = new_id;
                 obj_op[wp_viewporter_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wp_viewporter_jump;
+                       0] = &&war_label_wp_viewporter_jump;
                 new_id++;
             } else if (strcmp(iname, "wp_fractional_scale_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1939,7 +1947,7 @@ cmd_timeout_done:
                 wp_fractional_scale_manager_v1_id = new_id;
                 obj_op[wp_fractional_scale_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wp_fractional_scale_manager_v1_jump;
+                       0] = &&war_label_wp_fractional_scale_manager_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "zwp_pointer_gestures_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1947,7 +1955,7 @@ cmd_timeout_done:
                 zwp_pointer_gestures_v1_id = new_id;
                 obj_op[zwp_pointer_gestures_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwp_pointer_gestures_v1_jump;
+                       0] = &&war_label_zwp_pointer_gestures_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "xdg_activation_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1955,7 +1963,7 @@ cmd_timeout_done:
                 xdg_activation_v1_id = new_id;
                 obj_op[xdg_activation_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&xdg_activation_v1_jump;
+                       0] = &&war_label_xdg_activation_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "wp_presentation") == 0) {
                 war_wayland_registry_bind(
@@ -1963,7 +1971,7 @@ cmd_timeout_done:
                 wp_presentation_id = new_id;
                 obj_op[wp_presentation_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wp_presentation_clock_id;
+                       0] = &&war_label_wp_presentation_clock_id;
                 new_id++;
             } else if (strcmp(iname, "zwlr_layer_shell_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1971,7 +1979,7 @@ cmd_timeout_done:
                 zwlr_layer_shell_v1_id = new_id;
                 obj_op[zwlr_layer_shell_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwlr_layer_shell_v1_jump;
+                       0] = &&war_label_zwlr_layer_shell_v1_jump;
                 new_id++;
             } else if (strcmp(iname, "ext_foreign_toplevel_list_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1979,7 +1987,7 @@ cmd_timeout_done:
                 ext_foreign_toplevel_list_v1_id = new_id;
                 obj_op[ext_foreign_toplevel_list_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&ext_foreign_toplevel_list_v1_toplevel;
+                       0] = &&war_label_ext_foreign_toplevel_list_v1_toplevel;
                 new_id++;
             } else if (strcmp(iname, "wp_content_type_manager_v1") == 0) {
                 war_wayland_registry_bind(
@@ -1987,7 +1995,7 @@ cmd_timeout_done:
                 wp_content_type_manager_v1_id = new_id;
                 obj_op[wp_content_type_manager_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wp_content_type_manager_v1_jump;
+                       0] = &&war_label_wp_content_type_manager_v1_jump;
                 new_id++;
             }
             if (!wl_surface_id && wl_compositor_id) {
@@ -1996,23 +2004,23 @@ cmd_timeout_done:
                 war_write_le16(create_surface + 4, 0);
                 war_write_le16(create_surface + 6, 12);
                 war_write_le32(create_surface + 8, new_id);
-                dump_bytes("create_surface request", create_surface, 12);
-                call_king_terry("bound: wl_surface");
+                // dump_bytes("create_surface request", create_surface, 12);
+                // call_king_terry("bound: wl_surface");
                 ssize_t create_surface_written = write(fd, create_surface, 12);
                 assert(create_surface_written == 12);
                 wl_surface_id = new_id;
                 obj_op[wl_surface_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wl_surface_enter;
+                       0] = &&war_label_wl_surface_enter;
                 obj_op[wl_surface_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&wl_surface_leave;
+                       1] = &&war_label_wl_surface_leave;
                 obj_op[wl_surface_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       2] = &&wl_surface_preferred_buffer_scale;
+                       2] = &&war_label_wl_surface_preferred_buffer_scale;
                 obj_op[wl_surface_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       3] = &&wl_surface_preferred_buffer_transform;
+                       3] = &&war_label_wl_surface_preferred_buffer_transform;
                 new_id++;
             }
             if (!wl_region_id && wl_surface_id && wl_compositor_id) {
@@ -2021,8 +2029,8 @@ cmd_timeout_done:
                 war_write_le16(create_region + 4, 1);
                 war_write_le16(create_region + 6, 12);
                 war_write_le32(create_region + 8, new_id);
-                dump_bytes("create_region request", create_region, 12);
-                call_king_terry("bound: wl_region");
+                // dump_bytes("create_region request", create_region, 12);
+                // call_king_terry("bound: wl_region");
                 ssize_t create_region_written = write(fd, create_region, 12);
                 assert(create_region_written == 12);
                 wl_region_id = new_id;
@@ -2036,7 +2044,7 @@ cmd_timeout_done:
                 war_write_le32(region_add + 12, 0);
                 war_write_le32(region_add + 16, physical_width);
                 war_write_le32(region_add + 20, physical_height);
-                dump_bytes("wl_region::add request", region_add, 24);
+                // dump_bytes("wl_region::add request", region_add, 24);
                 ssize_t region_add_written = write(fd, region_add, 24);
                 assert(region_add_written == 24);
 
@@ -2051,36 +2059,42 @@ cmd_timeout_done:
                 war_write_le16(get_surface_feedback + 6, 16);
                 war_write_le32(get_surface_feedback + 8, new_id);
                 war_write_le32(get_surface_feedback + 12, wl_surface_id);
-                dump_bytes("zwp_linux_dmabuf_v1::get_surface_feedback request",
-                           get_surface_feedback,
-                           16);
-                call_king_terry("bound: xdg_surface");
+                // dump_bytes("zwp_linux_dmabuf_v1::get_surface_feedback
+                // request",
+                //            get_surface_feedback,
+                //            16);
+                // call_king_terry("bound: xdg_surface");
                 ssize_t get_surface_feedback_written =
                     write(fd, get_surface_feedback, 16);
                 assert(get_surface_feedback_written == 16);
                 zwp_linux_dmabuf_feedback_v1_id = new_id;
                 obj_op[zwp_linux_dmabuf_feedback_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zwp_linux_dmabuf_feedback_v1_done;
+                       0] = &&war_label_zwp_linux_dmabuf_feedback_v1_done;
                 obj_op[zwp_linux_dmabuf_feedback_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&zwp_linux_dmabuf_feedback_v1_format_table;
+                       1] =
+                    &&war_label_zwp_linux_dmabuf_feedback_v1_format_table;
                 obj_op[zwp_linux_dmabuf_feedback_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       2] = &&zwp_linux_dmabuf_feedback_v1_main_device;
+                       2] =
+                    &&war_label_zwp_linux_dmabuf_feedback_v1_main_device;
                 obj_op[zwp_linux_dmabuf_feedback_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       3] = &&zwp_linux_dmabuf_feedback_v1_tranche_done;
+                       3] =
+                    &&war_label_zwp_linux_dmabuf_feedback_v1_tranche_done;
                 obj_op[zwp_linux_dmabuf_feedback_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
                        4] =
-                    &&zwp_linux_dmabuf_feedback_v1_tranche_target_device;
+                    &&war_label_zwp_linux_dmabuf_feedback_v1_tranche_target_device;
                 obj_op[zwp_linux_dmabuf_feedback_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       5] = &&zwp_linux_dmabuf_feedback_v1_tranche_formats;
+                       5] =
+                    &&war_label_zwp_linux_dmabuf_feedback_v1_tranche_formats;
                 obj_op[zwp_linux_dmabuf_feedback_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       6] = &&zwp_linux_dmabuf_feedback_v1_tranche_flags;
+                       6] =
+                    &&war_label_zwp_linux_dmabuf_feedback_v1_tranche_flags;
                 new_id++;
             }
             if (!xdg_surface_id && xdg_wm_base_id && wl_surface_id) {
@@ -2090,38 +2104,38 @@ cmd_timeout_done:
                 war_write_le16(get_xdg_surface + 6, 16);
                 war_write_le32(get_xdg_surface + 8, new_id);
                 war_write_le32(get_xdg_surface + 12, wl_surface_id);
-                dump_bytes("get_xdg_surface request", get_xdg_surface, 16);
-                call_king_terry("bound: xdg_surface");
+                // dump_bytes("get_xdg_surface request", get_xdg_surface, 16);
+                // call_king_terry("bound: xdg_surface");
                 ssize_t get_xdg_surface_written =
                     write(fd, get_xdg_surface, 16);
                 assert(get_xdg_surface_written == 16);
                 xdg_surface_id = new_id;
                 obj_op[xdg_surface_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&xdg_surface_configure;
+                       0] = &&war_label_xdg_surface_configure;
                 new_id++;
                 uint8_t get_toplevel[12];
                 war_write_le32(get_toplevel, xdg_surface_id);
                 war_write_le16(get_toplevel + 4, 1);
                 war_write_le16(get_toplevel + 6, 12);
                 war_write_le32(get_toplevel + 8, new_id);
-                dump_bytes("get_xdg_toplevel request", get_toplevel, 12);
-                call_king_terry("bound: xdg_toplevel");
+                // dump_bytes("get_xdg_toplevel request", get_toplevel, 12);
+                // call_king_terry("bound: xdg_toplevel");
                 ssize_t get_toplevel_written = write(fd, get_toplevel, 12);
                 assert(get_toplevel_written == 12);
                 xdg_toplevel_id = new_id;
                 obj_op[xdg_toplevel_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&xdg_toplevel_configure;
+                       0] = &&war_label_xdg_toplevel_configure;
                 obj_op[xdg_toplevel_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&xdg_toplevel_close;
+                       1] = &&war_label_xdg_toplevel_close;
                 obj_op[xdg_toplevel_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       2] = &&xdg_toplevel_configure_bounds;
+                       2] = &&war_label_xdg_toplevel_configure_bounds;
                 obj_op[xdg_toplevel_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       3] = &&xdg_toplevel_wm_capabilities;
+                       3] = &&war_label_xdg_toplevel_wm_capabilities;
                 new_id++;
             }
             if (!zxdg_toplevel_decoration_v1_id && xdg_toplevel_id &&
@@ -2133,28 +2147,29 @@ cmd_timeout_done:
                 war_write_le16(get_toplevel_decoration + 6, 16);
                 war_write_le32(get_toplevel_decoration + 8, new_id);
                 war_write_le32(get_toplevel_decoration + 12, xdg_toplevel_id);
-                dump_bytes("get_toplevel_decoration request",
-                           get_toplevel_decoration,
-                           16);
-                call_king_terry("bound: zxdg_toplevel_decoration_v1");
+                // dump_bytes("get_toplevel_decoration request",
+                //            get_toplevel_decoration,
+                //            16);
+                // call_king_terry("bound: zxdg_toplevel_decoration_v1");
                 ssize_t get_toplevel_decoration_written =
                     write(fd, get_toplevel_decoration, 16);
                 assert(get_toplevel_decoration_written == 16);
                 zxdg_toplevel_decoration_v1_id = new_id;
                 obj_op[zxdg_toplevel_decoration_v1_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&zxdg_toplevel_decoration_v1_configure;
+                       0] = &&war_label_zxdg_toplevel_decoration_v1_configure;
                 new_id++;
                 //---------------------------------------------------------
                 // initial commit
                 //---------------------------------------------------------
                 war_wayland_wl_surface_commit(fd, wl_surface_id);
             }
-            goto wayland_done;
-        wl_registry_global_remove:
-            dump_bytes("global_rm event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_callback_done: {
+            goto war_label_wayland_done;
+        war_label_wl_registry_global_remove:
+            // dump_bytes("global_rm event", msg_buffer + msg_buffer_offset,
+            // size);
+            goto war_label_wayland_done;
+        war_label_wl_callback_done: {
             VkResult result = vkWaitForFences(
                 ctx_vk->device,
                 1,
@@ -2177,137 +2192,174 @@ cmd_timeout_done:
                                           &cmd_buffer_begin_info);
 
             assert(result == VK_SUCCESS);
-            //-----------------------------------------------------------------
+            //-------------------------------------------------------------------------
             // NSGT COMPUTE PIPELINE
-            //-----------------------------------------------------------------
-            if ((ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
-                 ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
-                 ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
-                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE) ||
-                capture_wav->memfd_size <= 44 || !ctx_nsgt->dirty_compute) {
-                ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
-                ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
-                ctx_nsgt->fn_idx_count = 2;
-                for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
-                    if (ctx_nsgt->image_layout[ctx_nsgt->src_idx[i]] ==
-                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-                        continue;
-                    }
-                    war_nsgt_image_barrier(
-                        ctx_nsgt->fn_idx_count,
-                        ctx_nsgt->src_idx,
-                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                        VK_ACCESS_SHADER_READ_BIT,
-                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        ctx_vk->cmd_buffer,
-                        ctx_nsgt);
-                    break;
-                }
-                goto war_label_render_pass;
+            //-------------------------------------------------------------------------
+            if ((ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) ||
+                capture_wav->memfd_size <= 44) {
+                goto war_label_skip_nsgt_graphics_compute;
             }
-            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
-            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
-            ctx_nsgt->fn_idx_count = 2;
-            war_nsgt_image_barrier(ctx_nsgt->fn_idx_count,
-                                   ctx_nsgt->src_idx,
-                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                   VK_ACCESS_SHADER_WRITE_BIT,
-                                   VK_IMAGE_LAYOUT_GENERAL,
-                                   ctx_vk->cmd_buffer,
-                                   ctx_nsgt);
-            float* samples = (float*)(capture_wav->file + 44);
-            uint32_t channel_samples =
-                ((capture_wav->memfd_size - 44) / sizeof(float)) / 2;
-            float* l_stage = (float*)ctx_nsgt->map[ctx_nsgt->idx_l_stage];
-            float* r_stage = (float*)ctx_nsgt->map[ctx_nsgt->idx_r_stage];
-            for (uint32_t i = 0; i < channel_samples; i++) {
-                l_stage[i] = samples[i * 2 + 0];
-                r_stage[i] = samples[i * 2 + 1];
+            uint32_t current_bytes = ctx_nsgt->size[ctx_nsgt->idx_wav];
+            uint32_t current_samples =
+                current_bytes / sizeof(float) / ctx_nsgt->channel_count;
+            uint32_t total_bytes = capture_wav->memfd_size - 44;
+            uint32_t total_samples =
+                total_bytes / sizeof(float) / ctx_nsgt->channel_count;
+            uint32_t diff_samples = total_samples - current_samples;
+            uint32_t diff_bytes =
+                diff_samples * sizeof(float) * ctx_nsgt->channel_count;
+            if (diff_samples == 0 ||
+                diff_samples + current_samples >= capture_wav->memfd_capacity) {
+                goto war_label_skip_nsgt_graphics_compute;
             }
-            call_king_terry("memfd_size: %u", capture_wav->memfd_size);
-            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_stage;
-            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_stage;
-            ctx_nsgt->fn_idx_count = 2;
+            float* capture_wav_samples = (float*)(capture_wav->file + 44);
+            float* stage_samples =
+                (float*)(ctx_nsgt->map[ctx_nsgt->idx_wav_stage]);
+            memcpy(stage_samples,
+                   &capture_wav_samples[current_samples],
+                   diff_bytes);
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_stage;
+            ctx_nsgt->fn_size[0] = diff_bytes;
+            ctx_nsgt->fn_idx_count = 1;
             war_nsgt_flush(ctx_nsgt->fn_idx_count,
-                           ctx_nsgt->src_idx,
-                           NULL,
-                           NULL,
+                           ctx_nsgt->fn_dst_idx,
+                           0,
+                           ctx_nsgt->fn_size,
                            ctx_vk->device,
                            ctx_nsgt);
-            //  src
-            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_stage;
-            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_stage;
-            // dst
-            ctx_nsgt->dst_idx[0] = ctx_nsgt->idx_l;
-            ctx_nsgt->dst_idx[1] = ctx_nsgt->idx_r;
-            // size
-            ctx_nsgt->fn_idx_count = 2;
-            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
-                ctx_nsgt->size[i] = ctx_nsgt->capacity[ctx_nsgt->src_idx[i]];
-            }
-            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
-                war_nsgt_copy(ctx_vk->cmd_buffer,
-                              ctx_nsgt->src_idx[i],
-                              ctx_nsgt->dst_idx[i],
-                              0,
-                              0,
-                              ctx_nsgt->size[i],
-                              ctx_nsgt);
-            }
+            ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_wav_stage;
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_temp;
+            ctx_nsgt->fn_size[0] = diff_bytes;
+            ctx_nsgt->fn_idx_count = 1;
+            war_nsgt_copy(ctx_nsgt->fn_idx_count,
+                          ctx_nsgt->fn_src_idx,
+                          ctx_nsgt->fn_dst_idx,
+                          0,
+                          0,
+                          ctx_nsgt->fn_size,
+                          ctx_vk->cmd_buffer,
+                          ctx_nsgt);
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_temp;
+            ctx_nsgt->fn_idx_count = 1;
             war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
-                                    ctx_nsgt->dst_idx,
+                                    ctx_nsgt->fn_dst_idx,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT |
+                                        VK_ACCESS_SHADER_WRITE_BIT,
+                                    ctx_vk->cmd_buffer,
+                                    ctx_nsgt);
+            uint32_t nsgt_local_size_x =
+                ctx_nsgt
+                    ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_nsgt *
+                                              ctx_nsgt->groups +
+                                          0];
+            uint32_t max_work_groups = ctx_nsgt->physical_device_properties
+                                           .limits.maxComputeWorkGroupCount[0];
+            uint32_t nsgt_group_count_x =
+                (diff_samples + nsgt_local_size_x - 1) / nsgt_local_size_x;
+            if (nsgt_group_count_x > max_work_groups) {
+                nsgt_group_count_x = max_work_groups;
+            }
+            ctx_nsgt->pipeline_dispatch_group
+                [ctx_nsgt->pipeline_idx_compute_nsgt * ctx_nsgt->groups + 0] =
+                nsgt_group_count_x;
+            ctx_nsgt->compute_push_constant.arg_1 = diff_samples;
+            war_nsgt_compute_pipeline_bind_set_dispatch(
+                ctx_nsgt->pipeline_idx_compute_nsgt,
+                ctx_vk->cmd_buffer,
+                ctx_nsgt);
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_nsgt_temp;
+            ctx_nsgt->fn_idx_count = 1;
+            war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
+                                    ctx_nsgt->fn_dst_idx,
                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                     VK_ACCESS_SHADER_READ_BIT,
                                     ctx_vk->cmd_buffer,
                                     ctx_nsgt);
-            uint32_t total_sample_elements =
-                ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity;
-            uint32_t threads_per_group = 64;
-            uint32_t group_count_x =
-                (total_sample_elements + threads_per_group - 1) /
-                threads_per_group;
-            vkCmdBindPipeline(
+            uint32_t magnitude_local_size_x =
+                ctx_nsgt
+                    ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_nsgt *
+                                              ctx_nsgt->groups +
+                                          0];
+            uint32_t magnitude_group_count_x =
+                (diff_samples + magnitude_local_size_x - 1) /
+                magnitude_local_size_x;
+            if (magnitude_group_count_x > max_work_groups) {
+                magnitude_group_count_x = max_work_groups;
+            }
+            ctx_nsgt->pipeline_dispatch_group
+                [ctx_nsgt->pipeline_idx_compute_magnitude * ctx_nsgt->groups +
+                 0] = magnitude_group_count_x;
+            war_nsgt_compute_pipeline_dispatch(
+                ctx_nsgt->pipeline_idx_compute_magnitude,
                 ctx_vk->cmd_buffer,
-                ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_compute],
-                ctx_nsgt->pipeline[ctx_nsgt->pipeline_idx_compute]);
-            vkCmdBindDescriptorSets(
+                ctx_nsgt);
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_magnitude_temp;
+            ctx_nsgt->fn_idx_count = 1;
+            war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
+                                    ctx_nsgt->fn_dst_idx,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT,
+                                    ctx_vk->cmd_buffer,
+                                    ctx_nsgt);
+            uint32_t transient_local_size_x =
+                ctx_nsgt->pipeline_local_size
+                    [ctx_nsgt->pipeline_idx_compute_transient *
+                         ctx_nsgt->groups +
+                     0];
+            uint32_t transient_group_count_x =
+                (diff_samples + transient_local_size_x - 1) /
+                transient_local_size_x;
+            if (transient_group_count_x > max_work_groups) {
+                transient_group_count_x = max_work_groups;
+            }
+            ctx_nsgt->pipeline_dispatch_group
+                [ctx_nsgt->pipeline_idx_compute_transient * ctx_nsgt->groups +
+                 0] = transient_group_count_x;
+            war_nsgt_compute_pipeline_dispatch(
+                ctx_nsgt->pipeline_idx_compute_transient,
                 ctx_vk->cmd_buffer,
-                ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_compute],
-                ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_compute],
-                0,
-                1,
-                &ctx_nsgt->descriptor_set[ctx_nsgt->set_idx_compute],
-                0,
-                NULL);
-            war_nsgt_compute_push_constant nsgt_compute_push_constant = {0};
-            nsgt_compute_push_constant.bin_capacity = ctx_nsgt->bin_capacity;
-            nsgt_compute_push_constant.frame_capacity =
-                ctx_nsgt->frame_capacity;
-            nsgt_compute_push_constant.bin_start = 0;
-            nsgt_compute_push_constant.bin_end = ctx_nsgt->bin_capacity;
-            nsgt_compute_push_constant.frame_start = 0;
-            nsgt_compute_push_constant.frame_end = ctx_nsgt->frame_capacity;
-            vkCmdPushConstants(
+                ctx_nsgt);
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_transient_temp;
+            ctx_nsgt->fn_idx_count = 1;
+            war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
+                                    ctx_nsgt->fn_dst_idx,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                    VK_ACCESS_SHADER_READ_BIT,
+                                    ctx_vk->cmd_buffer,
+                                    ctx_nsgt);
+            uint32_t image_local_size_x =
+                ctx_nsgt
+                    ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_image *
+                                              ctx_nsgt->groups +
+                                          0];
+            uint32_t image_group_count_x =
+                (diff_samples + image_local_size_x - 1) / image_local_size_x;
+            if (image_group_count_x > max_work_groups) {
+                image_group_count_x = max_work_groups;
+            }
+            ctx_nsgt->pipeline_dispatch_group
+                [ctx_nsgt->pipeline_idx_compute_image * ctx_nsgt->groups + 0] =
+                image_group_count_x;
+            war_nsgt_compute_pipeline_dispatch(
+                ctx_nsgt->pipeline_idx_compute_image,
                 ctx_vk->cmd_buffer,
-                ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_compute],
-                ctx_nsgt->push_constant_shader_stage_flags
-                    [ctx_nsgt->pipeline_idx_compute],
-                0,
-                ctx_nsgt->push_constant_size[ctx_nsgt->pipeline_idx_compute],
-                &nsgt_compute_push_constant);
-            vkCmdDispatch(ctx_vk->cmd_buffer, group_count_x, 1, 1);
-            ctx_nsgt->src_idx[0] = ctx_nsgt->idx_l_image;
-            ctx_nsgt->src_idx[1] = ctx_nsgt->idx_r_image;
-            ctx_nsgt->fn_idx_count = 2;
-            war_nsgt_image_barrier(ctx_nsgt->fn_idx_count,
-                                   ctx_nsgt->src_idx,
-                                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                   VK_ACCESS_SHADER_READ_BIT,
-                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                   ctx_vk->cmd_buffer,
-                                   ctx_nsgt);
-            ctx_nsgt->dirty_compute = 0;
-        war_label_render_pass:
+                ctx_nsgt);
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav;
+            ctx_nsgt->fn_idx_count = 1;
+            ctx_nsgt->size[ctx_nsgt->idx_wav] += diff_bytes;
+        war_label_skip_nsgt_graphics_compute:
+            if (ctx_nsgt->image_layout[ctx_nsgt->idx_image] !=
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+                war_nsgt_image_barrier(1,
+                                       &ctx_nsgt->idx_image,
+                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                       VK_ACCESS_SHADER_READ_BIT,
+                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                       ctx_vk->cmd_buffer,
+                                       ctx_nsgt);
+            }
             //-------------------------------------------------------------
             //  RENDER PASS
             //-------------------------------------------------------------
@@ -2493,9 +2545,9 @@ cmd_timeout_done:
                     }
                     float alpha_factor = ctx_wr->alpha_scale;
                     uint8_t color_alpha = (cursor_color >> 24) & 0xFF;
-                    //cursor_color =
-                    //    ((uint8_t)(color_alpha * alpha_factor) << 24) |
-                    //    (cursor_color & 0x00FFFFFF);
+                    // cursor_color =
+                    //     ((uint8_t)(color_alpha * alpha_factor) << 24) |
+                    //     (cursor_color & 0x00FFFFFF);
                     war_make_quad(
                         quad_vertices,
                         quad_indices,
@@ -3221,45 +3273,9 @@ cmd_timeout_done:
                  ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE)) {
                 goto war_label_end_render_pass;
             }
-            vkCmdBindPipeline(
-                ctx_vk->cmd_buffer,
-                ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_graphics],
-                ctx_nsgt->pipeline[ctx_nsgt->pipeline_idx_graphics]);
-            vkCmdBindDescriptorSets(
-                ctx_vk->cmd_buffer,
-                ctx_nsgt->pipeline_bind_point[ctx_nsgt->pipeline_idx_graphics],
-                ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_graphics],
-                0,
-                1,
-                &ctx_nsgt->descriptor_set[ctx_nsgt->set_idx_graphics],
-                0,
-                NULL);
-            war_nsgt_graphics_push_constant nsgt_graphics_push_constant = {0};
-            nsgt_graphics_push_constant.z_layer =
+            ctx_nsgt->graphics_push_constant.z_layer =
                 ctx_wr->z_layers[LAYER_GRIDLINES];
-            VkViewport nsgt_graphics_viewport = {
-                .x = 0.0f,
-                .y = 0.0f,
-                .width = (float)physical_width,
-                .height = (float)physical_height,
-                .minDepth = 0.0f,
-                .maxDepth = 1.0f,
-            };
-            VkRect2D nsgt_graphics_rect_2d = {
-                .offset = {0, 0},
-                .extent = {physical_width, physical_height},
-            };
-            vkCmdSetViewport(ctx_vk->cmd_buffer, 0, 1, &nsgt_graphics_viewport);
-            vkCmdSetScissor(ctx_vk->cmd_buffer, 0, 1, &nsgt_graphics_rect_2d);
-            vkCmdPushConstants(
-                ctx_vk->cmd_buffer,
-                ctx_nsgt->pipeline_layout[ctx_nsgt->pipeline_idx_graphics],
-                ctx_nsgt->push_constant_shader_stage_flags
-                    [ctx_nsgt->pipeline_idx_graphics],
-                0,
-                ctx_nsgt->push_constant_size[ctx_nsgt->pipeline_idx_graphics],
-                &nsgt_graphics_push_constant);
-            vkCmdDraw(ctx_vk->cmd_buffer, 3, 1, 0, 0);
+            war_nsgt_draw(ctx_vk->cmd_buffer, ctx_nsgt);
         war_label_end_render_pass:
             //---------------------------------------------------------
             //   END RENDER PASS
@@ -3285,26 +3301,13 @@ cmd_timeout_done:
                               ctx_vk->in_flight_fences[ctx_vk->current_frame]);
             assert(result == VK_SUCCESS);
             ctx_wr->trinity = 1;
-            // if (ctx_vk->timeline_fd <= 0) {
-            //     VkSemaphoreGetFdInfoKHR semaphore_get_fd_info_khr = {0};
-            //     semaphore_get_fd_info_khr.sType =
-            //         VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
-            //     semaphore_get_fd_info_khr.semaphore = ctx_vk->semaphore;
-            //     semaphore_get_fd_info_khr.handleType =
-            //         VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
-            //     result = ctx_vk->vkGetSemaphoreFdKHR(ctx_vk->device,
-            //                                          &semaphore_get_fd_info_khr,
-            //                                          &ctx_vk->timeline_fd);
-            //     assert(result == VK_SUCCESS);
-            //     assert(ctx_vk->timeline_fd >= 0);
-            // }
-            goto wayland_done;
+            goto war_label_wayland_done;
         }
         wl_display_error:
-            dump_bytes("wl_display::error event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
+            // dump_bytes("wl_display::error event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
         wl_display_delete_id:
             // dump_bytes("wl_display::delete_id event",
             //            msg_buffer + msg_buffer_offset,
@@ -3314,15 +3317,16 @@ cmd_timeout_done:
                 wl_callback_id) {
                 war_wayland_wl_surface_frame(fd, wl_surface_id, wl_callback_id);
             }
-            goto wayland_done;
+            goto war_label_wayland_done;
         wl_buffer_release:
             // dump_bytes("wl_buffer_release event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            goto wayland_done;
-        xdg_wm_base_ping:
-            dump_bytes(
-                "xdg_wm_base_ping event", msg_buffer + msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_xdg_wm_base_ping:
+            // dump_bytes(
+            //     "war_label_xdg_wm_base_ping event", msg_buffer +
+            //     msg_buffer_offset, size);
             assert(size == 12);
             uint8_t pong[12];
             war_write_le32(pong, xdg_wm_base_id);
@@ -3330,12 +3334,12 @@ cmd_timeout_done:
             war_write_le16(pong + 6, 12);
             war_write_le32(pong + 8,
                            war_read_le32(msg_buffer + msg_buffer_offset + 8));
-            dump_bytes("xdg_wm_base_pong request", pong, 12);
+            // dump_bytes("xdg_wm_base_pong request", pong, 12);
             ssize_t pong_written = write(fd, pong, 12);
             assert(pong_written == 12);
-            goto wayland_done;
-        xdg_surface_configure:
-            // dump_bytes("xdg_surface_configure event",
+            goto war_label_wayland_done;
+        war_label_xdg_surface_configure:
+            // dump_bytes("war_label_xdg_surface_configure event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
             assert(size == 12);
@@ -3361,7 +3365,7 @@ cmd_timeout_done:
                 // dump_bytes("wp_viewporter::get_viewport request",
                 //            get_viewport,
                 //            16);
-                call_king_terry("bound: wp_viewport");
+                // call_king_terry("bound: wp_viewport");
                 ssize_t get_viewport_written = write(fd, get_viewport, 16);
                 assert(get_viewport_written == 16);
                 wp_viewport_id = new_id;
@@ -3404,74 +3408,13 @@ cmd_timeout_done:
                 wl_callback_id = new_id;
                 obj_op[wl_callback_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wl_callback_done;
+                       0] = &&war_label_wl_callback_done;
                 new_id++;
             }
             war_wayland_wl_surface_commit(fd, wl_surface_id);
-            // if (!wp_linux_drm_syncobj_surface_v1_id) {
-            //     uint8_t get_surface[16];
-            //     war_write_le32(get_surface,
-            //     wp_linux_drm_syncobj_manager_v1_id);
-            //     war_write_le16(get_surface + 4, 1);
-            //     war_write_le16(get_surface + 6, 16);
-            //     war_write_le32(get_surface + 8, new_id);
-            //     war_write_le32(get_surface + 12, wl_surface_id);
-            //     dump_bytes(
-            //         "wp_linux_drm_syncobj_manager_v1:get_surface request",
-            //         get_surface,
-            //         16);
-            //     call_king_terry("bound: wp_linux_drm_syncobj_surface_v1");
-            //     ssize_t get_surface_written = write(fd, get_surface, 16);
-            //     assert(get_surface_written == 16);
-            //     wp_linux_drm_syncobj_surface_v1_id = new_id;
-            //     obj_op[wp_linux_drm_syncobj_surface_v1_id *
-            //                atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-            //            0] = &&wp_linux_drm_syncobj_surface_v1_jump;
-            //     new_id++;
-            // }
-            // if (!wp_linux_drm_syncobj_timeline_v1_id) {
-            //     uint8_t start[12];
-            //     war_write_le32(start, wp_linux_drm_syncobj_manager_v1_id);
-            //     war_write_le16(start + 4, 2);
-            //     war_write_le16(start + 6, 12);
-            //     war_write_le32(start + 8, new_id);
-            //     struct iovec iov[2] = {
-            //         {.iov_base = start, .iov_len = 12},
-            //     };
-            //     char cmsgbuf[CMSG_SPACE(sizeof(int))] = {0};
-            //     struct msghdr msg = {0};
-            //     msg.msg_iov = iov;
-            //     msg.msg_iovlen = 1;
-            //     msg.msg_control = cmsgbuf;
-            //     msg.msg_controllen = sizeof(cmsgbuf);
-            //     struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-            //     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-            //     cmsg->cmsg_level = SOL_SOCKET;
-            //     cmsg->cmsg_type = SCM_RIGHTS;
-            //     *((int*)CMSG_DATA(cmsg)) = ctx_vk->timeline_fd;
-            //     ssize_t timeline_fd_sent = sendmsg(fd, &msg, 0);
-            //     if (timeline_fd_sent < 0) perror("sendmsg");
-            //     assert(timeline_fd_sent == 12);
-            //     wp_linux_drm_syncobj_timeline_v1_id = new_id;
-            //     new_id++;
-            //     call_king_terry("hiiiiiiiiiiiii");
-            // }
-            //  war_wayland_set_acquire_point(fd,
-            //                                wp_linux_drm_syncobj_surface_v1_id,
-            //                                wp_linux_drm_syncobj_timeline_v1_id,
-            //                                ctx_vk->semaphore_value >> 32,
-            //                                ctx_vk->semaphore_value &
-            //                                0xFFFFFFFF);
-            //  ctx_vk->semaphore_value++;
-            //  war_wayland_set_release_point(fd,
-            //                                wp_linux_drm_syncobj_surface_v1_id,
-            //                                wp_linux_drm_syncobj_timeline_v1_id,
-            //                                ctx_vk->semaphore_value >> 32,
-            //                                ctx_vk->semaphore_value &
-            //                                0xFFFFFFFF);
-            goto wayland_done;
-        xdg_toplevel_configure:
-            // dump_bytes("xdg_toplevel_configure event",
+            goto war_label_wayland_done;
+        war_label_xdg_toplevel_configure:
+            // dump_bytes("war_label_xdg_toplevel_configure event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
             uint32_t width = *(uint32_t*)(msg_buffer + msg_buffer_offset + 0);
@@ -3491,22 +3434,9 @@ cmd_timeout_done:
                 }
             }
             war_wl_surface_set_opaque_region(fd, wl_surface_id, 0);
-            // if (ctx_wr->fullscreen) {
-            //     war_wl_surface_set_opaque_region(fd, wl_surface_id, 0);
-            //     ctx_wr->text_feather = default_text_feather;
-            //     ctx_wr->text_thickness = default_text_thickness;
-            //     ctx_wr->alpha_scale = default_alpha_scale;
-            //     ctx_wr->alpha_scale_cursor = default_cursor_alpha_scale;
-            //     goto wayland_done;
-            // }
-            // war_wl_surface_set_opaque_region(fd, wl_surface_id,
-            // wl_region_id); ctx_wr->text_feather = windowed_text_feather;
-            // ctx_wr->text_thickness = windowed_text_thickness;
-            // ctx_wr->alpha_scale = default_windowed_alpha_scale;
-            // ctx_wr->alpha_scale_cursor = default_windowed_cursor_alpha_scale;
-            goto wayland_done;
-        xdg_toplevel_close:
-            // dump_bytes("xdg_toplevel_close event", msg_buffer +
+            goto war_label_wayland_done;
+        war_label_xdg_toplevel_close:
+            // dump_bytes("war_label_xdg_toplevel_close event", msg_buffer +
             // msg_buffer_offset, size);
 
             uint8_t xdg_toplevel_destroy[8];
@@ -3558,60 +3488,61 @@ cmd_timeout_done:
             assert(wl_surface_destroy_written == 8);
 
             war_pc_to_a(pc_control, CONTROL_END_WAR, 0, NULL);
-            usleep(500000);
-            goto wayland_done;
-        xdg_toplevel_configure_bounds:
-            dump_bytes("xdg_toplevel_configure_bounds event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        xdg_toplevel_wm_capabilities:
-            dump_bytes("xdg_toplevel_wm_capabilities event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_dmabuf_v1_format:
-            dump_bytes("zwp_linux_dmabuf_v1_format event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_dmabuf_v1_modifier:
-            dump_bytes("zwp_linux_dmabuf_v1_modifier event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_buffer_params_v1_created:
-            dump_bytes("zwp_linux_buffer_params_v1_created", // COMMENT
-                                                             // REFACTOR: to ::
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_buffer_params_v1_failed:
-            dump_bytes("zwp_linux_buffer_params_v1_failed event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_dmabuf_feedback_v1_done:
-            dump_bytes("zwp_linux_dmabuf_feedback_v1_done event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
+            goto war_label_wayland_done;
+        war_label_xdg_toplevel_configure_bounds:
+            // dump_bytes("war_label_xdg_toplevel_configure_bounds event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_xdg_toplevel_wm_capabilities:
+            // dump_bytes("war_label_xdg_toplevel_wm_capabilities event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_v1_format:
+            // dump_bytes("war_label_zwp_linux_dmabuf_v1_format event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_v1_modifier:
+            // dump_bytes("war_label_zwp_linux_dmabuf_v1_modifier event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_buffer_params_v1_created:
+            // dump_bytes("zwp_linux_buffer_params_v1_created", // COMMENT
+            //                                                  // REFACTOR: to
+            //                                                  ::
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_buffer_params_v1_failed:
+            // dump_bytes("zwp_linux_buffer_params_v1_failed event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_feedback_v1_done:
+            // dump_bytes("war_label_zwp_linux_dmabuf_feedback_v1_done event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
             uint8_t create_params[12]; // REFACTOR: zero initialize
             war_write_le32(create_params, zwp_linux_dmabuf_v1_id);
             war_write_le16(create_params + 4, 1);
             war_write_le16(create_params + 6, 12);
             war_write_le32(create_params + 8, new_id);
-            dump_bytes(
-                "zwp_linux_dmabuf_v1_create_params request", create_params, 12);
-            call_king_terry("bound: zwp_linux_buffer_params_v1");
+            // dump_bytes(
+            //     "zwp_linux_dmabuf_v1_create_params request", create_params,
+            //     12);
+            // call_king_terry("bound: zwp_linux_buffer_params_v1");
             ssize_t create_params_written = write(fd, create_params, 12);
             assert(create_params_written == 12);
             zwp_linux_buffer_params_v1_id = new_id;
             obj_op[zwp_linux_buffer_params_v1_id *
                        atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                   0] = &&zwp_linux_buffer_params_v1_created;
+                   0] = &&war_label_zwp_linux_buffer_params_v1_created;
             obj_op[zwp_linux_buffer_params_v1_id *
                        atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                   1] = &&zwp_linux_buffer_params_v1_failed;
+                   1] = &&war_label_zwp_linux_buffer_params_v1_failed;
             new_id++; // COMMENT REFACTOR: move increment to declaration
                       // (one line it)
 
@@ -3661,10 +3592,10 @@ cmd_timeout_done:
             war_write_le32(create_immed + 16, physical_height);
             war_write_le32(create_immed + 20, DRM_FORMAT_ARGB8888);
             war_write_le32(create_immed + 24, 0);
-            dump_bytes("zwp_linux_buffer_params_v1::create_immed request",
-                       create_immed,
-                       28);
-            call_king_terry("bound: wl_buffer");
+            // dump_bytes("zwp_linux_buffer_params_v1::create_immed request",
+            //            create_immed,
+            //            28);
+            // call_king_terry("bound: wl_buffer");
             ssize_t create_immed_written = write(fd, create_immed, 28);
             assert(create_immed_written == 28);
             wl_buffer_id = new_id;
@@ -3679,72 +3610,81 @@ cmd_timeout_done:
             war_write_le16(destroy + 6, 8);
             ssize_t destroy_written = write(fd, destroy, 8);
             assert(destroy_written == 8);
-            dump_bytes(
-                "zwp_linux_buffer_params_v1_id::destroy request", destroy, 8);
-            goto wayland_done;
-        zwp_linux_dmabuf_feedback_v1_format_table:
-            dump_bytes("zwp_linux_dmabuf_feedback_v1_format_table event",
-                       msg_buffer + msg_buffer_offset,
-                       size); // REFACTOR: event
-            goto wayland_done;
-        zwp_linux_dmabuf_feedback_v1_main_device:
-            dump_bytes("zwp_linux_dmabuf_feedback_v1_main_device event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_dmabuf_feedback_v1_tranche_done:
-            dump_bytes("zwp_linux_dmabuf_feedback_v1_tranche_done event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_dmabuf_feedback_v1_tranche_target_device:
-            dump_bytes("zwp_linux_dmabuf_feedback_v1_tranche_target_"
-                       "device event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_dmabuf_feedback_v1_tranche_formats:
-            dump_bytes("zwp_linux_dmabuf_feedback_v1_tranche_formats event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_linux_dmabuf_feedback_v1_tranche_flags:
-            dump_bytes("zwp_linux_dmabuf_feedback_v1_tranche_flags event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wp_linux_drm_syncobj_manager_v1_jump:
-            dump_bytes("wp_linux_drm_syncobj_manager_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
+            // dump_bytes(
+            //     "zwp_linux_buffer_params_v1_id::destroy request", destroy,
+            //     8);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_feedback_v1_format_table:
+            // dump_bytes("war_label_zwp_linux_dmabuf_feedback_v1_format_table
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size); // REFACTOR: event
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_feedback_v1_main_device:
+            // dump_bytes("war_label_zwp_linux_dmabuf_feedback_v1_main_device
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_feedback_v1_tranche_done:
+            // dump_bytes("war_label_zwp_linux_dmabuf_feedback_v1_tranche_done
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_feedback_v1_tranche_target_device:
+            // dump_bytes("zwp_linux_dmabuf_feedback_v1_tranche_target_"
+            //            "device event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_feedback_v1_tranche_formats:
+            // dump_bytes("war_label_zwp_linux_dmabuf_feedback_v1_tranche_formats
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_linux_dmabuf_feedback_v1_tranche_flags:
+            // dump_bytes("war_label_zwp_linux_dmabuf_feedback_v1_tranche_flags
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wp_linux_drm_syncobj_manager_v1_jump:
+            // dump_bytes("war_label_wp_linux_drm_syncobj_manager_v1_jump
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
         wp_linux_drm_syncobj_timeline_v1_jump:
-            dump_bytes("wp_linux_drm_syncobj_timeline_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
+            // dump_bytes("wp_linux_drm_syncobj_timeline_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
         wp_linux_drm_syncobj_surface_v1_jump:
-            dump_bytes("wp_linux_drm_syncobj_timeline_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_compositor_jump:
-            dump_bytes("wl_compositor_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_surface_enter:
-            dump_bytes(
-                "wl_surface_enter event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_surface_leave:
-            dump_bytes(
-                "wl_surface_leave event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_surface_preferred_buffer_scale:
-            dump_bytes("wl_surface_preferred_buffer_scale event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
+            // dump_bytes("wp_linux_drm_syncobj_timeline_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_compositor_jump:
+            // dump_bytes("war_label_wl_compositor_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_surface_enter:
+            // dump_bytes(
+            //     "war_label_wl_surface_enter event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_surface_leave:
+            // dump_bytes(
+            //     "war_label_wl_surface_leave event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_surface_preferred_buffer_scale:
+            // dump_bytes("war_label_wl_surface_preferred_buffer_scale event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
             assert(size == 12);
 
             uint8_t set_buffer_scale[12];
@@ -3753,15 +3693,17 @@ cmd_timeout_done:
             war_write_le16(set_buffer_scale + 6, 12);
             war_write_le32(set_buffer_scale + 8,
                            war_read_le32(msg_buffer + msg_buffer_offset + 8));
-            dump_bytes(
-                "wl_surface::set_buffer_scale request", set_buffer_scale, 12);
+            // dump_bytes(
+            //     "wl_surface::set_buffer_scale request", set_buffer_scale,
+            //     12);
             ssize_t set_buffer_scale_written = write(fd, set_buffer_scale, 12);
             assert(set_buffer_scale_written == 12);
-            goto wayland_done;
-        wl_surface_preferred_buffer_transform:
-            dump_bytes("wl_surface_preferred_buffer_transform event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
+            goto war_label_wayland_done;
+        war_label_wl_surface_preferred_buffer_transform:
+            // dump_bytes("war_label_wl_surface_preferred_buffer_transform
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
             assert(size == 12);
 
             uint8_t set_buffer_transform[12];
@@ -3770,32 +3712,33 @@ cmd_timeout_done:
             war_write_le16(set_buffer_transform + 6, 12);
             war_write_le32(set_buffer_transform + 8,
                            war_read_le32(msg_buffer + msg_buffer_offset + 8));
-            dump_bytes("wl_surface::set_buffer_transform request",
-                       set_buffer_transform,
-                       12);
+            // dump_bytes("wl_surface::set_buffer_transform request",
+            //            set_buffer_transform,
+            //            12);
             ssize_t set_buffer_transform_written =
                 write(fd, set_buffer_transform, 12);
             assert(set_buffer_transform_written == 12);
-            goto wayland_done;
-        zwp_idle_inhibit_manager_v1_jump:
-            dump_bytes("zwp_idle_inhibit_manager_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwlr_layer_shell_v1_jump:
-            dump_bytes("zwlr_layer_shell_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zxdg_decoration_manager_v1_jump:
-            dump_bytes("zxdg_decoration_manager_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zxdg_toplevel_decoration_v1_configure: {
-            dump_bytes("zxdg_toplevel_decoration_v1_configure event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
+            goto war_label_wayland_done;
+        war_label_zwp_idle_inhibit_manager_v1_jump:
+            // dump_bytes("war_label_zwp_idle_inhibit_manager_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwlr_layer_shell_v1_jump:
+            // dump_bytes("war_label_zwlr_layer_shell_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zxdg_decoration_manager_v1_jump:
+            // dump_bytes("war_label_zxdg_decoration_manager_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zxdg_toplevel_decoration_v1_configure: {
+            // dump_bytes("war_label_zxdg_toplevel_decoration_v1_configure
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
             uint8_t set_mode[12];
             war_write_le32(set_mode, zxdg_toplevel_decoration_v1_id);
             war_write_le16(set_mode + 4, 1);
@@ -3804,81 +3747,85 @@ cmd_timeout_done:
             // war_write_le32(
             //     set_mode + 8,
             //     war_read_le32(msg_buffer + msg_buffer_offset + 8));
-            dump_bytes(
-                "zxdg_toplevel_decoration_v1::set_mode request", set_mode, 12);
+            // dump_bytes(
+            //    "zxdg_toplevel_decoration_v1::set_mode request", set_mode,
+            //    12);
             ssize_t set_mode_written = write(fd, set_mode, 12);
             assert(set_mode_written == 12);
-            goto wayland_done;
+            goto war_label_wayland_done;
         }
-        zwp_relative_pointer_manager_v1_jump:
-            dump_bytes("zwp_relative_pointer_manager_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_pointer_constraints_v1_jump:
-            dump_bytes("zwp_pointer_constraints_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wp_presentation_clock_id:
-            dump_bytes("wp_presentation_clock_id event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwlr_output_manager_v1_head:
-            dump_bytes("zwlr_output_manager_v1_head event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwlr_output_manager_v1_done:
-            dump_bytes("zwlr_output_manager_v1_done event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        ext_foreign_toplevel_list_v1_toplevel:
-            dump_bytes("ext_foreign_toplevel_list_v1_toplevel event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwlr_data_control_manager_v1_jump:
-            dump_bytes("zwlr_data_control_manager_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wp_viewporter_jump:
-            dump_bytes("wp_viewporter_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wp_content_type_manager_v1_jump:
-            dump_bytes("wp_content_type_manager_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wp_fractional_scale_manager_v1_jump:
-            dump_bytes("wp_fractional_scale_manager_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        xdg_activation_v1_jump:
-            dump_bytes("xdg_activation_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_virtual_keyboard_manager_v1_jump:
-            dump_bytes("zwp_virtual_keyboard_manager_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        zwp_pointer_gestures_v1_jump:
-            dump_bytes("zwp_pointer_gestures_v1_jump event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_seat_capabilities:
-            dump_bytes("wl_seat_capabilities event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
+        war_label_zwp_relative_pointer_manager_v1_jump:
+            // dump_bytes("war_label_zwp_relative_pointer_manager_v1_jump
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_pointer_constraints_v1_jump:
+            // dump_bytes("war_label_zwp_pointer_constraints_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wp_presentation_clock_id:
+            // dump_bytes("war_label_wp_presentation_clock_id event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwlr_output_manager_v1_head:
+            // dump_bytes("war_label_zwlr_output_manager_v1_head event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwlr_output_manager_v1_done:
+            // dump_bytes("war_label_zwlr_output_manager_v1_done event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_ext_foreign_toplevel_list_v1_toplevel:
+            // dump_bytes("war_label_ext_foreign_toplevel_list_v1_toplevel
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwlr_data_control_manager_v1_jump:
+            // dump_bytes("war_label_zwlr_data_control_manager_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wp_viewporter_jump:
+            // dump_bytes("war_label_wp_viewporter_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wp_content_type_manager_v1_jump:
+            // dump_bytes("war_label_wp_content_type_manager_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wp_fractional_scale_manager_v1_jump:
+            // dump_bytes("war_label_wp_fractional_scale_manager_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_xdg_activation_v1_jump:
+            // dump_bytes("war_label_xdg_activation_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_virtual_keyboard_manager_v1_jump:
+            // dump_bytes("war_label_zwp_virtual_keyboard_manager_v1_jump
+            // event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_zwp_pointer_gestures_v1_jump:
+            // dump_bytes("war_label_zwp_pointer_gestures_v1_jump event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_seat_capabilities:
+            // dump_bytes("war_label_wl_seat_capabilities event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
             enum {
                 wl_seat_pointer = 0x01,
                 wl_seat_keyboard = 0x02,
@@ -3887,133 +3834,136 @@ cmd_timeout_done:
             uint32_t capabilities =
                 war_read_le32(msg_buffer + msg_buffer_offset + 8);
             if (capabilities & wl_seat_keyboard) {
-                call_king_terry("keyboard detected");
+                // call_king_terry("keyboard detected");
                 assert(size == 12);
                 uint8_t get_keyboard[12];
                 war_write_le32(get_keyboard, wl_seat_id);
                 war_write_le16(get_keyboard + 4, 1);
                 war_write_le16(get_keyboard + 6, 12);
                 war_write_le32(get_keyboard + 8, new_id);
-                dump_bytes("get_keyboard request", get_keyboard, 12);
-                call_king_terry("bound: wl_keyboard",
-                                (const char*)msg_buffer + msg_buffer_offset +
-                                    12);
+                // dump_bytes("get_keyboard request", get_keyboard, 12);
+                // call_king_terry("bound: wl_keyboard",
+                //                 (const char*)msg_buffer + msg_buffer_offset +
+                //                     12);
                 ssize_t get_keyboard_written = write(fd, get_keyboard, 12);
                 assert(get_keyboard_written == 12);
                 wl_keyboard_id = new_id;
                 obj_op[wl_keyboard_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wl_keyboard_keymap;
+                       0] = &&war_label_wl_keyboard_keymap;
                 obj_op[wl_keyboard_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&wl_keyboard_enter;
+                       1] = &&war_label_wl_keyboard_enter;
                 obj_op[wl_keyboard_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       2] = &&wl_keyboard_leave;
+                       2] = &&war_label_wl_keyboard_leave;
                 obj_op[wl_keyboard_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       3] = &&wl_keyboard_key;
+                       3] = &&war_label_wl_keyboard_key;
                 obj_op[wl_keyboard_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       4] = &&wl_keyboard_modifiers;
+                       4] = &&war_label_wl_keyboard_modifiers;
                 obj_op[wl_keyboard_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       5] = &&wl_keyboard_repeat_info;
+                       5] = &&war_label_wl_keyboard_repeat_info;
                 new_id++;
             }
             if (capabilities & wl_seat_pointer) {
-                call_king_terry("pointer detected");
+                // call_king_terry("pointer detected");
                 assert(size == 12);
                 uint8_t get_pointer[12];
                 war_write_le32(get_pointer, wl_seat_id);
                 war_write_le16(get_pointer + 4, 0);
                 war_write_le16(get_pointer + 6, 12);
                 war_write_le32(get_pointer + 8, new_id);
-                dump_bytes("get_pointer request", get_pointer, 12);
-                call_king_terry("bound: wl_pointer");
+                // dump_bytes("get_pointer request", get_pointer, 12);
+                // call_king_terry("bound: wl_pointer");
                 ssize_t get_pointer_written = write(fd, get_pointer, 12);
                 assert(get_pointer_written == 12);
                 wl_pointer_id = new_id;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wl_pointer_enter;
+                       0] = &&war_label_wl_pointer_enter;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&wl_pointer_leave;
+                       1] = &&war_label_wl_pointer_leave;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       2] = &&wl_pointer_motion;
+                       2] = &&war_label_wl_pointer_motion;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       3] = &&wl_pointer_button;
+                       3] = &&war_label_wl_pointer_button;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       4] = &&wl_pointer_axis;
+                       4] = &&war_label_wl_pointer_axis;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       5] = &&wl_pointer_frame;
+                       5] = &&war_label_wl_pointer_frame;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       6] = &&wl_pointer_axis_source;
+                       6] = &&war_label_wl_pointer_axis_source;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       7] = &&wl_pointer_axis_stop;
+                       7] = &&war_label_wl_pointer_axis_stop;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       8] = &&wl_pointer_axis_discrete;
+                       8] = &&war_label_wl_pointer_axis_discrete;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       9] = &&wl_pointer_axis_value120;
+                       9] = &&war_label_wl_pointer_axis_value120;
                 obj_op[wl_pointer_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       10] = &&wl_pointer_axis_relative_direction;
+                       10] = &&war_label_wl_pointer_axis_relative_direction;
                 new_id++;
             }
             if (capabilities & wl_seat_touch) {
-                call_king_terry("touch detected");
+                // call_king_terry("touch detected");
                 assert(size == 12);
                 uint8_t get_touch[12];
                 war_write_le32(get_touch, wl_seat_id);
                 war_write_le16(get_touch + 4, 2);
                 war_write_le16(get_touch + 6, 12);
                 war_write_le32(get_touch + 8, new_id);
-                dump_bytes("get_touch request", get_touch, 12);
-                call_king_terry("bound: wl_touch");
+                // dump_bytes("get_touch request", get_touch, 12);
+                // call_king_terry("bound: wl_touch");
                 ssize_t get_touch_written = write(fd, get_touch, 12);
                 assert(get_touch_written == 12);
                 wl_touch_id = new_id;
                 obj_op[wl_touch_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       0] = &&wl_touch_down;
+                       0] = &&war_label_wl_touch_down;
                 obj_op[wl_touch_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       1] = &&wl_touch_up;
+                       1] = &&war_label_wl_touch_up;
                 obj_op[wl_touch_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       2] = &&wl_touch_motion;
+                       2] = &&war_label_wl_touch_motion;
                 obj_op[wl_touch_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       3] = &&wl_touch_frame;
+                       3] = &&war_label_wl_touch_frame;
                 obj_op[wl_touch_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       4] = &&wl_touch_cancel;
+                       4] = &&war_label_wl_touch_cancel;
                 obj_op[wl_touch_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       5] = &&wl_touch_shape;
+                       5] = &&war_label_wl_touch_shape;
                 obj_op[wl_touch_id *
                            atomic_load(&ctx_lua->WR_WAYLAND_MAX_OP_CODES) +
-                       6] = &&wl_touch_orientation;
+                       6] = &&war_label_wl_touch_orientation;
                 new_id++;
             }
-            goto wayland_done;
-        wl_seat_name:
-            dump_bytes(
-                "wl_seat_name event", msg_buffer + msg_buffer_offset, size);
-            call_king_terry("seat: %s",
-                            (const char*)msg_buffer + msg_buffer_offset + 12);
-            goto wayland_done;
-        wl_keyboard_keymap: {
-            dump_bytes("wl_keyboard_keymap event", msg_buffer, size);
+            goto war_label_wayland_done;
+        war_label_wl_seat_name:
+            // dump_bytes(
+            //     "war_label_wl_seat_name event", msg_buffer +
+            //     msg_buffer_offset, size);
+            // call_king_terry("seat: %s",
+            //                 (const char*)msg_buffer + msg_buffer_offset +
+            //                 12);
+            goto war_label_wayland_done;
+        war_label_wl_keyboard_keymap: {
+            // dump_bytes("war_label_wl_keyboard_keymap event", msg_buffer,
+            // size);
             assert(size == 16);
             ctx_fsm->keymap_fd = -1;
             for (struct cmsghdr* poll_cmsg = CMSG_FIRSTHDR(&poll_msg_hdr);
@@ -4069,12 +4019,12 @@ cmd_timeout_done:
             //-----------------------------------------------------------------
             lua_getglobal(ctx_lua->L, "war");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_king_terry("war not a table");
+                // call_king_terry("war not a table");
                 lua_pop(ctx_lua->L, 1);
             }
             lua_getfield(ctx_lua->L, -1, "modes");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_king_terry("modes not a field");
+                // call_king_terry("modes not a field");
                 lua_pop(ctx_lua->L, 2);
             }
             lua_pushnil(ctx_lua->L);
@@ -4094,7 +4044,8 @@ cmd_timeout_done:
                 } else if (strcmp(mode_name, "wav") == 0) {
                     ctx_fsm->MODE_WAV = mode_value;
                 }
-                call_king_terry("mode: %s, value: %i", mode_name, mode_value);
+                // call_king_terry("mode: %s, value: %i", mode_name,
+                // mode_value);
                 lua_pop(ctx_lua->L, 1);
             }
             lua_pop(ctx_lua->L, 2);
@@ -4103,12 +4054,12 @@ cmd_timeout_done:
             //-----------------------------------------------------------------
             lua_getglobal(ctx_lua->L, "war");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_king_terry("war not a table");
+                // call_king_terry("war not a table");
                 lua_pop(ctx_lua->L, 1);
             }
             lua_getfield(ctx_lua->L, -1, "function_types");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_king_terry("function_types not a field");
+                // call_king_terry("function_types not a field");
                 lua_pop(ctx_lua->L, 2);
             }
             lua_pushnil(ctx_lua->L);
@@ -4122,7 +4073,8 @@ cmd_timeout_done:
                 } else if (strcmp(type_name, "lua") == 0) {
                     ctx_fsm->FUNCTION_LUA = type_value;
                 }
-                call_king_terry("type: %s, value: %i", type_name, type_value);
+                // call_king_terry("type: %s, value: %i", type_name,
+                // type_value);
                 lua_pop(ctx_lua->L, 1);
             }
             lua_pop(ctx_lua->L, 2);
@@ -4156,9 +4108,9 @@ cmd_timeout_done:
 
             lua_getglobal(ctx_lua->L, "war_flattened");
             if (!lua_istable(ctx_lua->L, -1)) {
-                call_king_terry("war_flattened not a table");
+                // call_king_terry("war_flattened not a table");
                 lua_pop(ctx_lua->L, 1);
-                goto wayland_done;
+                goto war_label_wayland_done;
             }
 
             uint32_t max_states = ctx_fsm->state_count;
@@ -4201,7 +4153,7 @@ cmd_timeout_done:
                                 next_state = next_state_counter++;
                             } else {
                                 next_state = max_states - 1;
-                                call_king_terry("fsm state overflow");
+                                // call_king_terry("fsm state overflow");
                             }
                             ctx_fsm->next_state[idx3d] = next_state;
                         }
@@ -4210,8 +4162,8 @@ cmd_timeout_done:
                         }
                         current_state = next_state;
                     } else {
-                        call_king_terry("invalid key token: %s",
-                                        token ? token : "(nil)");
+                        // call_king_terry("invalid key token: %s",
+                        //                token ? token : "(nil)");
                     }
                     lua_pop(ctx_lua->L, 1);
                 }
@@ -4294,23 +4246,23 @@ cmd_timeout_done:
                     ctx_fsm->is_prefix[FSM_2D_MODE(s, m)] = 1;
                 }
             }
-            goto wayland_done;
+            goto war_label_wayland_done;
         }
-        wl_keyboard_enter:
-            // dump_bytes("wl_keyboard_enter event",
+        war_label_wl_keyboard_enter:
+            // dump_bytes("war_label_wl_keyboard_enter event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            goto wayland_done;
-        wl_keyboard_leave:
-            // dump_bytes("wl_keyboard_leave event",
+            goto war_label_wayland_done;
+        war_label_wl_keyboard_leave:
+            // dump_bytes("war_label_wl_keyboard_leave event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            goto wayland_done;
-        wl_keyboard_key: {
-            // dump_bytes("wl_keyboard_key event",
+            goto war_label_wayland_done;
+        war_label_wl_keyboard_key: {
+            // dump_bytes("war_label_wl_keyboard_key event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            if (ctx_wr->end_window_render) { goto wayland_done; }
+            if (ctx_wr->end_window_render) { goto war_label_wayland_done; }
             uint32_t wl_key_state =
                 war_read_le32(msg_buffer + msg_buffer_offset + 8 + 4 + 4 + 4);
             uint32_t keycode =
@@ -4338,7 +4290,7 @@ cmd_timeout_done:
                 memset(ctx_fsm->key_down,
                        0,
                        ctx_fsm->keysym_count * ctx_fsm->mod_count);
-                goto cmd_done;
+                goto war_label_cmd_done;
             }
             //-----------------------------------------------------------------
             // COMMAND INPUT
@@ -4366,7 +4318,7 @@ cmd_timeout_done:
                         ctx_fsm->key_last_event_us[FSM_3D_INDEX(
                             ctx_fsm->current_state, keysym, mod)] = ctx_wr->now;
                     }
-                    goto cmd_done;
+                    goto war_label_cmd_done;
                 }
                 if (!pressed) {
                     ctx_fsm->key_down[FSM_3D_INDEX(
@@ -4385,9 +4337,9 @@ cmd_timeout_done:
                         ctx_fsm->timeout_state_index = 0;
                         ctx_fsm->timeout_start_us = 0;
                     }
-                    goto cmd_done;
+                    goto war_label_cmd_done;
                 }
-                goto cmd_done;
+                goto war_label_cmd_done;
             }
             if (!pressed) {
                 ctx_fsm->key_down[FSM_3D_INDEX(
@@ -4413,7 +4365,7 @@ cmd_timeout_done:
                                idx, ctx_fsm->current_mode)]) {
                     war_fsm_execute_command(env, ctx_fsm, idx);
                 }
-                goto cmd_done;
+                goto war_label_cmd_done;
             }
             if (!ctx_fsm->key_down[FSM_3D_INDEX(
                     ctx_fsm->current_state, keysym, mod)]) {
@@ -4436,7 +4388,7 @@ cmd_timeout_done:
                 ctx_fsm->timeout = 0;
                 ctx_fsm->timeout_state_index = 0;
                 ctx_fsm->timeout_start_us = 0;
-                goto cmd_done;
+                goto war_label_cmd_done;
             }
             ctx_fsm->current_state = next_state_index;
             ctx_fsm->state_last_event_us = ctx_wr->now;
@@ -4456,7 +4408,7 @@ cmd_timeout_done:
                     ctx_fsm->repeating = 0;
                 }
                 // timeouts
-                if (keysym != KEYSYM_ESCAPE && mod != 0) {
+                if (keysym != XKB_KEY_Escape && mod != 0) {
                     ctx_fsm->timeout_state_index = 0;
                 }
                 ctx_fsm->timeout_start_us = 0;
@@ -4474,7 +4426,7 @@ cmd_timeout_done:
                     ctx_fsm->timeout_start_us = ctx_wr->now;
                     ctx_fsm->timeout = 1;
                     ctx_fsm->current_state = 0;
-                    goto cmd_done;
+                    goto war_label_cmd_done;
                 }
                 uint64_t temp = ctx_fsm->current_state;
                 ctx_fsm->current_state = 0;
@@ -4488,31 +4440,31 @@ cmd_timeout_done:
                     ctx_fsm->repeating = 0;
                 }
                 // timeouts
-                if (keysym != KEYSYM_ESCAPE && mod != 0) {
+                if (keysym != XKB_KEY_Escape && mod != 0) {
                     ctx_fsm->timeout_state_index = 0;
                 }
                 ctx_fsm->timeout_start_us = 0;
                 ctx_fsm->timeout = 0;
                 war_fsm_execute_command(env, ctx_fsm, temp);
             }
-            goto cmd_done;
+            goto war_label_cmd_done;
         }
-        cmd_done: {
+        war_label_cmd_done: {
             ctx_wr->cursor_blink_previous_us = ctx_wr->now;
             ctx_wr->cursor_blinking = 0;
             ctx_wr->trinity = 1;
             if (ctx_fsm->goto_cmd_repeat_done) {
                 ctx_fsm->goto_cmd_repeat_done = 0;
-                goto cmd_repeat_done;
+                goto war_label_cmd_repeat_done;
             }
             if (ctx_fsm->goto_cmd_timeout_done) {
                 ctx_fsm->goto_cmd_timeout_done = 0;
-                goto cmd_timeout_done;
+                goto war_label_cmd_timeout_done;
             }
-            goto wayland_done;
+            goto war_label_wayland_done;
         }
-        wl_keyboard_modifiers:
-            // dump_bytes("wl_keyboard_modifiers event",
+        war_label_wl_keyboard_modifiers:
+            // dump_bytes("war_label_wl_keyboard_modifiers event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
             xkb_state_update_mask(
@@ -4524,24 +4476,24 @@ cmd_timeout_done:
                               4),
                 0,
                 0);
-            goto wayland_done;
-        wl_keyboard_repeat_info:
-            dump_bytes("wl_keyboard_repeat_info event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_pointer_enter:
-            // dump_bytes("wl_pointer_enter event",
+            goto war_label_wayland_done;
+        war_label_wl_keyboard_repeat_info:
+            // dump_bytes("war_label_wl_keyboard_repeat_info event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            goto wayland_done;
-        wl_pointer_leave:
-            // dump_bytes("wl_pointer_leave event",
+            goto war_label_wayland_done;
+        war_label_wl_pointer_enter:
+            // dump_bytes("war_label_wl_pointer_enter event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            goto wayland_done;
-        wl_pointer_motion:
-            // dump_bytes("wl_pointer_motion event",
+            goto war_label_wayland_done;
+        war_label_wl_pointer_leave:
+            // dump_bytes("war_label_wl_pointer_leave event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_pointer_motion:
+            // dump_bytes("war_label_wl_pointer_motion event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
             ctx_wr->cursor_x = (float)(int32_t)war_read_le32(
@@ -4550,9 +4502,9 @@ cmd_timeout_done:
             ctx_wr->cursor_y = (float)(int32_t)war_read_le32(
                                    msg_buffer + msg_buffer_offset + 16) /
                                256.0f * scale_factor;
-            goto wayland_done;
-        wl_pointer_button:
-            // dump_bytes("wl_pointer_button event",
+            goto war_label_wayland_done;
+        war_label_wl_pointer_button:
+            // dump_bytes("war_label_wl_pointer_button event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
             switch (war_read_le32(msg_buffer + msg_buffer_offset + 8 + 12)) {
@@ -4602,100 +4554,112 @@ cmd_timeout_done:
                     }
                 }
             }
-            goto wayland_done;
-        wl_pointer_axis:
-            dump_bytes(
-                "wl_pointer_axis event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_pointer_frame:
-            // dump_bytes("wl_pointer_frame event",
+            goto war_label_wayland_done;
+        war_label_wl_pointer_axis:
+            // dump_bytes(
+            //     "war_label_wl_pointer_axis event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_pointer_frame:
+            // dump_bytes("war_label_wl_pointer_frame event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            goto wayland_done;
-        wl_pointer_axis_source:
-            dump_bytes("wl_pointer_axis_source event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_pointer_axis_stop:
-            dump_bytes("wl_pointer_axis_stop event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_pointer_axis_discrete:
-            dump_bytes("wl_pointer_axis_discrete event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_pointer_axis_value120:
-            dump_bytes("wl_pointer_axis_value120 event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_pointer_axis_relative_direction:
-            dump_bytes("wl_pointer_axis_relative_direction event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_touch_down:
-            dump_bytes(
-                "wl_touch_down event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_touch_up:
-            dump_bytes(
-                "wl_touch_up event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_touch_motion:
-            dump_bytes(
-                "wl_touch_motion event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_touch_frame:
-            dump_bytes(
-                "wl_touch_frame event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_touch_cancel:
-            dump_bytes(
-                "wl_touch_cancel event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_touch_shape:
-            dump_bytes(
-                "wl_touch_shape event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_touch_orientation:
-            dump_bytes("wl_touch_orientation event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_output_geometry:
-            dump_bytes("wl_output_geometry event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wl_output_mode:
-            dump_bytes(
-                "wl_output_mode event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_output_done:
-            dump_bytes(
-                "wl_output_done event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_output_scale:
-            dump_bytes(
-                "wl_output_scale event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_output_name:
-            dump_bytes(
-                "wl_output_name event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wl_output_description:
-            dump_bytes("wl_output_description event",
-                       msg_buffer + msg_buffer_offset,
-                       size);
-            goto wayland_done;
-        wayland_default:
-            dump_bytes("default event", msg_buffer + msg_buffer_offset, size);
-            goto wayland_done;
-        wayland_done:
+            goto war_label_wayland_done;
+        war_label_wl_pointer_axis_source:
+            // dump_bytes("war_label_wl_pointer_axis_source event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_pointer_axis_stop:
+            // dump_bytes("war_label_wl_pointer_axis_stop event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_pointer_axis_discrete:
+            // dump_bytes("war_label_wl_pointer_axis_discrete event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_pointer_axis_value120:
+            // dump_bytes("war_label_wl_pointer_axis_value120 event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_pointer_axis_relative_direction:
+            // dump_bytes("war_label_wl_pointer_axis_relative_direction event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_touch_down:
+            // dump_bytes(
+            //     "war_label_wl_touch_down event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_touch_up:
+            // dump_bytes(
+            //     "war_label_wl_touch_up event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_touch_motion:
+            // dump_bytes(
+            //     "war_label_wl_touch_motion event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_touch_frame:
+            // dump_bytes(
+            //     "war_label_wl_touch_frame event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_touch_cancel:
+            // dump_bytes(
+            //     "war_label_wl_touch_cancel event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_touch_shape:
+            // dump_bytes(
+            //     "war_label_wl_touch_shape event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_touch_orientation:
+            // dump_bytes("war_label_wl_touch_orientation event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_output_geometry:
+            // dump_bytes("war_label_wl_output_geometry event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wl_output_mode:
+            // dump_bytes(
+            //     "war_label_wl_output_mode event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_output_done:
+            // dump_bytes(
+            //     "war_label_wl_output_done event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_output_scale:
+            // dump_bytes(
+            //     "war_label_wl_output_scale event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_output_name:
+            // dump_bytes(
+            //     "war_label_wl_output_name event", msg_buffer +
+            //     msg_buffer_offset, size);
+            goto war_label_wayland_done;
+        war_label_wl_output_description:
+            // dump_bytes("war_label_wl_output_description event",
+            //            msg_buffer + msg_buffer_offset,
+            //            size);
+            goto war_label_wayland_done;
+        war_label_wayland_default:
+            // dump_bytes("default event", msg_buffer + msg_buffer_offset,
+            // size);
+            goto war_label_wayland_done;
+        war_label_wayland_done:
             msg_buffer_offset += size;
             continue;
         }
@@ -4706,9 +4670,9 @@ cmd_timeout_done:
             msg_buffer_size -= msg_buffer_offset;
         }
     }
-    goto wr;
+    goto war_label_wr;
 }
-end_wr:
+war_label_end_wr:
     close(ctx_vk->dmabuf_fd);
     ctx_vk->dmabuf_fd = -1;
     xkb_state_unref(ctx_fsm->xkb_state);
@@ -4835,8 +4799,8 @@ void* war_audio(void* args) {
     struct sched_param param = {
         .sched_priority = atomic_load(&ctx_lua->A_SCHED_FIFO_PRIORITY)};
     if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
-        call_king_terry("AUDIO THREAD ERROR WITH SCHEDULING FIFO");
-        perror("pthread_setschedparam");
+        // call_king_terry("AUDIO THREAD ERROR WITH SCHEDULING FIFO");
+        // perror("pthread_setschedparam");
     }
     //-------------------------------------------------------------------------
     //  PIPEWIRE
@@ -4895,7 +4859,9 @@ void* war_audio(void* args) {
                                                NULL,
                                                &ctx_pw->play_events,
                                                ctx_pw->play_data);
-    if (!ctx_pw->play_stream) { call_king_terry("play_stream init issue"); }
+    if (!ctx_pw->play_stream) {
+        // call_king_terry("play_stream init issue");
+    }
     int pw_stream_result = pw_stream_connect(ctx_pw->play_stream,
                                              PW_DIRECTION_OUTPUT,
                                              PW_ID_ANY,
@@ -4905,7 +4871,7 @@ void* war_audio(void* args) {
                                              &ctx_pw->play_params,
                                              1);
     if (pw_stream_result < 0) {
-        call_king_terry("play stream connection error");
+        // call_king_terry("play stream connection error");
     }
     ctx_pw->capture_info = (struct spa_audio_info_raw){
         .format = SPA_AUDIO_FORMAT_F32_LE,
@@ -4931,7 +4897,7 @@ void* war_audio(void* args) {
                                                   &ctx_pw->capture_events,
                                                   ctx_pw->capture_data);
     if (!ctx_pw->capture_stream) {
-        call_king_terry("capture_stream init issue");
+        // call_king_terry("capture_stream init issue");
     }
     pw_stream_result = pw_stream_connect(ctx_pw->capture_stream,
                                          PW_DIRECTION_INPUT,
@@ -4942,7 +4908,7 @@ void* war_audio(void* args) {
                                          &ctx_pw->capture_params,
                                          1);
     if (pw_stream_result < 0) {
-        call_king_terry("capture stream connection error");
+        // call_king_terry("capture stream connection error");
     }
     while (pw_stream_get_state(ctx_pw->capture_stream, NULL) !=
            PW_STREAM_STATE_PAUSED) {
@@ -4961,23 +4927,23 @@ void* war_audio(void* args) {
         war_pool_alloc(pool_a, sizeof(uint8_t) * pc_control->size);
     void** pc_control_cmd = war_pool_alloc(
         pool_a, sizeof(void*) * atomic_load(&ctx_lua->CMD_COUNT));
-    pc_control_cmd[CONTROL_END_WAR] = &&end_a;
+    pc_control_cmd[CONTROL_END_WAR] = &&war_label_end_a;
     atomic_store(&atomics->start_war, 1);
     struct timespec ts = {0, 500000}; // 0.5 ms
     //-------------------------------------------------------------------------
     // AUDIO LOOP
     //-------------------------------------------------------------------------
-a: {
+war_label_a: {
     if (war_pc_from_wr(pc_control, &header, &size, control_payload)) {
         goto* pc_control_cmd[header];
     }
-    goto pc_a_done;
+    goto war_label_pc_a_done;
 }
-pc_a_done: {
+war_label_pc_a_done: {
     pw_loop_iterate(ctx_pw->loop, 0);
-    goto a;
+    goto war_label_a;
 }
-end_a: {
+war_label_end_a: {
     war_pc_to_wr(pc_control, CONTROL_END_WAR, 0, NULL);
     pw_stream_destroy(ctx_pw->play_stream);
     pw_stream_destroy(ctx_pw->capture_stream);

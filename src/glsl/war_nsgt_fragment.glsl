@@ -1,18 +1,6 @@
 //-----------------------------------------------------------------------------
 //
-// WAR - make music with vim motions
-// Copyright (C) 2025 Nick Monaco
-// 
-// This file is part of WAR 1.0 software.
-// WAR 1.0 software is licensed under the GNU Affero General Public License
-// version 3, with the following modification: attribution to the original
-// author is waived.
-// 
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-// 
-// For the full license text, see LICENSE-AGPL and LICENSE-CC-BY-SA and LICENSE.
+// See LICENSE
 //
 //-----------------------------------------------------------------------------
 
@@ -22,8 +10,7 @@
 
 #version 450
 
-layout(binding = 16) uniform sampler2D l_image;
-layout(binding = 17) uniform sampler2D r_image;
+layout(binding = 16) uniform sampler2D image; // single-channel red (magnitude)
 
 layout(push_constant) uniform pc {
     layout(offset = 0) int channel;
@@ -43,12 +30,6 @@ layout(location = 0) in vec2 frag_uv;
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    // Sample the texture instead of using imageLoad
-    float l = texture(l_image, frag_uv).r;
-    float r = texture(r_image, frag_uv).r;
-
-    // Choose left or right channel for visualization
-    float v = (push_constant.channel == 0) ? l : r;
-
-    out_color = vec4(v, 0.0, 0.0, 1.0);
+    vec4 tex = texture(image, frag_uv);
+    out_color = vec4(tex.r, tex.g, 0.0, 1.0); // both channels in red
 }

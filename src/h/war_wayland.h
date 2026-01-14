@@ -1,18 +1,6 @@
 //-----------------------------------------------------------------------------
 //
-// WAR - make music with vim motions
-// Copyright (C) 2025 Nick Monaco
-//
-// This file is part of WAR 1.0 software.
-// WAR 1.0 software is licensed under the GNU Affero General Public License
-// version 3, with the following modification: attribution to the original
-// author is waived.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-//
-// For the full license text, see LICENSE-AGPL and LICENSE-CC-BY-SA and LICENSE.
+// See LICENSE
 //
 //-----------------------------------------------------------------------------
 
@@ -123,7 +111,7 @@ static inline void war_wayland_registry_bind(int fd,
                                              size_t msg_buffer_offset,
                                              uint16_t size,
                                              uint16_t new_id) {
-    header("war_wayland_registry_bind");
+    // header("war_wayland_registry_bind");
     uint8_t bind[128];
     assert(size + 4 <= 128);
     memcpy(bind, msg_buffer + msg_buffer_offset, size);
@@ -133,15 +121,15 @@ static inline void war_wayland_registry_bind(int fd,
     war_write_le16(bind + 6, total_size);
     war_write_le32(bind + size, new_id);
 
-    dump_bytes("bind request", bind, size + 4);
-    call_king_terry("bound: %s",
-                    (const char*)msg_buffer + msg_buffer_offset + 16);
-    call_king_terry("to id: %u", new_id);
+    // dump_bytes("bind request", bind, size + 4);
+    // call_king_terry("bound: %s",
+    //                 (const char*)msg_buffer + msg_buffer_offset + 16);
+    // call_king_terry("to id: %u", new_id);
 
     ssize_t bind_written = write(fd, bind, size + 4);
     assert(bind_written == size + 4);
 
-    end("war_wayland_registry_bind");
+    // end("war_wayland_registry_bind");
 }
 
 static inline void
@@ -150,7 +138,7 @@ war_wayland_set_acquire_point(int fd,
                               uint32_t wp_linux_drm_syncobj_timeline_v1_id,
                               uint32_t point_hi,
                               uint32_t point_lo) {
-    call_king_terry("war_wayland_set_acquire_point");
+    // call_king_terry("war_wayland_set_acquire_point");
     uint8_t set_acquire_point[20];
     war_write_le32(set_acquire_point, wp_linux_drm_syncobj_surface_v1_id);
     war_write_le16(set_acquire_point + 4, 1);
@@ -158,9 +146,9 @@ war_wayland_set_acquire_point(int fd,
     war_write_le32(set_acquire_point + 8, wp_linux_drm_syncobj_timeline_v1_id);
     war_write_le32(set_acquire_point + 12, point_hi);
     war_write_le32(set_acquire_point + 16, point_lo);
-    dump_bytes("wp_linux_drm_syncobj_surface_v1:set_acquire_point request",
-               set_acquire_point,
-               20);
+    // dump_bytes("wp_linux_drm_syncobj_surface_v1:set_acquire_point request",
+    //            set_acquire_point,
+    //            20);
     ssize_t set_acquire_point_written = write(fd, set_acquire_point, 20);
     assert(set_acquire_point_written == 20);
 }
@@ -171,7 +159,7 @@ war_wayland_set_release_point(int fd,
                               uint32_t wp_linux_drm_syncobj_timeline_v1_id,
                               uint32_t point_hi,
                               uint32_t point_lo) {
-    call_king_terry("war_wayland_set_release_point");
+    // call_king_terry("war_wayland_set_release_point");
     uint8_t set_release_point[20];
     war_write_le32(set_release_point, wp_linux_drm_syncobj_surface_v1_id);
     war_write_le16(set_release_point + 4, 2);
@@ -179,9 +167,9 @@ war_wayland_set_release_point(int fd,
     war_write_le32(set_release_point + 8, wp_linux_drm_syncobj_timeline_v1_id);
     war_write_le32(set_release_point + 12, point_hi);
     war_write_le32(set_release_point + 16, point_lo);
-    dump_bytes("wp_linux_drm_syncobj_surface_v1:set_release_point request",
-               set_release_point,
-               20);
+    // dump_bytes("wp_linux_drm_syncobj_surface_v1:set_release_point request",
+    //            set_release_point,
+    //            20);
     ssize_t set_release_point_written = write(fd, set_release_point, 20);
     assert(set_release_point_written == 20);
 }
@@ -203,7 +191,7 @@ static inline void war_holy_trinity(int fd,
 }
 
 static inline int war_wayland_make_fd() {
-    header("war_wayland_make_fd");
+    // header("war_wayland_make_fd");
 
     int fd = syscall(SYS_socket, AF_UNIX, SOCK_STREAM, 0);
     assert(fd >= 0);
@@ -215,9 +203,9 @@ static inline int war_wayland_make_fd() {
     const char env_xdg_runtime_dir_prefix[] = "XDG_RUNTIME_DIR=";
     const char env_wayland_display_prefix[] = "WAYLAND_DISPLAY=";
     const size_t xdg_prefix_size = sizeof(env_xdg_runtime_dir_prefix);
-    call_king_terry("xdg_prefix_size: %lu", xdg_prefix_size);
+    // call_king_terry("xdg_prefix_size: %lu", xdg_prefix_size);
     const size_t wayland_prefix_size = sizeof(env_wayland_display_prefix);
-    call_king_terry("wayland_prefix_size: %lu", wayland_prefix_size);
+    // call_king_terry("wayland_prefix_size: %lu", wayland_prefix_size);
 
     enum {
         max_wayland_display = (64),
@@ -239,7 +227,7 @@ static inline int war_wayland_make_fd() {
                 0) {
             found_xdg_runtime_dir = 1;
             const char* val = *env + xdg_prefix_size - 1;
-            call_king_terry("val: %s", val);
+            // call_king_terry("val: %s", val);
             size_xdg_runtime_dir = strlen(val);
             assert(size_xdg_runtime_dir <= max_xdg_runtime_dir);
             memcpy(xdg_runtime_dir, val, size_xdg_runtime_dir);
@@ -249,7 +237,7 @@ static inline int war_wayland_make_fd() {
                            wayland_prefix_size - 1) == 0) {
             found_wayland_display = 1;
             const char* val = *env + wayland_prefix_size - 1;
-            call_king_terry("val: %s", val);
+            // call_king_terry("val: %s", val);
             size_wayland_display = strlen(val);
             assert(size_wayland_display <= max_wayland_display);
             memcpy(wayland_display, val, size_wayland_display);
@@ -283,14 +271,14 @@ static inline int war_wayland_make_fd() {
     size_t path_len = size_xdg_runtime_dir + size_wayland_display;
     size_t addr_len = offsetof(struct sockaddr_un, sun_path) + path_len;
 
-    call_king_terry("path: %s", addr.sun_path);
-    call_king_terry("path_len: %lu", path_len);
-    call_king_terry("addr_len: %lu", addr_len);
+    // call_king_terry("path: %s", addr.sun_path);
+    // call_king_terry("path_len: %lu", path_len);
+    // call_king_terry("addr_len: %lu", addr_len);
 
     int ret = connect(fd, (struct sockaddr*)&addr, addr_len);
     assert(ret >= 0);
 
-    end("war_wayland_make_fd");
+    // end("war_wayland_make_fd");
     return fd;
 }
 

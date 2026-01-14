@@ -1,18 +1,6 @@
 -------------------------------------------------------------------------------
 --
--- WAR - make music with vim motions
--- Copyright (C) 2025 Nick Monaco
---
--- This file is part of WAR 1.0 software.
--- WAR 1.0 software is licensed under the GNU Affero General Public License
--- version 3, with the following modification: attribution to the original
--- author is waived.
---
--- This program is distributed in the hope that it will be useful,
--- but WITHOUT ANY WARRANTY; without even the implied warranty of
--- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
---
--- For the full license text, see LICENSE-AGPL and LICENSE-CC-BY-SA and LICENSE.
+-- See LICENSE
 --
 -------------------------------------------------------------------------------
 
@@ -99,7 +87,7 @@ ctx_lua = {
     WR_REPEAT_RATE_US                   = 40000,  -- 40000
     WR_CURSOR_BLINK_DURATION_US         = 700000, -- 700000
     WR_UNDO_NOTES_BATCH_MAX             = 100,    -- <= 100
-    WR_FPS                              = 240.0,
+    WR_FPS                              = 60.0,
     WR_PLAY_CALLBACK_FPS                = 173.0,
     WR_CAPTURE_CALLBACK_FPS             = 47.0,
     WR_CALLBACK_SIZE                    = 4192,
@@ -122,17 +110,20 @@ ctx_lua = {
     VK_MAX_FRAMES                       = 1,
     VK_GLYPH_COUNT                      = 128,
     -- nsgt
-    NSGT_BIN_CAPACITY                   = 256 * 4,  -- fixed for tight-frame condition
-    NSGT_FRAME_CAPACITY                 = 128 * 4,   -- fixed for tight-frame condition
+    NSGT_BIN_CAPACITY                   = 1024,  -- fixed for tight-frame condition
+    NSGT_FRAME_CAPACITY                 = 2048,  -- fixed for tight-frame condition
     NSGT_FREQUENCY_MIN                  = 20,    -- fixed for tight-frame condition
     NSGT_FREQUENCY_MAX                  = 20000, -- fixed for tight-frame condition
     NSGT_ALPHA                          = 1.0,
     NSGT_WINDOW_LENGTH_MIN              = 32,
     NSGT_SHAPE_FACTOR                   = 6.0,
-    NSGT_RESOURCE_COUNT                 = 26,
+    NSGT_RESOURCE_COUNT                 = 25,
     NSGT_DESCRIPTOR_SET_COUNT           = 2,
-    NSGT_PIPELINE_COUNT                 = 2,
-    NSGT_SHADER_COUNT                   = 3,
+    NSGT_PIPELINE_COUNT                 = 6,
+    NSGT_SHADER_COUNT                   = 7,
+    NSGT_GRAPHICS_FPS                   = 240,
+    NSGT_GROUPS                         = 3,
+
     -- visual
     VK_NSGT_VISUAL_RESOURCE_COUNT       = 0,
     VK_NSGT_VISUAL_QUAD_CAPACITY        = 0, -- need room for align to 64
@@ -203,10 +194,13 @@ pool_wr = {
     { name = "ctx_nsgt.image_layout",                      type = "VkImageLayout",                   count = ctx_lua.NSGT_RESOURCE_COUNT },
     { name = "ctx_nsgt.access_flags",                      type = "VkAccessFlags",                   count = ctx_lua.NSGT_RESOURCE_COUNT },
     { name = "ctx_nsgt.pipeline_stage_flags",              type = "VkPipelineStageFlags",            count = ctx_lua.NSGT_RESOURCE_COUNT },
-    { name = "ctx_nsgt.src_idx",                           type = "uint32_t",                        count = ctx_lua.NSGT_RESOURCE_COUNT },
-    { name = "ctx_nsgt.dst_idx",                           type = "uint32_t",                        count = ctx_lua.NSGT_RESOURCE_COUNT },
-    { name = "ctx_nsgt.size",                              type = "VkDeviceSize",                    count = ctx_lua.NSGT_RESOURCE_COUNT },
-    { name = "ctx_nsgt.offset",                            type = "VkDeviceSize",                    count = ctx_lua.NSGT_RESOURCE_COUNT },
+    { name = "ctx_nsgt.fn_src_idx",                        type = "uint32_t",                        count = ctx_lua.NSGT_RESOURCE_COUNT },
+    { name = "ctx_nsgt.fn_dst_idx",                        type = "uint32_t",                        count = ctx_lua.NSGT_RESOURCE_COUNT },
+    { name = "ctx_nsgt.fn_size",                           type = "VkDeviceSize",                    count = ctx_lua.NSGT_RESOURCE_COUNT },
+    { name = "ctx_nsgt.fn_src_offset",                     type = "VkDeviceSize",                    count = ctx_lua.NSGT_RESOURCE_COUNT },
+    { name = "ctx_nsgt.fn_dst_offset",                     type = "VkDeviceSize",                    count = ctx_lua.NSGT_RESOURCE_COUNT },
+    { name = "ctx_nsgt.fn_data",                           type = "uint32_t",                        count = ctx_lua.NSGT_RESOURCE_COUNT },
+    { name = "ctx_nsgt.fn_data_2",                         type = "uint32_t",                        count = ctx_lua.NSGT_RESOURCE_COUNT },
     { name = "ctx_nsgt.descriptor_set",                    type = "VkDescriptorSet",                 count = ctx_lua.NSGT_DESCRIPTOR_SET_COUNT },
     { name = "ctx_nsgt.descriptor_set_layout",             type = "VkDescriptorSetLayout",           count = ctx_lua.NSGT_DESCRIPTOR_SET_COUNT },
     { name = "ctx_nsgt.image_descriptor_type",             type = "VkDescriptorType",                count = ctx_lua.NSGT_DESCRIPTOR_SET_COUNT },
@@ -224,6 +218,9 @@ pool_wr = {
     { name = "ctx_nsgt.push_constant_shader_stage_flags",  type = "VkShaderStageFlags",              count = ctx_lua.NSGT_PIPELINE_COUNT },
     { name = "ctx_nsgt.push_constant_size",                type = "uint32_t",                        count = ctx_lua.NSGT_PIPELINE_COUNT },
     { name = "ctx_nsgt.pipeline_bind_point",               type = "VkPipelineBindPoint",             count = ctx_lua.NSGT_PIPELINE_COUNT },
+    { name = "ctx_nsgt.size",                              type = "uint32_t",                        count = ctx_lua.NSGT_RESOURCE_COUNT },
+    { name = "ctx_nsgt.pipeline_dispatch_group",           type = "uint32_t",                        count = ctx_lua.NSGT_PIPELINE_COUNT * ctx_lua.NSGT_GROUPS },
+    { name = "ctx_nsgt.pipeline_local_size",               type = "uint32_t",                        count = ctx_lua.NSGT_PIPELINE_COUNT * ctx_lua.NSGT_GROUPS },
     -- env
     { name = "env",                                        type = "war_env",                         count = 1 },
     -- command context
