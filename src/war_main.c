@@ -2507,7 +2507,8 @@ war_label_cmd_timeout_done:
             // image_temp -> image
             ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image_temp;
             ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
-            ctx_nsgt->fn_size[0] = diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+            ctx_nsgt->fn_size[0] =
+                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
             ctx_nsgt->fn_dst_offset[0] = ctx_nsgt->size[ctx_nsgt->idx_image];
             // wav_temp -> wav
             ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_wav_temp;

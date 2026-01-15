@@ -141,6 +141,9 @@ static inline void war_nsgt_copy(uint32_t idx_count,
                         &copy);
         continue;
     war_label_copy_image:
+        VkImage src_img = ctx_nsgt->image[idx_src[i]];
+        VkImage dst_img = ctx_nsgt->image[idx_dst[i]];
+
         VkImageSubresourceLayers subresource = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .mipLevel = 0,
@@ -148,16 +151,17 @@ static inline void war_nsgt_copy(uint32_t idx_count,
             .layerCount = 1,
         };
 
-        // Convert size in bytes to number of pixels
+        // Get size in bytes and convert to number of pixels
         VkDeviceSize num_bytes =
-            size && size[i] ? size[i] : ctx_nsgt->size[idx_src[i]];
+            (size && size[i]) ? size[i] : ctx_nsgt->size[idx_src[i]];
         if (num_bytes == 0) continue;
 
-        uint32_t num_pixels = num_bytes / sizeof(float);
+        uint32_t num_pixels = (uint32_t)(num_bytes / sizeof(float));
         if (num_pixels == 0) continue;
 
-        // Linear offset in pixels
-        uint32_t linear_offset = dst_offset ? dst_offset[i] / sizeof(float) : 0;
+        // Compute linear pixel offset in destination
+        uint32_t linear_offset =
+            (dst_offset ? dst_offset[i] / sizeof(float) : 0);
 
         // Image dimensions
         uint32_t image_width = ctx_nsgt->frame_capacity;
@@ -165,15 +169,13 @@ static inline void war_nsgt_copy(uint32_t idx_count,
 
         if (linear_offset >= image_width * image_height) continue;
 
+        // Clip to image capacity
         uint32_t max_pixels = image_width * image_height - linear_offset;
         if (num_pixels > max_pixels) num_pixels = max_pixels;
 
         // Convert linear offset → 2D coordinates
         uint32_t dst_x = linear_offset % image_width;
         uint32_t dst_y = linear_offset / image_width;
-
-        VkImage src_img = ctx_nsgt->image[idx_src[i]];
-        VkImage dst_img = ctx_nsgt->image[idx_dst[i]];
 
         // Copy row by row
         while (num_pixels > 0 && dst_y < image_height) {
@@ -187,17 +189,11 @@ static inline void war_nsgt_copy(uint32_t idx_count,
 
             VkImageCopy copy_region = {
                 .srcSubresource = subresource,
-                .srcOffset = {0, 0, 0},
+                .srcOffset = {0, 0, 0}, // full row copy from src
                 .dstSubresource = subresource,
                 .dstOffset = dst_offset_2d,
                 .extent = extent,
             };
-
-            call_king_terry(
-                "copied over to image: %u bytes, at offset: (%u,%u)",
-                copy_width * sizeof(float),
-                dst_x,
-                dst_y);
 
             vkCmdCopyImage(cmd,
                            src_img,

@@ -59,7 +59,7 @@ void main() {
     float mag = magnitude_temp_buffer.data[off];
     float trans = transient_temp_buffer.data[off];
 
-float val = mag + 0.5 * trans; // boost sudden onsets
-val = clamp(val, 0.0, 1.0);
-imageStore(image_temp, ivec2(sample_idx, bin_idx), vec4(val,val,val,1.0));
+    float val = mag + 0.5 * trans; // boost sudden onsets
+    val = clamp(val, 0.0, 1.0);
+    imageStore(image_temp, ivec2(sample_idx, bin_idx), vec4(val,val,val,1.0));
 }
