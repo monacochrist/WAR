@@ -48,8 +48,6 @@ static inline void war_nsgt_flush(uint32_t idx_count,
                                   VkDeviceSize* size,
                                   VkDevice device,
                                   war_nsgt_context* ctx_nsgt) {
-    assert(idx_count <= ctx_nsgt->resource_count);
-    if (idx_count == 0) { return; }
     for (uint32_t i = 0; i < idx_count; i++) {
         VkDeviceSize off = offset ? offset[i] : 0;
         VkDeviceSize sz = size ? size[i] : ctx_nsgt->capacity[idx[i]];
@@ -80,8 +78,6 @@ static inline void war_nsgt_invalidate(uint32_t idx_count,
                                        VkDeviceSize* size,
                                        VkDevice device,
                                        war_nsgt_context* ctx_nsgt) {
-    assert(idx_count <= ctx_nsgt->resource_count);
-    if (idx_count == 0) { return; }
     for (uint32_t i = 0; i < idx_count; i++) {
         VkDeviceSize off = offset ? offset[i] : 0;
         VkDeviceSize sz = size ? size[i] : ctx_nsgt->capacity[idx[i]];
@@ -114,13 +110,19 @@ static inline void war_nsgt_copy(uint32_t idx_count,
                                  VkDeviceSize* size,
                                  VkCommandBuffer cmd,
                                  war_nsgt_context* ctx_nsgt) {
-    assert(idx_count <= ctx_nsgt->resource_count);
-    if (idx_count == 0) { return; }
     for (uint32_t i = 0; i < idx_count; i++) {
+        if (ctx_nsgt->image[idx_src[i]]) { goto war_label_copy_image; }
         VkDeviceSize src_offset_temp = src_offset ? src_offset[i] : 0;
         VkDeviceSize dst_offset_temp = dst_offset ? dst_offset[i] : 0;
         VkDeviceSize size_temp = size[i];
         if (!size_temp) {
+            src_offset_temp = 0;
+            dst_offset_temp = 0;
+            VkDeviceSize dst_capacity = ctx_nsgt->capacity[idx_dst[i]];
+            size_temp = ctx_nsgt->capacity[idx_src[i]];
+            if (size_temp > dst_capacity) { size_temp = dst_capacity; }
+        }
+        if (dst_offset_temp + size_temp > ctx_nsgt->capacity[idx_dst[i]]) {
             src_offset_temp = 0;
             dst_offset_temp = 0;
             VkDeviceSize dst_capacity = ctx_nsgt->capacity[idx_dst[i]];
@@ -137,27 +139,124 @@ static inline void war_nsgt_copy(uint32_t idx_count,
                         ctx_nsgt->buffer[idx_dst[i]],
                         1,
                         &copy);
+        continue;
+    war_label_copy_image:
+        VkImageSubresourceLayers subresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        };
+
+        // Convert size in bytes to number of pixels
+        VkDeviceSize num_bytes =
+            size && size[i] ? size[i] : ctx_nsgt->size[idx_src[i]];
+        if (num_bytes == 0) continue;
+
+        uint32_t num_pixels = num_bytes / sizeof(float);
+        if (num_pixels == 0) continue;
+
+        // Linear offset in pixels
+        uint32_t linear_offset = dst_offset ? dst_offset[i] / sizeof(float) : 0;
+
+        // Image dimensions
+        uint32_t image_width = ctx_nsgt->frame_capacity;
+        uint32_t image_height = ctx_nsgt->bin_capacity;
+
+        if (linear_offset >= image_width * image_height) continue;
+
+        uint32_t max_pixels = image_width * image_height - linear_offset;
+        if (num_pixels > max_pixels) num_pixels = max_pixels;
+
+        // Convert linear offset → 2D coordinates
+        uint32_t dst_x = linear_offset % image_width;
+        uint32_t dst_y = linear_offset / image_width;
+
+        VkImage src_img = ctx_nsgt->image[idx_src[i]];
+        VkImage dst_img = ctx_nsgt->image[idx_dst[i]];
+
+        // Copy row by row
+        while (num_pixels > 0 && dst_y < image_height) {
+            uint32_t row_remaining = image_width - dst_x;
+            uint32_t copy_width =
+                (num_pixels < row_remaining) ? num_pixels : row_remaining;
+            uint32_t copy_height = 1; // one row per iteration
+
+            VkOffset3D dst_offset_2d = {(int32_t)dst_x, (int32_t)dst_y, 0};
+            VkExtent3D extent = {copy_width, copy_height, 1};
+
+            VkImageCopy copy_region = {
+                .srcSubresource = subresource,
+                .srcOffset = {0, 0, 0},
+                .dstSubresource = subresource,
+                .dstOffset = dst_offset_2d,
+                .extent = extent,
+            };
+
+            call_king_terry(
+                "copied over to image: %u bytes, at offset: (%u,%u)",
+                copy_width * sizeof(float),
+                dst_x,
+                dst_y);
+
+            vkCmdCopyImage(cmd,
+                           src_img,
+                           ctx_nsgt->image_layout[idx_src[i]],
+                           dst_img,
+                           ctx_nsgt->image_layout[idx_dst[i]],
+                           1,
+                           &copy_region);
+
+            num_pixels -= copy_width;
+            dst_x = 0;  // next row starts at x=0
+            dst_y += 1; // move to next row
+        }
     }
 }
 
-static inline void war_nsgt_image_barrier(uint32_t idx_count,
-                                          uint32_t* idx,
-                                          VkPipelineStageFlags dst_stage,
-                                          VkAccessFlags dst_access,
-                                          VkImageLayout new_layout,
-                                          VkCommandBuffer cmd,
-                                          war_nsgt_context* ctx_nsgt) {
-    assert(idx_count <= ctx_nsgt->resource_count);
-    if (idx_count == 0) { return; }
-    VkPipelineStageFlags pipeline_stage_flags_mask = 0;
+static inline void war_nsgt_barrier(uint32_t idx_count,
+                                    uint32_t* idx,
+                                    VkDeviceSize* dst_offset,
+                                    VkDeviceSize* dst_size,
+                                    VkPipelineStageFlags* dst_stage,
+                                    VkAccessFlags* dst_access,
+                                    VkImageLayout* dst_image_layout,
+                                    VkCommandBuffer cmd,
+                                    war_nsgt_context* ctx_nsgt) {
     for (uint32_t i = 0; i < idx_count; i++) {
+        if (ctx_nsgt->image[idx[i]]) { goto war_label_image_barrier; }
+        ctx_nsgt->buffer_memory_barrier[i] = (VkBufferMemoryBarrier){
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .pNext = NULL,
+            .srcAccessMask = ctx_nsgt->access_flags[idx[i]],
+            .dstAccessMask = dst_access[i],
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = ctx_nsgt->buffer[idx[i]],
+            .offset = dst_offset ? dst_offset[i] : 0,
+            .size = dst_size ? dst_size[i] : VK_WHOLE_SIZE,
+        };
+        vkCmdPipelineBarrier(cmd,
+                             ctx_nsgt->pipeline_stage_flags[idx[i]],
+                             dst_stage[i],
+                             0, // dependencyFlags
+                             0,
+                             NULL, // memory barriers
+                             1,
+                             &ctx_nsgt->buffer_memory_barrier[i],
+                             0,
+                             NULL); // image barriers
+        ctx_nsgt->access_flags[idx[i]] = dst_access[i];
+        ctx_nsgt->pipeline_stage_flags[idx[i]] = dst_stage[i];
+        continue;
+    war_label_image_barrier:
         ctx_nsgt->image_memory_barrier[i] = (VkImageMemoryBarrier){
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .pNext = NULL,
             .srcAccessMask = ctx_nsgt->access_flags[idx[i]],
-            .dstAccessMask = dst_access,
+            .dstAccessMask = dst_access[i],
             .oldLayout = ctx_nsgt->image_layout[idx[i]],
-            .newLayout = new_layout,
+            .newLayout = dst_image_layout[i],
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .image = ctx_nsgt->image[idx[i]],
@@ -170,171 +269,37 @@ static inline void war_nsgt_image_barrier(uint32_t idx_count,
                     .layerCount = 1,
                 },
         };
-        pipeline_stage_flags_mask |= ctx_nsgt->pipeline_stage_flags[idx[i]];
-        ctx_nsgt->image_layout[idx[i]] = new_layout;
-        ctx_nsgt->access_flags[idx[i]] = dst_access;
-        ctx_nsgt->pipeline_stage_flags[idx[i]] = dst_stage;
-    }
-    vkCmdPipelineBarrier(cmd,
-                         pipeline_stage_flags_mask,
-                         dst_stage,
-                         0, // dependencyFlags
-                         0,
-                         NULL, // memory barriers
-                         0,
-                         NULL, // buffer barriers
-                         idx_count,
-                         ctx_nsgt->image_memory_barrier);
-}
-
-static inline void war_nsgt_buffer_barrier(uint32_t idx_count,
-                                           uint32_t* idx,
-                                           VkPipelineStageFlags dst_stage,
-                                           VkAccessFlags dst_access,
-                                           VkCommandBuffer cmd,
-                                           war_nsgt_context* ctx_nsgt) {
-    assert(idx_count <= ctx_nsgt->resource_count);
-    if (idx_count == 0) { return; }
-    VkPipelineStageFlags pipeline_stage_flags_mask = 0;
-    for (uint32_t i = 0; i < idx_count; i++) {
-        ctx_nsgt->buffer_memory_barrier[i] = (VkBufferMemoryBarrier){
-            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-            .pNext = NULL,
-            .srcAccessMask = ctx_nsgt->access_flags[idx[i]],
-            .dstAccessMask = dst_access,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = ctx_nsgt->buffer[idx[i]],
-            .offset = 0,
-            .size = VK_WHOLE_SIZE,
-        };
-        pipeline_stage_flags_mask |= ctx_nsgt->pipeline_stage_flags[idx[i]];
-        ctx_nsgt->access_flags[idx[i]] = dst_access;
-        ctx_nsgt->pipeline_stage_flags[idx[i]] = dst_stage;
-    }
-    vkCmdPipelineBarrier(cmd,
-                         pipeline_stage_flags_mask,
-                         dst_stage,
-                         0, // dependencyFlags
-                         0,
-                         NULL, // memory barriers
-                         idx_count,
-                         ctx_nsgt->buffer_memory_barrier,
-                         0,
-                         NULL); // image barriers
-}
-
-static inline void war_nsgt_copy_image(uint32_t idx_count,
-                                       uint32_t* idx_src,
-                                       uint32_t* idx_dst,
-                                       uint32_t* dst_offset,
-                                       VkCommandBuffer cmd,
-                                       war_nsgt_context* ctx_nsgt) {
-    assert(idx_count <= ctx_nsgt->resource_count);
-    if (idx_count == 0) { return; }
-    uint32_t barriers = 0;
-    for (uint32_t i = 0; i < idx_count; i++) {
-        if (ctx_nsgt->image_layout[idx_src[i]] == VK_IMAGE_LAYOUT_GENERAL) {
-            continue;
-        }
-        ctx_nsgt->fn_src_idx[barriers] = idx_src[i];
-        barriers++;
-        if (ctx_nsgt->image_layout[idx_dst[i]] == VK_IMAGE_LAYOUT_GENERAL) {
-            continue;
-        }
-        ctx_nsgt->fn_src_idx[barriers] = idx_dst[i];
-        barriers++;
-    }
-    war_nsgt_image_barrier(barriers,
-                           ctx_nsgt->fn_src_idx,
-                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                           VK_ACCESS_SHADER_WRITE_BIT |
-                               VK_ACCESS_SHADER_READ_BIT,
-                           VK_IMAGE_LAYOUT_GENERAL,
-                           cmd,
-                           ctx_nsgt);
-    for (uint32_t i = 0; i < idx_count; i++) {
-        VkImageSubresourceLayers subresource = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        };
-        VkOffset3D src_offset_temp = {0, 0, 0};
-        VkOffset3D dst_offset_temp = {dst_offset[i], 0, 0};
-        VkExtent3D extent = {
-            .width = ctx_nsgt->frame_capacity,
-            .height = ctx_nsgt->bin_capacity,
-            .depth = 1,
-        };
-        VkImageCopy copy_region = {
-            .srcSubresource = subresource,
-            .srcOffset = src_offset_temp,
-            .dstSubresource = subresource,
-            .dstOffset = dst_offset_temp,
-            .extent = extent,
-        };
-        VkImage src_img = ctx_nsgt->image[idx_src[i]];
-        VkImage dst_img = ctx_nsgt->image[idx_dst[i]];
-        vkCmdCopyImage(cmd,
-                       src_img,
-                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       dst_img,
-                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       1,
-                       &copy_region);
+        vkCmdPipelineBarrier(cmd,
+                             ctx_nsgt->pipeline_stage_flags[idx[i]],
+                             dst_stage[i],
+                             0,
+                             0,
+                             NULL,
+                             0,
+                             NULL,
+                             1,
+                             &ctx_nsgt->image_memory_barrier[i]);
+        ctx_nsgt->image_layout[idx[i]] = dst_image_layout[i];
+        ctx_nsgt->access_flags[idx[i]] = dst_access[i];
+        ctx_nsgt->pipeline_stage_flags[idx[i]] = dst_stage[i];
     }
 }
 
-static inline void war_nsgt_fill(uint32_t idx_count,
-                                 uint32_t* idx,
-                                 VkDeviceSize* dst_offset,
-                                 VkDeviceSize* dst_size,
-                                 uint32_t* data,
-                                 VkCommandBuffer cmd,
-                                 war_nsgt_context* ctx_nsgt) {
-    assert(idx_count <= ctx_nsgt->resource_count);
-    if (idx_count == 0) { return; }
+static inline void war_nsgt_clear(uint32_t idx_count,
+                                  uint32_t* idx,
+                                  VkDeviceSize* dst_offset,
+                                  VkDeviceSize* dst_size,
+                                  VkCommandBuffer cmd,
+                                  war_nsgt_context* ctx_nsgt) {
     for (uint32_t i = 0; i < idx_count; i++) {
-        VkDeviceSize dst_offset_temp = dst_offset[i];
-        VkDeviceSize dst_size_temp = dst_size[i];
-        if (!dst_size_temp) {
-            dst_offset_temp = 0;
-            dst_size_temp = ctx_nsgt->capacity[idx[i]];
-        }
-        vkCmdFillBuffer(cmd,
-                        ctx_nsgt->buffer[idx[i]],
-                        dst_offset_temp,
-                        dst_size_temp,
-                        data[i]);
-    }
-}
-
-static inline void war_nsgt_clear_image(uint32_t idx_count,
-                                        uint32_t* idx,
-                                        VkCommandBuffer cmd,
-                                        war_nsgt_context* ctx_nsgt) {
-    assert(idx_count <= ctx_nsgt->resource_count);
-    if (idx_count == 0) { return; }
-    uint32_t dst_barriers = 0;
-    for (uint32_t i = 0; i < idx_count; i++) {
-        if (ctx_nsgt->image_layout[idx[i]] == VK_IMAGE_LAYOUT_GENERAL) {
-            continue;
-        }
-        ctx_nsgt->fn_dst_idx[dst_barriers] = idx[i];
-        dst_barriers++;
-    }
-    war_nsgt_image_barrier(dst_barriers,
-                           ctx_nsgt->fn_dst_idx,
-                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                           VK_ACCESS_SHADER_WRITE_BIT |
-                               VK_ACCESS_SHADER_READ_BIT,
-                           VK_IMAGE_LAYOUT_GENERAL,
-                           cmd,
-                           ctx_nsgt);
-    for (uint32_t i = 0; i < idx_count; i++) {
+        if (ctx_nsgt->image[idx[i]]) { goto war_label_clear_image; }
+        VkDeviceSize dst_offset_temp = dst_offset ? dst_offset[i] : 0;
+        VkDeviceSize dst_size_temp =
+            dst_size ? dst_size[i] : ctx_nsgt->capacity[idx[i]];
+        vkCmdFillBuffer(
+            cmd, ctx_nsgt->buffer[idx[i]], dst_offset_temp, dst_size_temp, 0);
+        continue;
+    war_label_clear_image:
         VkClearColorValue clear_color_value;
         clear_color_value.float32[0] = 0.0f;
         clear_color_value.float32[1] = 0.0f;
@@ -345,6 +310,7 @@ static inline void war_nsgt_clear_image(uint32_t idx_count,
         image_subresource_range.baseArrayLayer = 0;
         image_subresource_range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         image_subresource_range.baseMipLevel = 0;
+        image_subresource_range.levelCount = 1;
         vkCmdClearColorImage(cmd,
                              ctx_nsgt->image[idx[i]],
                              ctx_nsgt->image_layout[idx[i]],
@@ -445,8 +411,6 @@ static inline void war_nsgt_compute(VkDevice device,
     };
     result = vkBeginCommandBuffer(cmd, &cmd_buffer_begin_info);
     assert(result == VK_SUCCESS);
-
-    
 
     result = vkEndCommandBuffer(cmd);
     assert(result == VK_SUCCESS);
@@ -766,6 +730,12 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         ctx_nsgt->pipeline_dispatch_group[i] = 1;
         ctx_nsgt->pipeline_local_size[i] = 1;
     }
+    ctx_nsgt->fn_image_layout = war_pool_alloc(
+        pool_wr, sizeof(VkImageLayout) * ctx_nsgt->resource_count);
+    ctx_nsgt->fn_access_flags = war_pool_alloc(
+        pool_wr, sizeof(VkAccessFlags) * ctx_nsgt->resource_count);
+    ctx_nsgt->fn_pipeline_stage_flags = war_pool_alloc(
+        pool_wr, sizeof(VkPipelineStageFlags) * ctx_nsgt->resource_count);
     //-------------------------------------------------------------------------
     // NSGT IDX
     //-------------------------------------------------------------------------
@@ -1193,7 +1163,8 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
                      .height = ctx_nsgt->bin_capacity,
                      .depth = 1};
     ctx_nsgt->image_usage_flags[ctx_nsgt->idx_image_temp] =
-        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     // image
     ctx_nsgt->memory_property_flags[ctx_nsgt->idx_image] =
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -1205,7 +1176,8 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
                      .height = ctx_nsgt->bin_capacity,
                      .depth = 1};
     ctx_nsgt->image_usage_flags[ctx_nsgt->idx_image] =
-        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     // wav_stage
     ctx_nsgt->memory_property_flags[ctx_nsgt->idx_wav_stage] =
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
@@ -1241,6 +1213,7 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     vkGetPhysicalDeviceMemoryProperties(physical_device,
                                         &physical_device_memory_properties);
     for (VkDeviceSize i = 0; i < ctx_nsgt->resource_count; i++) {
+        ctx_nsgt->pipeline_stage_flags[i] = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         VkImageUsageFlags image_usage_flags = ctx_nsgt->image_usage_flags[i];
         if ((image_usage_flags &
              (VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) != 0) {
@@ -1704,18 +1677,7 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     };
     result = vkBeginCommandBuffer(cmd_buffer, &cmd_buffer_begin_info);
     assert(result == VK_SUCCESS);
-    // images
-    ctx_nsgt->fn_idx_count = 1;
-    war_nsgt_image_barrier(ctx_nsgt->fn_idx_count,
-                           &ctx_nsgt->idx_image,
-                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                           VK_ACCESS_SHADER_WRITE_BIT |
-                               VK_ACCESS_SHADER_READ_BIT,
-                           VK_IMAGE_LAYOUT_GENERAL,
-                           cmd_buffer,
-                           ctx_nsgt);
-    //  src
+    //   src
     ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_offset_stage;
     ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_hop_stage;
     ctx_nsgt->fn_src_idx[2] = ctx_nsgt->idx_length_stage;
@@ -1732,28 +1694,54 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     ctx_nsgt->fn_dst_idx[5] = ctx_nsgt->idx_frequency;
     ctx_nsgt->fn_dst_idx[6] = ctx_nsgt->idx_cis;
     ctx_nsgt->fn_idx_count = 7;
-    memset(ctx_nsgt->fn_src_offset,
-           0,
-           ctx_nsgt->fn_idx_count * sizeof(VkDeviceSize));
-    memset(ctx_nsgt->fn_dst_offset,
-           0,
-           ctx_nsgt->fn_idx_count * sizeof(VkDeviceSize));
-    memset(ctx_nsgt->fn_size, 0, ctx_nsgt->fn_idx_count * sizeof(VkDeviceSize));
+    for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+        ctx_nsgt->fn_pipeline_stage_flags[i] = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        ctx_nsgt->fn_access_flags[i] = VK_ACCESS_TRANSFER_WRITE_BIT;
+    }
+    war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                     ctx_nsgt->fn_dst_idx,
+                     0,
+                     0,
+                     ctx_nsgt->fn_pipeline_stage_flags,
+                     ctx_nsgt->fn_access_flags,
+                     0,
+                     cmd_buffer,
+                     ctx_nsgt);
+    for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+        ctx_nsgt->fn_pipeline_stage_flags[i] = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        ctx_nsgt->fn_access_flags[i] = VK_ACCESS_TRANSFER_READ_BIT;
+    }
+    war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                     ctx_nsgt->fn_src_idx,
+                     0,
+                     0,
+                     ctx_nsgt->fn_pipeline_stage_flags,
+                     ctx_nsgt->fn_access_flags,
+                     0,
+                     cmd_buffer,
+                     ctx_nsgt);
     war_nsgt_copy(ctx_nsgt->fn_idx_count,
                   ctx_nsgt->fn_src_idx,
                   ctx_nsgt->fn_dst_idx,
-                  ctx_nsgt->fn_src_offset,
-                  ctx_nsgt->fn_dst_offset,
+                  0,
+                  0,
                   ctx_nsgt->fn_size,
                   cmd_buffer,
                   ctx_nsgt);
-    war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
-                            ctx_nsgt->fn_dst_idx,
-                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                            VK_ACCESS_SHADER_READ_BIT |
-                                VK_ACCESS_SHADER_WRITE_BIT,
-                            cmd_buffer,
-                            ctx_nsgt);
+    ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image;
+    ctx_nsgt->fn_pipeline_stage_flags[0] = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    ctx_nsgt->fn_access_flags[0] = 0;
+    ctx_nsgt->fn_image_layout[0] = VK_IMAGE_LAYOUT_GENERAL;
+    ctx_nsgt->fn_idx_count = 1;
+    war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                     ctx_nsgt->fn_src_idx,
+                     0,
+                     0,
+                     ctx_nsgt->fn_pipeline_stage_flags,
+                     ctx_nsgt->fn_access_flags,
+                     ctx_nsgt->fn_image_layout,
+                     cmd_buffer,
+                     ctx_nsgt);
     result = vkEndCommandBuffer(cmd_buffer);
     assert(result == VK_SUCCESS);
     VkSubmitInfo submit_info = {
@@ -1783,8 +1771,7 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     //-------------------------------------------------------------------------
     // FLAGS
     //-------------------------------------------------------------------------
-    ctx_nsgt->dirty_compute = 1;
     end("war_nsgt_init");
 }
 
-#endif
+#endif // WAR_NSGT_H

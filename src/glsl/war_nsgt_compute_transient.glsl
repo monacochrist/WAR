@@ -45,4 +45,28 @@ shared vec2 cis_shared[WINDOW_LENGTH_CAPACITY];
 shared float window_shared[WINDOW_LENGTH_CAPACITY];
 
 void main() {
+    uint tid = gl_LocalInvocationID.x;
+    uint group_id = gl_WorkGroupID.x;
+    uint threads_per_group = gl_WorkGroupSize.x;
+
+    uint arg_samples = push_constant.arg_1;
+    uint bins       = push_constant.bin_capacity;
+
+    uint global_tid = tid + group_id * threads_per_group;
+
+    for(uint s = global_tid; s < arg_samples; s += threads_per_group * gl_NumWorkGroups.x) {
+        for(uint b = 0; b < bins; b++) {
+            uint off = b * arg_samples; // linearized index
+
+            float mag_current = magnitude_temp_buffer.data[off + s];
+            float mag_prev = (s > 0) ? magnitude_temp_buffer.data[off + s - 1] : 0.0;
+
+            // transient = positive increase
+            float trans = max(mag_current - mag_prev, 0.0);
+
+            transient_temp_buffer.data[off + s] = trans;
+        }
+    }
+    memoryBarrier();
+    barrier();
 }

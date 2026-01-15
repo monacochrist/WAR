@@ -45,4 +45,28 @@ shared vec2 cis_shared[WINDOW_LENGTH_CAPACITY];
 shared float window_shared[WINDOW_LENGTH_CAPACITY];
 
 void main() {
+    uint tid = gl_LocalInvocationID.x;
+    uint group_id = gl_WorkGroupID.x;
+    uint threads_per_group = gl_WorkGroupSize.x;
+
+    uint arg_samples = push_constant.arg_1;
+    uint bins       = push_constant.bin_capacity;
+
+    uint global_tid = tid + group_id * threads_per_group;
+
+    // Each thread processes every threads_per_group * numWorkGroups samples
+    for(uint s = global_tid; s < arg_samples; s += threads_per_group * gl_NumWorkGroups.x) {
+        for(uint b = 0; b < bins; b++) {
+            // Compute linear index in the buffer
+            uint off = b * arg_samples; // assuming row-major: bin-major layout
+            vec2 coeff = nsgt_temp_buffer.data[off + s];
+
+            // Compute magnitude
+            float mag = length(coeff); // sqrt(x^2 + y^2)
+            magnitude_temp_buffer.data[off + s] = mag;
+        }
+    }
+
+    memoryBarrier();
+    barrier();
 }

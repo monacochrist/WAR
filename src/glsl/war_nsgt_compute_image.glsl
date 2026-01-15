@@ -45,4 +45,21 @@ shared vec2 cis_shared[WINDOW_LENGTH_CAPACITY];
 shared float window_shared[WINDOW_LENGTH_CAPACITY];
 
 void main() {
+    uint sample_idx = gl_GlobalInvocationID.x; // x-dimension → sample
+    uint bin_idx    = gl_GlobalInvocationID.y; // y-dimension → bin
+
+    uint num_samples = push_constant.arg_1;
+    uint bins        = push_constant.bin_capacity;
+
+    if(sample_idx >= num_samples || bin_idx >= bins) return;
+
+    // Compute linear index into buffers
+    uint off = bin_idx * num_samples + sample_idx;
+
+    float mag = magnitude_temp_buffer.data[off];
+    float trans = transient_temp_buffer.data[off];
+
+float val = mag + 0.5 * trans; // boost sudden onsets
+val = clamp(val, 0.0, 1.0);
+imageStore(image_temp, ivec2(sample_idx, bin_idx), vec4(val,val,val,1.0));
 }

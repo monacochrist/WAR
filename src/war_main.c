@@ -2195,7 +2195,8 @@ war_label_cmd_timeout_done:
             //-------------------------------------------------------------------------
             // NSGT COMPUTE PIPELINE
             //-------------------------------------------------------------------------
-            if ((ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) ||
+            if ((ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
+                 ctx_fsm->current_mode != ctx_fsm->MODE_COMMAND) ||
                 capture_wav->memfd_size <= 44) {
                 goto war_label_skip_nsgt_graphics_compute;
             }
@@ -2211,6 +2212,39 @@ war_label_cmd_timeout_done:
             if (diff_samples == 0 ||
                 diff_samples + current_samples >= capture_wav->memfd_capacity) {
                 goto war_label_skip_nsgt_graphics_compute;
+            }
+            if (ctx_nsgt->dirty_compute) {
+                ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image;
+                ctx_nsgt->fn_image_layout[0] = VK_IMAGE_LAYOUT_GENERAL;
+                ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_wav;
+                ctx_nsgt->fn_image_layout[1] = 0;
+                ctx_nsgt->fn_src_idx[2] = ctx_nsgt->idx_nsgt;
+                ctx_nsgt->fn_image_layout[2] = 0;
+                ctx_nsgt->fn_src_idx[3] = ctx_nsgt->idx_magnitude;
+                ctx_nsgt->fn_image_layout[3] = 0;
+                ctx_nsgt->fn_src_idx[4] = ctx_nsgt->idx_transient;
+                ctx_nsgt->fn_image_layout[4] = 0;
+                ctx_nsgt->fn_idx_count = 5;
+                for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+                    ctx_nsgt->fn_pipeline_stage_flags[i] =
+                        VK_PIPELINE_STAGE_TRANSFER_BIT;
+                    ctx_nsgt->fn_access_flags[i] = VK_ACCESS_TRANSFER_WRITE_BIT;
+                }
+                war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                                 ctx_nsgt->fn_src_idx,
+                                 0,
+                                 0,
+                                 ctx_nsgt->fn_pipeline_stage_flags,
+                                 ctx_nsgt->fn_access_flags,
+                                 ctx_nsgt->fn_image_layout,
+                                 ctx_vk->cmd_buffer,
+                                 ctx_nsgt);
+                war_nsgt_clear(ctx_nsgt->fn_idx_count,
+                               ctx_nsgt->fn_src_idx,
+                               0,
+                               0,
+                               ctx_vk->cmd_buffer,
+                               ctx_nsgt);
             }
             float* capture_wav_samples = (float*)(capture_wav->file + 44);
             float* stage_samples =
@@ -2229,8 +2263,30 @@ war_label_cmd_timeout_done:
                            ctx_nsgt);
             ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_wav_stage;
             ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_temp;
-            ctx_nsgt->fn_size[0] = diff_bytes;
+            ctx_nsgt->fn_pipeline_stage_flags[0] =
+                VK_PIPELINE_STAGE_TRANSFER_BIT;
+            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_TRANSFER_READ_BIT;
             ctx_nsgt->fn_idx_count = 1;
+            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                             ctx_nsgt->fn_src_idx,
+                             0,
+                             0,
+                             ctx_nsgt->fn_pipeline_stage_flags,
+                             ctx_nsgt->fn_access_flags,
+                             0,
+                             ctx_vk->cmd_buffer,
+                             ctx_nsgt);
+            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_TRANSFER_WRITE_BIT;
+            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                             ctx_nsgt->fn_dst_idx,
+                             0,
+                             0,
+                             ctx_nsgt->fn_pipeline_stage_flags,
+                             ctx_nsgt->fn_access_flags,
+                             0,
+                             ctx_vk->cmd_buffer,
+                             ctx_nsgt);
+            ctx_nsgt->fn_size[0] = diff_bytes;
             war_nsgt_copy(ctx_nsgt->fn_idx_count,
                           ctx_nsgt->fn_src_idx,
                           ctx_nsgt->fn_dst_idx,
@@ -2240,15 +2296,23 @@ war_label_cmd_timeout_done:
                           ctx_vk->cmd_buffer,
                           ctx_nsgt);
             ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_temp;
-            ctx_nsgt->fn_idx_count = 1;
-            war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
-                                    ctx_nsgt->fn_dst_idx,
-                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                    VK_ACCESS_SHADER_READ_BIT |
-                                        VK_ACCESS_SHADER_WRITE_BIT,
-                                    ctx_vk->cmd_buffer,
-                                    ctx_nsgt);
+            ctx_nsgt->fn_pipeline_stage_flags[0] =
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
+            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_nsgt_temp;
+            ctx_nsgt->fn_pipeline_stage_flags[1] =
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            ctx_nsgt->fn_access_flags[1] = VK_ACCESS_SHADER_WRITE_BIT;
+            ctx_nsgt->fn_idx_count = 2;
+            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                             ctx_nsgt->fn_dst_idx,
+                             0,
+                             0,
+                             ctx_nsgt->fn_pipeline_stage_flags,
+                             ctx_nsgt->fn_access_flags,
+                             0,
+                             ctx_vk->cmd_buffer,
+                             ctx_nsgt);
             uint32_t nsgt_local_size_x =
                 ctx_nsgt
                     ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_nsgt *
@@ -2270,13 +2334,23 @@ war_label_cmd_timeout_done:
                 ctx_vk->cmd_buffer,
                 ctx_nsgt);
             ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_nsgt_temp;
-            ctx_nsgt->fn_idx_count = 1;
-            war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
-                                    ctx_nsgt->fn_dst_idx,
-                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                    VK_ACCESS_SHADER_READ_BIT,
-                                    ctx_vk->cmd_buffer,
-                                    ctx_nsgt);
+            ctx_nsgt->fn_pipeline_stage_flags[0] =
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
+            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_magnitude_temp;
+            ctx_nsgt->fn_pipeline_stage_flags[1] =
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            ctx_nsgt->fn_access_flags[1] = VK_ACCESS_SHADER_WRITE_BIT;
+            ctx_nsgt->fn_idx_count = 2;
+            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                             ctx_nsgt->fn_dst_idx,
+                             0,
+                             0,
+                             ctx_nsgt->fn_pipeline_stage_flags,
+                             ctx_nsgt->fn_access_flags,
+                             0,
+                             ctx_vk->cmd_buffer,
+                             ctx_nsgt);
             uint32_t magnitude_local_size_x =
                 ctx_nsgt
                     ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_nsgt *
@@ -2296,13 +2370,23 @@ war_label_cmd_timeout_done:
                 ctx_vk->cmd_buffer,
                 ctx_nsgt);
             ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_magnitude_temp;
-            ctx_nsgt->fn_idx_count = 1;
-            war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
-                                    ctx_nsgt->fn_dst_idx,
-                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                    VK_ACCESS_SHADER_READ_BIT,
-                                    ctx_vk->cmd_buffer,
-                                    ctx_nsgt);
+            ctx_nsgt->fn_pipeline_stage_flags[0] =
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
+            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_transient_temp;
+            ctx_nsgt->fn_pipeline_stage_flags[1] =
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            ctx_nsgt->fn_access_flags[1] = VK_ACCESS_SHADER_WRITE_BIT;
+            ctx_nsgt->fn_idx_count = 2;
+            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                             ctx_nsgt->fn_dst_idx,
+                             0,
+                             0,
+                             ctx_nsgt->fn_pipeline_stage_flags,
+                             ctx_nsgt->fn_access_flags,
+                             0,
+                             ctx_vk->cmd_buffer,
+                             ctx_nsgt);
             uint32_t transient_local_size_x =
                 ctx_nsgt->pipeline_local_size
                     [ctx_nsgt->pipeline_idx_compute_transient *
@@ -2322,43 +2406,173 @@ war_label_cmd_timeout_done:
                 ctx_vk->cmd_buffer,
                 ctx_nsgt);
             ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_transient_temp;
-            ctx_nsgt->fn_idx_count = 1;
-            war_nsgt_buffer_barrier(ctx_nsgt->fn_idx_count,
-                                    ctx_nsgt->fn_dst_idx,
-                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                    VK_ACCESS_SHADER_READ_BIT,
-                                    ctx_vk->cmd_buffer,
-                                    ctx_nsgt);
+            ctx_nsgt->fn_pipeline_stage_flags[0] =
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
+            ctx_nsgt->fn_image_layout[0] = 0;
+            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_image_temp;
+            ctx_nsgt->fn_pipeline_stage_flags[1] =
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            ctx_nsgt->fn_access_flags[1] = VK_ACCESS_SHADER_WRITE_BIT;
+            ctx_nsgt->fn_image_layout[1] = VK_IMAGE_LAYOUT_GENERAL;
+            ctx_nsgt->fn_idx_count = 2;
+            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                             ctx_nsgt->fn_dst_idx,
+                             0,
+                             0,
+                             ctx_nsgt->fn_pipeline_stage_flags,
+                             ctx_nsgt->fn_access_flags,
+                             ctx_nsgt->fn_image_layout,
+                             ctx_vk->cmd_buffer,
+                             ctx_nsgt);
             uint32_t image_local_size_x =
                 ctx_nsgt
                     ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_image *
                                               ctx_nsgt->groups +
                                           0];
+            uint32_t image_local_size_y =
+                ctx_nsgt
+                    ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_image *
+                                              ctx_nsgt->groups +
+                                          1];
             uint32_t image_group_count_x =
                 (diff_samples + image_local_size_x - 1) / image_local_size_x;
+            uint32_t image_group_count_y =
+                (ctx_nsgt->bin_capacity + image_local_size_y - 1) /
+                image_local_size_y;
             if (image_group_count_x > max_work_groups) {
                 image_group_count_x = max_work_groups;
+            }
+            if (image_group_count_y > max_work_groups) {
+                image_group_count_y = max_work_groups;
             }
             ctx_nsgt->pipeline_dispatch_group
                 [ctx_nsgt->pipeline_idx_compute_image * ctx_nsgt->groups + 0] =
                 image_group_count_x;
+            ctx_nsgt->pipeline_dispatch_group
+                [ctx_nsgt->pipeline_idx_compute_image * ctx_nsgt->groups + 1] =
+                image_group_count_y;
             war_nsgt_compute_pipeline_dispatch(
                 ctx_nsgt->pipeline_idx_compute_image,
                 ctx_vk->cmd_buffer,
                 ctx_nsgt);
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav;
-            ctx_nsgt->fn_idx_count = 1;
+            // image_temp -> image
+            ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image_temp;
+            ctx_nsgt->fn_image_layout[0] = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
+            // wav_temp -> wav
+            ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_wav_temp;
+            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_wav;
+            ctx_nsgt->fn_image_layout[1] = 0;
+            //  nsgt_temp -> nsgt
+            ctx_nsgt->fn_src_idx[2] = ctx_nsgt->idx_nsgt_temp;
+            ctx_nsgt->fn_dst_idx[2] = ctx_nsgt->idx_nsgt;
+            ctx_nsgt->fn_image_layout[2] = 0;
+            // magnitude_temp -> magnitude
+            ctx_nsgt->fn_src_idx[3] = ctx_nsgt->idx_magnitude_temp;
+            ctx_nsgt->fn_dst_idx[3] = ctx_nsgt->idx_magnitude;
+            ctx_nsgt->fn_image_layout[3] = 0;
+            // transient_temp -> transient
+            ctx_nsgt->fn_src_idx[4] = ctx_nsgt->idx_transient_temp;
+            ctx_nsgt->fn_dst_idx[4] = ctx_nsgt->idx_transient;
+            ctx_nsgt->fn_image_layout[4] = 0;
+            ctx_nsgt->fn_idx_count = 5;
+            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+                ctx_nsgt->fn_pipeline_stage_flags[i] =
+                    VK_PIPELINE_STAGE_TRANSFER_BIT;
+                ctx_nsgt->fn_access_flags[i] = VK_ACCESS_TRANSFER_READ_BIT;
+            }
+            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                             ctx_nsgt->fn_src_idx,
+                             0,
+                             0,
+                             ctx_nsgt->fn_pipeline_stage_flags,
+                             ctx_nsgt->fn_access_flags,
+                             ctx_nsgt->fn_image_layout,
+                             ctx_vk->cmd_buffer,
+                             ctx_nsgt);
+            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
+                ctx_nsgt->fn_access_flags[i] = VK_ACCESS_TRANSFER_WRITE_BIT;
+            }
+            ctx_nsgt->fn_image_layout[0] = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                             ctx_nsgt->fn_dst_idx,
+                             0,
+                             0,
+                             ctx_nsgt->fn_pipeline_stage_flags,
+                             ctx_nsgt->fn_access_flags,
+                             ctx_nsgt->fn_image_layout,
+                             ctx_vk->cmd_buffer,
+                             ctx_nsgt);
+            // image_temp -> image
+            ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image_temp;
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
+            ctx_nsgt->fn_size[0] = diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+            ctx_nsgt->fn_dst_offset[0] = ctx_nsgt->size[ctx_nsgt->idx_image];
+            // wav_temp -> wav
+            ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_wav_temp;
+            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_wav;
+            ctx_nsgt->fn_size[1] = diff_bytes;
+            ctx_nsgt->fn_dst_offset[1] = ctx_nsgt->size[ctx_nsgt->idx_wav];
+            //  nsgt_temp -> nsgt
+            ctx_nsgt->fn_src_idx[2] = ctx_nsgt->idx_nsgt_temp;
+            ctx_nsgt->fn_dst_idx[2] = ctx_nsgt->idx_nsgt;
+            ctx_nsgt->fn_size[2] = diff_samples * ctx_nsgt->bin_capacity *
+                                   sizeof(float) * 2; // vec2
+            ctx_nsgt->fn_dst_offset[2] = ctx_nsgt->size[ctx_nsgt->idx_nsgt];
+            // magnitude_temp -> magnitude
+            ctx_nsgt->fn_src_idx[3] = ctx_nsgt->idx_magnitude_temp;
+            ctx_nsgt->fn_dst_idx[3] = ctx_nsgt->idx_magnitude;
+            ctx_nsgt->fn_size[3] =
+                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+            ctx_nsgt->fn_dst_offset[3] =
+                ctx_nsgt->size[ctx_nsgt->idx_magnitude];
+            // transient_temp -> transient
+            ctx_nsgt->fn_src_idx[4] = ctx_nsgt->idx_transient_temp;
+            ctx_nsgt->fn_dst_idx[4] = ctx_nsgt->idx_transient;
+            ctx_nsgt->fn_size[4] =
+                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+            ctx_nsgt->fn_dst_offset[4] =
+                ctx_nsgt->size[ctx_nsgt->idx_transient];
+            ctx_nsgt->fn_idx_count = 5;
+            war_nsgt_copy(ctx_nsgt->fn_idx_count,
+                          ctx_nsgt->fn_src_idx,
+                          ctx_nsgt->fn_dst_idx,
+                          0,
+                          ctx_nsgt->fn_dst_offset,
+                          ctx_nsgt->fn_size,
+                          ctx_vk->cmd_buffer,
+                          ctx_nsgt);
+            ctx_nsgt->size[ctx_nsgt->idx_image] +=
+                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
             ctx_nsgt->size[ctx_nsgt->idx_wav] += diff_bytes;
+            ctx_nsgt->size[ctx_nsgt->idx_nsgt] += diff_samples *
+                                                  ctx_nsgt->bin_capacity *
+                                                  sizeof(float) * 2; // vec2
+            ctx_nsgt->size[ctx_nsgt->idx_magnitude] +=
+                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+            ctx_nsgt->size[ctx_nsgt->idx_transient] +=
+                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+            ctx_nsgt->dirty_compute = 0;
         war_label_skip_nsgt_graphics_compute:
             if (ctx_nsgt->image_layout[ctx_nsgt->idx_image] !=
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-                war_nsgt_image_barrier(1,
-                                       &ctx_nsgt->idx_image,
-                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                       VK_ACCESS_SHADER_READ_BIT,
-                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                       ctx_vk->cmd_buffer,
-                                       ctx_nsgt);
+                ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
+                ctx_nsgt->fn_image_layout[0] =
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
+                ctx_nsgt->fn_pipeline_stage_flags[0] =
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                ctx_nsgt->fn_idx_count = 1;
+                war_nsgt_barrier(ctx_nsgt->fn_idx_count,
+                                 ctx_nsgt->fn_dst_idx,
+                                 0,
+                                 0,
+                                 ctx_nsgt->fn_pipeline_stage_flags,
+                                 ctx_nsgt->fn_access_flags,
+                                 ctx_nsgt->fn_image_layout,
+                                 ctx_vk->cmd_buffer,
+                                 ctx_nsgt);
             }
             //-------------------------------------------------------------
             //  RENDER PASS

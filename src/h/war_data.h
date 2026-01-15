@@ -1106,8 +1106,11 @@ typedef struct war_nsgt_context {
     VkBufferMemoryBarrier* buffer_memory_barrier;
     VkImageMemoryBarrier* image_memory_barrier;
     VkImageLayout* image_layout;
+    VkImageLayout* fn_image_layout;
     VkAccessFlags* access_flags;
+    VkAccessFlags* fn_access_flags;
     VkPipelineStageFlags* pipeline_stage_flags;
+    VkPipelineStageFlags* fn_pipeline_stage_flags;
     uint32_t* fn_src_idx;
     uint32_t* fn_dst_idx;
     VkDeviceSize* fn_size;
