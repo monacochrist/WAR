@@ -31,51 +31,47 @@ layout(r32f, binding = 15) uniform writeonly image2D image_temp;
 layout(r32f, binding = 16) uniform writeonly image2D image;
 
 layout(push_constant) uniform pc {
-    layout(offset = 0) uint arg_1;
-    layout(offset = 4) uint window_length_max;
-    layout(offset = 8) uint bin_capacity;
-    layout(offset = 12) uint frame_capacity;
+    layout(offset = 0) uint arg_1; // frame_count
+    layout(offset = 4) uint arg_2; // base_sample
+    layout(offset = 8) uint arg_3; // bin_capacity
+    layout(offset = 12) uint arg_4; // hop
 } push_constant;
 
 vec2 complexAdd(vec2 a, vec2 b) { return vec2(a.x + b.x, a.y + b.y); }
 vec2 complexMul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 
-#define WINDOW_LENGTH_CAPACITY 4096
-shared vec2 cis_shared[WINDOW_LENGTH_CAPACITY];
-shared float window_shared[WINDOW_LENGTH_CAPACITY];
-
-// Load cis and window into shared memory for this workgroup
-void loadSharedMemory(uint tid, uint max_len) {
-    for(uint i = tid; i < max_len; i += gl_WorkGroupSize.x) {
-        cis_shared[i] = cis_buffer.data[i];
-        window_shared[i] = window_buffer.data[i];
-    }
-    memoryBarrierShared();
-    barrier();
-}
-
 void main() {
     uint tid = gl_LocalInvocationID.x;
     uint group_id = gl_WorkGroupID.x;
     uint threads_per_group = gl_WorkGroupSize.x;
-    uint arg_samples = push_constant.arg_1;
-    uint bins = push_constant.bin_capacity;
-    uint shared_len = min(arg_samples, WINDOW_LENGTH_CAPACITY);
-    loadSharedMemory(tid, shared_len);
+
+    uint frame_count = push_constant.arg_1;
+    uint base_sample = push_constant.arg_2;
+    uint bins = push_constant.arg_3;
+    uint hop = push_constant.arg_4;
+
     uint global_tid = tid + group_id * threads_per_group;
-    for(uint s = global_tid; s < arg_samples; s += threads_per_group * gl_NumWorkGroups.x) {
-        float sample_s = wav_temp_buffer.data[s];
-        for(uint b = 0; b < bins; b++) {
+
+    for (uint frame = global_tid; frame < frame_count;
+         frame += threads_per_group * gl_NumWorkGroups.x) {
+        for (uint b = 0; b < bins; b++) {
+            uint L = length_buffer.data[b];
             uint off = offset_buffer.data[b];
-            uint L   = length_buffer.data[b];
-            if(s < L) {
-                vec2 c = cis_shared[off + s];
-                float w = window_shared[off + s];
-                vec2 coeff = complexMul(vec2(sample_s, 0.0), c) * w;
-                nsgt_temp_buffer.data[off + s] = coeff;
+
+            vec2 acc = vec2(0.0);
+            for (uint t = 0; t < L; t++) {
+                uint sample_idx = base_sample + frame * hop + t;
+                float sample_temp = wav_buffer.data[sample_idx];
+                vec2 c = cis_buffer.data[off + t];
+                float w = window_buffer.data[off + t];
+                acc += complexMul(vec2(sample_temp * w, 0.0), c);
             }
+
+            uint idx = b * frame_count + frame;
+            nsgt_temp_buffer.data[idx] = acc;
         }
     }
+
     memoryBarrier();
     barrier();
 }

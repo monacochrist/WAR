@@ -25,6 +25,9 @@ layout(push_constant) uniform pc {
     layout(offset = 60) int bin_capacity;
     layout(offset = 64) int frame_capacity;
     layout(offset = 68) float z_layer;
+    layout(offset = 72) int frame_offset;
+    layout(offset = 76) int frame_count;
+    layout(offset = 80) int frame_filled;
 } push_constant;
 
 void main() {

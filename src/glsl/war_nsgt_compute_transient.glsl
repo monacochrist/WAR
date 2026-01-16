@@ -31,40 +31,35 @@ layout(r32f, binding = 15) uniform writeonly image2D image_temp;
 layout(r32f, binding = 16) uniform writeonly image2D image;
 
 layout(push_constant) uniform pc {
-    layout(offset = 0) uint arg_1;
-    layout(offset = 4) uint window_length_max;
-    layout(offset = 8) uint bin_capacity;
-    layout(offset = 12) uint frame_capacity;
+    layout(offset = 0) uint arg_1; // frame_count
+    layout(offset = 4) uint arg_2; // base_sample (unused here)
+    layout(offset = 8) uint arg_3; // bin_capacity
+    layout(offset = 12) uint arg_4; // hop (unused here)
 } push_constant;
 
 vec2 complexAdd(vec2 a, vec2 b) { return vec2(a.x + b.x, a.y + b.y); }
 vec2 complexMul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 
-#define WINDOW_LENGTH_CAPACITY 4096
-shared vec2 cis_shared[WINDOW_LENGTH_CAPACITY];
-shared float window_shared[WINDOW_LENGTH_CAPACITY];
 
 void main() {
     uint tid = gl_LocalInvocationID.x;
     uint group_id = gl_WorkGroupID.x;
     uint threads_per_group = gl_WorkGroupSize.x;
 
-    uint arg_samples = push_constant.arg_1;
-    uint bins       = push_constant.bin_capacity;
+    uint frame_count = push_constant.arg_1;
+    uint bins = push_constant.arg_3;
 
     uint global_tid = tid + group_id * threads_per_group;
 
-    for(uint s = global_tid; s < arg_samples; s += threads_per_group * gl_NumWorkGroups.x) {
-        for(uint b = 0; b < bins; b++) {
-            uint off = b * arg_samples; // linearized index
-
-            float mag_current = magnitude_temp_buffer.data[off + s];
-            float mag_prev = (s > 0) ? magnitude_temp_buffer.data[off + s - 1] : 0.0;
-
-            // transient = positive increase
+    for (uint frame = global_tid; frame < frame_count;
+         frame += threads_per_group * gl_NumWorkGroups.x) {
+        for (uint b = 0; b < bins; b++) {
+            uint idx = b * frame_count + frame;
+            float mag_current = magnitude_temp_buffer.data[idx];
+            float mag_prev = (frame > 0) ? magnitude_temp_buffer.data[idx - 1]
+                                         : 0.0;
             float trans = max(mag_current - mag_prev, 0.0);
-
-            transient_temp_buffer.data[off + s] = trans;
+            transient_temp_buffer.data[idx] = trans;
         }
     }
     memoryBarrier();

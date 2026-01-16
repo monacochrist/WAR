@@ -169,43 +169,54 @@ static inline void war_nsgt_copy(uint32_t idx_count,
 
         if (linear_offset >= image_width * image_height) continue;
 
-        // Clip to image capacity
-        uint32_t max_pixels = image_width * image_height - linear_offset;
+        // Interpret dst_offset as a sample offset (column-major: bin_capacity
+        // floats per sample) and append a rectangle of width=diff_samples,
+        // height=bin_capacity without wrapping vertically or duplicating rows.
+        uint32_t start_sample = linear_offset / image_height;
+        uint32_t start_x = start_sample % image_width;
+
+        // Clamp so we never wrap horizontally beyond frame_capacity
+        uint32_t max_pixels = (image_width - start_x) * image_height;
         if (num_pixels > max_pixels) num_pixels = max_pixels;
 
-        // Convert linear offset → 2D coordinates
-        uint32_t dst_x = linear_offset % image_width;
-        uint32_t dst_y = linear_offset / image_width;
+        uint32_t width_per_row =
+            num_pixels / image_height; // expected: diff_samples
+        if (width_per_row == 0) continue;
 
-        // Copy row by row
-        while (num_pixels > 0 && dst_y < image_height) {
-            uint32_t row_remaining = image_width - dst_x;
-            uint32_t copy_width =
-                (num_pixels < row_remaining) ? num_pixels : row_remaining;
-            uint32_t copy_height = 1; // one row per iteration
+        for (uint32_t row = 0; row < image_height; row++) {
+            uint32_t remaining = width_per_row;
+            uint32_t src_x = 0;
+            uint32_t dst_x_row = start_x;
 
-            VkOffset3D dst_offset_2d = {(int32_t)dst_x, (int32_t)dst_y, 0};
-            VkExtent3D extent = {copy_width, copy_height, 1};
+            while (remaining > 0) {
+                uint32_t row_space = image_width - dst_x_row;
+                uint32_t chunk =
+                    (remaining < row_space) ? remaining : row_space;
 
-            VkImageCopy copy_region = {
-                .srcSubresource = subresource,
-                .srcOffset = {0, 0, 0}, // full row copy from src
-                .dstSubresource = subresource,
-                .dstOffset = dst_offset_2d,
-                .extent = extent,
-            };
+                VkImageCopy copy_region = {
+                    .srcSubresource = subresource,
+                    .srcOffset = {(int32_t)src_x, (int32_t)row, 0},
+                    .dstSubresource = subresource,
+                    .dstOffset = {(int32_t)dst_x_row, (int32_t)row, 0},
+                    .extent = {chunk, 1, 1},
+                };
 
-            vkCmdCopyImage(cmd,
-                           src_img,
-                           ctx_nsgt->image_layout[idx_src[i]],
-                           dst_img,
-                           ctx_nsgt->image_layout[idx_dst[i]],
-                           1,
-                           &copy_region);
+                vkCmdCopyImage(cmd,
+                               src_img,
+                               ctx_nsgt->image_layout[idx_src[i]],
+                               dst_img,
+                               ctx_nsgt->image_layout[idx_dst[i]],
+                               1,
+                               &copy_region);
 
-            num_pixels -= copy_width;
-            dst_x = 0;  // next row starts at x=0
-            dst_y += 1; // move to next row
+                remaining -= chunk;
+                src_x += chunk;
+                dst_x_row += chunk;
+                if (dst_x_row >= image_width) {
+                    // stop if we run out of horizontal space
+                    remaining = 0;
+                }
+            }
         }
     }
 }
@@ -455,8 +466,9 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     ctx_nsgt->groups = atomic_load(&ctx_lua->NSGT_GROUPS);
     ctx_nsgt->wav_capacity = ctx_nsgt->sample_rate * ctx_nsgt->sample_duration *
                              ctx_nsgt->channel_count * sizeof(float);
-    ctx_nsgt->nsgt_capacity =
-        ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity * sizeof(float);
+    ctx_nsgt->nsgt_capacity = ctx_nsgt->bin_capacity *
+                              ctx_nsgt->frame_capacity * sizeof(float) *
+                              2; // vec2 storage
     ctx_nsgt->magnitude_capacity =
         ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity * sizeof(float);
     ctx_nsgt->offset_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
@@ -594,10 +606,10 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     call_king_terry("window length max: %u", ctx_nsgt->window_length_max);
     if (ctx_nsgt->hop_min == 0) { ctx_nsgt->hop_min = 1; }
     call_king_terry("hop min: %u", ctx_nsgt->hop_min);
-    ctx_nsgt->compute_push_constant.window_length_max =
-        ctx_nsgt->window_length_max;
-    ctx_nsgt->compute_push_constant.bin_capacity = ctx_nsgt->bin_capacity;
-    ctx_nsgt->compute_push_constant.frame_capacity = ctx_nsgt->frame_capacity;
+    ctx_nsgt->compute_push_constant.arg_3 = (uint32_t)ctx_nsgt->bin_capacity;
+    ctx_nsgt->compute_push_constant.arg_4 = (uint32_t)ctx_nsgt->hop_min;
+    ctx_nsgt->frame_cursor = 0;
+    ctx_nsgt->frame_filled = 0;
     //-------------------------------------------------------------------------
     // Cleanup
     free(sum_squares);

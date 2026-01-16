@@ -1069,8 +1069,7 @@ war_label_skip_play:
     //-------------------------------------------------------------------------
     if (ctx_wr->now - ctx_capture->last_frame_time >= ctx_capture->rate_us) {
         ctx_capture->last_frame_time += ctx_capture->rate_us;
-        if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
-            ctx_fsm->current_mode != ctx_fsm->MODE_COMMAND) {
+        if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) {
             pc_capture->i_from_a = pc_capture->i_to_a;
             ctx_capture->state = CAPTURE_WAITING;
             goto war_label_skip_capture;
@@ -2195,8 +2194,7 @@ war_label_cmd_timeout_done:
             //-------------------------------------------------------------------------
             // NSGT COMPUTE PIPELINE
             //-------------------------------------------------------------------------
-            if ((ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
-                 ctx_fsm->current_mode != ctx_fsm->MODE_COMMAND) ||
+            if ((ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) ||
                 capture_wav->memfd_size <= 44) {
                 goto war_label_skip_nsgt_graphics_compute;
             }
@@ -2207,10 +2205,41 @@ war_label_cmd_timeout_done:
             uint32_t total_samples =
                 total_bytes / sizeof(float) / ctx_nsgt->channel_count;
             uint32_t diff_samples = total_samples - current_samples;
+            uint32_t frame_capacity = ctx_nsgt->frame_capacity;
+
+            uint32_t hop = ctx_nsgt->hop_min;
+            uint32_t frame_count_raw = (hop > 0) ? (diff_samples / hop) : 0;
+            if (frame_count_raw == 0) {
+                call_king_terry("skip: frame_count_raw is 0");
+                goto war_label_skip_nsgt_graphics_compute;
+            }
+
+            uint32_t remaining_frames = frame_capacity - ctx_nsgt->frame_filled;
+            uint32_t max_frames_per_dispatch =
+                frame_capacity / 256; // default: 256
+            if (max_frames_per_dispatch == 0) max_frames_per_dispatch = 1;
+            uint32_t frame_count = frame_count_raw;
+            if (frame_count > remaining_frames) frame_count = remaining_frames;
+            if (frame_count > max_frames_per_dispatch)
+                frame_count = max_frames_per_dispatch;
+            if (frame_count == 0) {
+                call_king_terry("skip: frame_count capped to 0");
+                goto war_label_skip_nsgt_graphics_compute;
+            }
+
+            uint32_t tail_samples = frame_count * hop;
+
+            if (tail_samples > diff_samples) { tail_samples = diff_samples; }
+            uint32_t base_sample_capture = (total_samples > tail_samples) ?
+                                               (total_samples - tail_samples) :
+                                               0;
+            uint32_t base_sample = current_samples; // where we append in wav
             uint32_t diff_bytes =
-                diff_samples * sizeof(float) * ctx_nsgt->channel_count;
-            if (diff_samples == 0 ||
-                diff_samples + current_samples >= capture_wav->memfd_capacity) {
+                tail_samples * sizeof(float) * ctx_nsgt->channel_count;
+
+            if (tail_samples == 0 ||
+                diff_bytes + current_bytes >= capture_wav->memfd_capacity) {
+                call_king_terry("skip: tail samples is 0");
                 goto war_label_skip_nsgt_graphics_compute;
             }
             if (ctx_nsgt->dirty_compute) {
@@ -2250,8 +2279,9 @@ war_label_cmd_timeout_done:
             float* stage_samples =
                 (float*)(ctx_nsgt->map[ctx_nsgt->idx_wav_stage]);
             memcpy(stage_samples,
-                   &capture_wav_samples[current_samples],
+                   &capture_wav_samples[base_sample_capture],
                    diff_bytes);
+
             ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_stage;
             ctx_nsgt->fn_size[0] = diff_bytes;
             ctx_nsgt->fn_idx_count = 1;
@@ -2295,7 +2325,7 @@ war_label_cmd_timeout_done:
                           ctx_nsgt->fn_size,
                           ctx_vk->cmd_buffer,
                           ctx_nsgt);
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_temp;
+            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav;
             ctx_nsgt->fn_pipeline_stage_flags[0] =
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
             ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
@@ -2321,14 +2351,17 @@ war_label_cmd_timeout_done:
             uint32_t max_work_groups = ctx_nsgt->physical_device_properties
                                            .limits.maxComputeWorkGroupCount[0];
             uint32_t nsgt_group_count_x =
-                (diff_samples + nsgt_local_size_x - 1) / nsgt_local_size_x;
+                (frame_count + nsgt_local_size_x - 1) / nsgt_local_size_x;
             if (nsgt_group_count_x > max_work_groups) {
                 nsgt_group_count_x = max_work_groups;
             }
             ctx_nsgt->pipeline_dispatch_group
                 [ctx_nsgt->pipeline_idx_compute_nsgt * ctx_nsgt->groups + 0] =
                 nsgt_group_count_x;
-            ctx_nsgt->compute_push_constant.arg_1 = diff_samples;
+            ctx_nsgt->compute_push_constant.arg_1 = frame_count;
+            ctx_nsgt->compute_push_constant.arg_2 = base_sample;
+            ctx_nsgt->compute_push_constant.arg_3 = ctx_nsgt->bin_capacity;
+            ctx_nsgt->compute_push_constant.arg_4 = hop;
             war_nsgt_compute_pipeline_bind_set_dispatch(
                 ctx_nsgt->pipeline_idx_compute_nsgt,
                 ctx_vk->cmd_buffer,
@@ -2357,7 +2390,7 @@ war_label_cmd_timeout_done:
                                               ctx_nsgt->groups +
                                           0];
             uint32_t magnitude_group_count_x =
-                (diff_samples + magnitude_local_size_x - 1) /
+                (frame_count + magnitude_local_size_x - 1) /
                 magnitude_local_size_x;
             if (magnitude_group_count_x > max_work_groups) {
                 magnitude_group_count_x = max_work_groups;
@@ -2393,7 +2426,7 @@ war_label_cmd_timeout_done:
                          ctx_nsgt->groups +
                      0];
             uint32_t transient_group_count_x =
-                (diff_samples + transient_local_size_x - 1) /
+                (frame_count + transient_local_size_x - 1) /
                 transient_local_size_x;
             if (transient_group_count_x > max_work_groups) {
                 transient_group_count_x = max_work_groups;
@@ -2436,7 +2469,7 @@ war_label_cmd_timeout_done:
                                               ctx_nsgt->groups +
                                           1];
             uint32_t image_group_count_x =
-                (diff_samples + image_local_size_x - 1) / image_local_size_x;
+                (frame_count + image_local_size_x - 1) / image_local_size_x;
             uint32_t image_group_count_y =
                 (ctx_nsgt->bin_capacity + image_local_size_y - 1) /
                 image_local_size_y;
@@ -2504,13 +2537,40 @@ war_label_cmd_timeout_done:
                              ctx_nsgt->fn_image_layout,
                              ctx_vk->cmd_buffer,
                              ctx_nsgt);
-            // image_temp -> image
+            VkDeviceSize image_span_bytes = ctx_nsgt->frame_capacity *
+                                            ctx_nsgt->bin_capacity *
+                                            sizeof(float);
+            // image_temp -> image (append, no wrap)
+            uint32_t frame_cap = ctx_nsgt->frame_capacity;
+            uint32_t cursor = ctx_nsgt->frame_filled;
+            uint32_t chunk_frames = frame_count;
+            if (cursor + chunk_frames > frame_cap) {
+                chunk_frames = frame_cap - cursor;
+            }
+            VkDeviceSize image_dst_offset =
+                (VkDeviceSize)cursor * ctx_nsgt->bin_capacity * sizeof(float);
+
             ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image_temp;
             ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
-            ctx_nsgt->fn_size[0] =
-                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
-            ctx_nsgt->fn_dst_offset[0] = ctx_nsgt->size[ctx_nsgt->idx_image];
+            ctx_nsgt->fn_src_offset[0] = 0;
+            ctx_nsgt->fn_size[0] = (VkDeviceSize)chunk_frames *
+                                   ctx_nsgt->bin_capacity * sizeof(float);
+            if (ctx_nsgt->fn_size[0] > image_span_bytes)
+                ctx_nsgt->fn_size[0] = image_span_bytes;
+            ctx_nsgt->fn_dst_offset[0] = image_dst_offset;
+
+            ctx_nsgt->fn_idx_count = 5;
+            war_nsgt_copy(ctx_nsgt->fn_idx_count,
+                          ctx_nsgt->fn_src_idx,
+                          ctx_nsgt->fn_dst_idx,
+                          ctx_nsgt->fn_src_offset,
+                          ctx_nsgt->fn_dst_offset,
+                          ctx_nsgt->fn_size,
+                          ctx_vk->cmd_buffer,
+                          ctx_nsgt);
+
             // wav_temp -> wav
+
             ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_wav_temp;
             ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_wav;
             ctx_nsgt->fn_size[1] = diff_bytes;
@@ -2518,42 +2578,48 @@ war_label_cmd_timeout_done:
             //  nsgt_temp -> nsgt
             ctx_nsgt->fn_src_idx[2] = ctx_nsgt->idx_nsgt_temp;
             ctx_nsgt->fn_dst_idx[2] = ctx_nsgt->idx_nsgt;
-            ctx_nsgt->fn_size[2] = diff_samples * ctx_nsgt->bin_capacity *
+            ctx_nsgt->fn_size[2] = frame_count * ctx_nsgt->bin_capacity *
                                    sizeof(float) * 2; // vec2
             ctx_nsgt->fn_dst_offset[2] = ctx_nsgt->size[ctx_nsgt->idx_nsgt];
             // magnitude_temp -> magnitude
             ctx_nsgt->fn_src_idx[3] = ctx_nsgt->idx_magnitude_temp;
             ctx_nsgt->fn_dst_idx[3] = ctx_nsgt->idx_magnitude;
             ctx_nsgt->fn_size[3] =
-                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+                frame_count * ctx_nsgt->bin_capacity * sizeof(float);
             ctx_nsgt->fn_dst_offset[3] =
                 ctx_nsgt->size[ctx_nsgt->idx_magnitude];
             // transient_temp -> transient
             ctx_nsgt->fn_src_idx[4] = ctx_nsgt->idx_transient_temp;
             ctx_nsgt->fn_dst_idx[4] = ctx_nsgt->idx_transient;
             ctx_nsgt->fn_size[4] =
-                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+                frame_count * ctx_nsgt->bin_capacity * sizeof(float);
             ctx_nsgt->fn_dst_offset[4] =
                 ctx_nsgt->size[ctx_nsgt->idx_transient];
-            ctx_nsgt->fn_idx_count = 5;
-            war_nsgt_copy(ctx_nsgt->fn_idx_count,
-                          ctx_nsgt->fn_src_idx,
-                          ctx_nsgt->fn_dst_idx,
-                          0,
-                          ctx_nsgt->fn_dst_offset,
-                          ctx_nsgt->fn_size,
-                          ctx_vk->cmd_buffer,
-                          ctx_nsgt);
-            ctx_nsgt->size[ctx_nsgt->idx_image] +=
-                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+            uint32_t filled = ctx_nsgt->frame_filled + frame_count;
+            if (filled > ctx_nsgt->frame_capacity)
+                filled = ctx_nsgt->frame_capacity;
+            ctx_nsgt->frame_filled = filled;
+            ctx_nsgt->frame_cursor = filled; // no wrap in display
+            ctx_nsgt->size[ctx_nsgt->idx_image] =
+                (VkDeviceSize)ctx_nsgt->frame_filled * ctx_nsgt->bin_capacity *
+                sizeof(float);
             ctx_nsgt->size[ctx_nsgt->idx_wav] += diff_bytes;
-            ctx_nsgt->size[ctx_nsgt->idx_nsgt] += diff_samples *
+            ctx_nsgt->size[ctx_nsgt->idx_nsgt] += frame_count *
                                                   ctx_nsgt->bin_capacity *
                                                   sizeof(float) * 2; // vec2
             ctx_nsgt->size[ctx_nsgt->idx_magnitude] +=
-                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+                frame_count * ctx_nsgt->bin_capacity * sizeof(float);
             ctx_nsgt->size[ctx_nsgt->idx_transient] +=
-                diff_samples * ctx_nsgt->bin_capacity * sizeof(float);
+                frame_count * ctx_nsgt->bin_capacity * sizeof(float);
+            ctx_nsgt->graphics_push_constant.frame_capacity =
+                (int)ctx_nsgt->frame_capacity;
+            ctx_nsgt->graphics_push_constant.bin_capacity =
+                (int)ctx_nsgt->bin_capacity;
+            ctx_nsgt->graphics_push_constant.frame_offset = 0;
+            ctx_nsgt->graphics_push_constant.frame_count = (int)frame_count;
+            ctx_nsgt->graphics_push_constant.frame_filled =
+                (int)ctx_nsgt->frame_filled;
+
             ctx_nsgt->dirty_compute = 0;
         war_label_skip_nsgt_graphics_compute:
             if (ctx_nsgt->image_layout[ctx_nsgt->idx_image] !=

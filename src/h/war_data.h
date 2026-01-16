@@ -986,10 +986,10 @@ typedef struct war_quad_push_constant {
 } war_quad_push_constant;
 
 typedef struct war_nsgt_compute_push_constant {
-    uint arg_1;
-    uint window_length_max;
-    uint bin_capacity;
-    uint frame_capacity;
+    uint arg_1; // frame_count
+    uint arg_2; // base_sample (mono samples)
+    uint arg_3; // bin_capacity
+    uint arg_4; // hop (samples per frame)
 } war_nsgt_compute_push_constant;
 
 typedef struct war_nsgt_graphics_push_constant {
@@ -1004,9 +1004,9 @@ typedef struct war_nsgt_graphics_push_constant {
     int bin_capacity;
     int frame_capacity;
     float z_layer;
-    int _pad1;
     int frame_offset;
     int frame_count;
+    int frame_filled;
 } war_nsgt_graphics_push_constant;
 
 typedef struct war_nsgt_context {
@@ -1120,6 +1120,9 @@ typedef struct war_nsgt_context {
     uint32_t* fn_data_2;
     uint32_t fn_idx_count;
     uint8_t dirty_compute;
+    // incremental visualization state
+    uint32_t frame_cursor;
+    uint32_t frame_filled;
     // misc
     VkPhysicalDeviceProperties physical_device_properties;
     VkSampler sampler;

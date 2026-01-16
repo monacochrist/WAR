@@ -31,10 +31,10 @@ layout(r32f, binding = 15) uniform writeonly image2D image_temp;
 layout(r32f, binding = 16) uniform writeonly image2D image;
 
 layout(push_constant) uniform pc {
-    layout(offset = 0) uint arg_1;
-    layout(offset = 4) uint window_length_max;
-    layout(offset = 8) uint bin_capacity;
-    layout(offset = 12) uint frame_capacity;
+    layout(offset = 0) uint arg_1; // frame_count
+    layout(offset = 4) uint arg_2; // base_sample (unused here)
+    layout(offset = 8) uint arg_3; // bin_capacity
+    layout(offset = 12) uint arg_4; // hop (unused here)
 } push_constant;
 
 vec2 complexAdd(vec2 a, vec2 b) { return vec2(a.x + b.x, a.y + b.y); }
@@ -45,21 +45,19 @@ shared vec2 cis_shared[WINDOW_LENGTH_CAPACITY];
 shared float window_shared[WINDOW_LENGTH_CAPACITY];
 
 void main() {
-    uint sample_idx = gl_GlobalInvocationID.x; // x-dimension → sample
-    uint bin_idx    = gl_GlobalInvocationID.y; // y-dimension → bin
+    uint frame = gl_GlobalInvocationID.x;
+    uint bin   = gl_GlobalInvocationID.y;
 
-    uint num_samples = push_constant.arg_1;
-    uint bins        = push_constant.bin_capacity;
+    uint frame_count = push_constant.arg_1;
+    uint bins = push_constant.arg_3;
 
-    if(sample_idx >= num_samples || bin_idx >= bins) return;
+    if (frame >= frame_count || bin >= bins) return;
 
-    // Compute linear index into buffers
-    uint off = bin_idx * num_samples + sample_idx;
+    uint idx = bin * frame_count + frame;
+    float mag = magnitude_temp_buffer.data[idx];
+    float trans = transient_temp_buffer.data[idx];
 
-    float mag = magnitude_temp_buffer.data[off];
-    float trans = transient_temp_buffer.data[off];
-
-    float val = mag + 0.5 * trans; // boost sudden onsets
-    val = clamp(val, 0.0, 1.0);
-    imageStore(image_temp, ivec2(sample_idx, bin_idx), vec4(val,val,val,1.0));
+    // Linear magnitude with stronger transient lift
+    float val = clamp(mag + trans * 1.0, 0.0, 1.0);
+    imageStore(image_temp, ivec2(frame, bin), vec4(val, 0.0, 0.0, 1.0));
 }

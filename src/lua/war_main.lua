@@ -121,7 +121,7 @@ ctx_lua = {
     NSGT_DESCRIPTOR_SET_COUNT           = 2,
     NSGT_PIPELINE_COUNT                 = 6,
     NSGT_SHADER_COUNT                   = 7,
-    NSGT_GRAPHICS_FPS                   = 240,
+    NSGT_GRAPHICS_FPS                   = 10,
     NSGT_GROUPS                         = 3,
 
     -- visual

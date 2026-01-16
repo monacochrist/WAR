@@ -31,39 +31,37 @@ layout(r32f, binding = 15) uniform writeonly image2D image_temp;
 layout(r32f, binding = 16) uniform writeonly image2D image;
 
 layout(push_constant) uniform pc {
-    layout(offset = 0) uint arg_1;
-    layout(offset = 4) uint window_length_max;
-    layout(offset = 8) uint bin_capacity;
-    layout(offset = 12) uint frame_capacity;
+    layout(offset = 0) uint arg_1; // frame_count
+    layout(offset = 4) uint arg_2; // base_sample (unused here)
+    layout(offset = 8) uint arg_3; // bin_capacity
+    layout(offset = 12) uint arg_4; // hop (unused here)
 } push_constant;
 
 vec2 complexAdd(vec2 a, vec2 b) { return vec2(a.x + b.x, a.y + b.y); }
 vec2 complexMul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 
-#define WINDOW_LENGTH_CAPACITY 4096
-shared vec2 cis_shared[WINDOW_LENGTH_CAPACITY];
-shared float window_shared[WINDOW_LENGTH_CAPACITY];
 
 void main() {
     uint tid = gl_LocalInvocationID.x;
     uint group_id = gl_WorkGroupID.x;
     uint threads_per_group = gl_WorkGroupSize.x;
 
-    uint arg_samples = push_constant.arg_1;
-    uint bins       = push_constant.bin_capacity;
+    uint frame_count = push_constant.arg_1;
+    uint bins = push_constant.arg_3;
 
     uint global_tid = tid + group_id * threads_per_group;
 
-    // Each thread processes every threads_per_group * numWorkGroups samples
-    for(uint s = global_tid; s < arg_samples; s += threads_per_group * gl_NumWorkGroups.x) {
-        for(uint b = 0; b < bins; b++) {
-            // Compute linear index in the buffer
-            uint off = b * arg_samples; // assuming row-major: bin-major layout
-            vec2 coeff = nsgt_temp_buffer.data[off + s];
-
-            // Compute magnitude
-            float mag = length(coeff); // sqrt(x^2 + y^2)
-            magnitude_temp_buffer.data[off + s] = mag;
+    for (uint frame = global_tid; frame < frame_count;
+         frame += threads_per_group * gl_NumWorkGroups.x) {
+        for (uint b = 0; b < bins; b++) {
+            uint idx = b * frame_count + frame;
+            vec2 coeff = nsgt_temp_buffer.data[idx];
+            float mag = length(coeff);
+            // EMA smoothing
+            float prev = magnitude_buffer.data[idx];
+            float smooth_temp = mix(prev, mag, 0.2);
+            magnitude_buffer.data[idx] = smooth_temp;
+            magnitude_temp_buffer.data[idx] = smooth_temp;
         }
     }
 

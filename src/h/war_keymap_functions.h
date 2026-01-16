@@ -2825,21 +2825,24 @@ static inline void war_command_mode(war_env* env) {
     ctx_fsm->previous_mode = ctx_fsm->current_mode;
     ctx_fsm->current_mode = ctx_fsm->MODE_COMMAND;
     war_command_reset(ctx_command, ctx_status);
-    if (!ctx_command->prompt_type) {
-        capture_wav->memfd_size = 44;
-        memset(capture_wav->file, 0, capture_wav->memfd_capacity);
-        *(war_riff_header*)capture_wav->file = ctx_wr->init_riff_header;
-        *(war_fmt_chunk*)(capture_wav->file + sizeof(war_riff_header)) =
-            ctx_wr->init_fmt_chunk;
-        *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
-                           sizeof(war_fmt_chunk)) = ctx_wr->init_data_chunk;
-        ctx_nsgt->size[ctx_nsgt->idx_image] = 0;
-        ctx_nsgt->size[ctx_nsgt->idx_wav] = 0;
-        ctx_nsgt->size[ctx_nsgt->idx_nsgt] = 0;
-        ctx_nsgt->size[ctx_nsgt->idx_magnitude] = 0;
-        ctx_nsgt->size[ctx_nsgt->idx_transient] = 0;
-        ctx_nsgt->dirty_compute = 1;
-    }
+    // TESTING LATENCY
+    //if (!ctx_command->prompt_type) {
+    //    capture_wav->memfd_size = 44;
+    //    memset(capture_wav->file, 0, capture_wav->memfd_capacity);
+    //    *(war_riff_header*)capture_wav->file = ctx_wr->init_riff_header;
+    //    *(war_fmt_chunk*)(capture_wav->file + sizeof(war_riff_header)) =
+    //        ctx_wr->init_fmt_chunk;
+    //    *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
+    //                       sizeof(war_fmt_chunk)) = ctx_wr->init_data_chunk;
+    //    ctx_nsgt->size[ctx_nsgt->idx_image] = 0;
+    //    ctx_nsgt->size[ctx_nsgt->idx_wav] = 0;
+    //    ctx_nsgt->size[ctx_nsgt->idx_nsgt] = 0;
+    //    ctx_nsgt->size[ctx_nsgt->idx_magnitude] = 0;
+    //    ctx_nsgt->size[ctx_nsgt->idx_transient] = 0;
+    //    ctx_nsgt->frame_cursor = 0;
+    //    ctx_nsgt->frame_filled = 0;
+    //    ctx_nsgt->dirty_compute = 1;
+    //}
     ctx_wr->numeric_prefix = 0;
     // reset
     ctx_fsm->repeat_keysym = 0;
@@ -2891,7 +2894,10 @@ static inline void war_capture_mode(war_env* env) {
         ctx_nsgt->size[ctx_nsgt->idx_nsgt] = 0;
         ctx_nsgt->size[ctx_nsgt->idx_magnitude] = 0;
         ctx_nsgt->size[ctx_nsgt->idx_transient] = 0;
+        ctx_nsgt->frame_cursor = 0;
+        ctx_nsgt->frame_filled = 0;
         ctx_nsgt->dirty_compute = 1;
+
         ctx_wr->numeric_prefix = 0;
         return;
     }
