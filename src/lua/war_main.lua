@@ -43,7 +43,7 @@ ctx_lua = {
     A_EDO                               = 12,
     A_SAMPLE_RATE                       = 44100,
     A_BPM                               = 100.0,
-    A_SAMPLE_DURATION                   = 30.0,
+    A_SAMPLE_DURATION                   = 15.0, -- 3 images
     A_CHANNEL_COUNT                     = 2,
     A_NOTE_COUNT                        = 128,
     A_LAYERS_IN_RAM                     = 13,
@@ -57,8 +57,8 @@ ctx_lua = {
     A_DEFAULT_RELEASE                   = 0.0,
     A_DEFAULT_GAIN                      = 1.0,
     A_DEFAULT_COLUMNS_PER_BEAT          = 4.0,
-    A_CACHE_SIZE                        = 100,
-    A_PATH_LIMIT                        = 4096,
+    CACHE_FILE_CAPACITY                 = 100,
+    CONFIG_PATH_MAX                     = 4096,
     A_SCHED_FIFO_PRIORITY               = 10,
     A_BUILDER_DATA_SIZE                 = 1024,
     -- window render
@@ -110,10 +110,10 @@ ctx_lua = {
     VK_MAX_FRAMES                       = 1,
     VK_GLYPH_COUNT                      = 128,
     -- nsgt
-    NSGT_BIN_CAPACITY                   = 1024,  -- fixed for tight-frame condition
-    NSGT_FRAME_CAPACITY                 = 2048,  -- fixed for tight-frame condition
-    NSGT_FREQUENCY_MIN                  = 20,    -- fixed for tight-frame condition
-    NSGT_FREQUENCY_MAX                  = 20000, -- fixed for tight-frame condition
+    NSGT_FRAME_CAPACITY                 = 2048, -- width
+    NSGT_BIN_CAPACITY                   = 512,
+    NSGT_FREQUENCY_MIN                  = 20,
+    NSGT_FREQUENCY_MAX                  = 20000,
     NSGT_ALPHA                          = 1.0,
     NSGT_WINDOW_LENGTH_MIN              = 32,
     NSGT_SHAPE_FACTOR                   = 6.0,
@@ -123,6 +123,8 @@ ctx_lua = {
     NSGT_SHADER_COUNT                   = 7,
     NSGT_GRAPHICS_FPS                   = 10,
     NSGT_GROUPS                         = 3,
+    -- cache nsgt
+    CACHE_NSGT_CAPACITY                 = 100,
 
     -- visual
     VK_NSGT_VISUAL_RESOURCE_COUNT       = 0,
@@ -212,7 +214,7 @@ pool_wr = {
     { name = "ctx_nsgt.shader_module",                     type = "VkShaderModule",                  count = ctx_lua.NSGT_SHADER_COUNT },
     { name = "ctx_nsgt.pipeline_shader_stage_create_info", type = "VkPipelineShaderStageCreateInfo", count = ctx_lua.NSGT_SHADER_COUNT },
     { name = "ctx_nsgt.shader_stage_flag_bits",            type = "VkShaderStageFlagBits",           count = ctx_lua.NSGT_SHADER_COUNT },
-    { name = "ctx_nsgt.shader_path",                       type = "char",                            count = ctx_lua.NSGT_SHADER_COUNT * ctx_lua.A_PATH_LIMIT },
+    { name = "ctx_nsgt.shader_path",                       type = "char",                            count = ctx_lua.NSGT_SHADER_COUNT * ctx_lua.CONFIG_PATH_MAX },
     { name = "ctx_nsgt.pipeline",                          type = "VkPipeline",                      count = ctx_lua.NSGT_PIPELINE_COUNT },
     { name = "ctx_nsgt.pipeline_layout",                   type = "VkPipelineLayout",                count = ctx_lua.NSGT_PIPELINE_COUNT },
     { name = "ctx_nsgt.pipeline_set_idx",                  type = "uint32_t",                        count = ctx_lua.NSGT_PIPELINE_COUNT * ctx_lua.NSGT_DESCRIPTOR_SET_COUNT },
@@ -228,16 +230,16 @@ pool_wr = {
     { name = "env",                                        type = "war_env",                         count = 1 },
     -- command context
     { name = "ctx_command",                                type = "war_command_context",             count = 1 },
-    { name = "ctx_command.input",                          type = "int",                             count = ctx_lua.A_PATH_LIMIT },
-    { name = "ctx_command.text",                           type = "char",                            count = ctx_lua.A_PATH_LIMIT },
-    { name = "ctx_command.prompt",                         type = "char",                            count = ctx_lua.A_PATH_LIMIT },
+    { name = "ctx_command.input",                          type = "int",                             count = ctx_lua.CONFIG_PATH_MAX },
+    { name = "ctx_command.text",                           type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
+    { name = "ctx_command.prompt",                         type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
     -- status context
     { name = "ctx_status",                                 type = "war_status_context",              count = 1 },
-    { name = "ctx_status.top",                             type = "char",                            count = ctx_lua.A_PATH_LIMIT },
-    { name = "ctx_status.middle",                          type = "char",                            count = ctx_lua.A_PATH_LIMIT },
-    { name = "ctx_status.bottom",                          type = "char",                            count = ctx_lua.A_PATH_LIMIT },
+    { name = "ctx_status.top",                             type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
+    { name = "ctx_status.middle",                          type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
+    { name = "ctx_status.bottom",                          type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
     -- char input
-    { name = "char_input",                                 type = "char",                            count = ctx_lua.A_PATH_LIMIT * 2 },
+    { name = "char_input",                                 type = "char",                            count = ctx_lua.CONFIG_PATH_MAX * 2 },
     -- play context
     { name = "ctx_play",                                   type = "war_play_context",                count = 1 },
     { name = "ctx_play.key_layers",                        type = "uint64_t",                        count = ctx_lua.A_NOTE_COUNT },
@@ -246,24 +248,25 @@ pool_wr = {
     { name = "ctx_capture",                                type = "war_capture_context",             count = 1 },
     -- capture_wav
     { name = "capture_wav",                                type = "war_file",                        count = 1 },
-    { name = "capture_wav.fname",                          type = "char",                            count = ctx_lua.A_PATH_LIMIT },
-    -- cache_wav
-    { name = "cache",                                      type = "war_cache",                       count = 1 },
-    { name = "cache.id",                                   type = "uint64_t",                        count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.timestamp",                            type = "uint64_t",                        count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.map",                                  type = "uint8_t*",                        count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.type",                                 type = "uint8_t",                         count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.inode",                                type = "ino_t",                           count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.device",                               type = "dev_t",                           count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.fd_size",                              type = "uint64_t",                        count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.memfd_size",                           type = "uint64_t",                        count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.memfd_capacity",                       type = "uint64_t",                        count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.fd",                                   type = "int",                             count = ctx_lua.A_CACHE_SIZE },
-    { name = "cache.memfd",                                type = "int",                             count = ctx_lua.A_CACHE_SIZE },
+    { name = "capture_wav.fname",                          type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
+    -- cache
+    { name = "cache_file",                                 type = "war_cache_file",                  count = 1 },
+    { name = "cache_file.id",                              type = "uint64_t",                        count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.timestamp",                       type = "uint64_t",                        count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.file",                            type = "uint8_t*",                        count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.type",                            type = "war_file_type",                   count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.inode",                           type = "ino_t",                           count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.device",                          type = "dev_t",                           count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.fd_size",                         type = "uint64_t",                        count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.memfd_size",                      type = "uint64_t",                        count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.memfd_capacity",                  type = "uint64_t",                        count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.fd",                              type = "int",                             count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.memfd",                           type = "int",                             count = ctx_lua.CACHE_FILE_CAPACITY },
+    { name = "cache_file.free",                            type = "uint32_t",                        count = ctx_lua.CACHE_FILE_CAPACITY },
     -- map_wav
     { name = "map_wav",                                    type = "war_map_wav",                     count = 1 },
     { name = "map_wav.id",                                 type = "uint64_t",                        count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT },
-    { name = "map_wav.fname",                              type = "char",                            count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT * ctx_lua.A_PATH_LIMIT },
+    { name = "map_wav.fname",                              type = "char",                            count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT * ctx_lua.CONFIG_PATH_MAX },
     { name = "map_wav.fname_size",                         type = "uint32_t",                        count = ctx_lua.A_NOTE_COUNT * ctx_lua.A_LAYER_COUNT },
     -- color
     { name = "ctx_color",                                  type = "war_color_context",               count = 1 },
@@ -284,16 +287,16 @@ pool_wr = {
     { name = "ctx_fsm",                                    type = "war_fsm_context",                 count = 1 },
     { name = "ctx_fsm.function",                           type = "war_function_union",              count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT },
     { name = "ctx_fsm.function_type",                      type = "uint8_t",                         count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT },
-    { name = "ctx_fsm.name",                               type = "char",                            count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT * ctx_lua.A_PATH_LIMIT },
+    { name = "ctx_fsm.name",                               type = "char",                            count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT * ctx_lua.CONFIG_PATH_MAX },
     { name = "ctx_fsm.is_terminal",                        type = "uint8_t",                         count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT },
     { name = "ctx_fsm.handle_release",                     type = "uint8_t",                         count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT },
     { name = "ctx_fsm.handle_timeout",                     type = "uint8_t",                         count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT },
     { name = "ctx_fsm.handle_repeat",                      type = "uint8_t",                         count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT },
     { name = "ctx_fsm.is_prefix",                          type = "uint8_t",                         count = ctx_lua.WR_STATES * ctx_lua.WR_MODE_COUNT },
     { name = "ctx_fsm.next_state",                         type = "uint64_t",                        count = ctx_lua.WR_STATES * ctx_lua.WR_KEYSYM_COUNT * ctx_lua.WR_MOD_COUNT },
-    { name = "ctx_fsm.cwd",                                type = "char",                            count = ctx_lua.A_PATH_LIMIT },
-    { name = "ctx_fsm.current_file_path",                  type = "char",                            count = ctx_lua.A_PATH_LIMIT },
-    { name = "ctx_fsm.ext",                                type = "char",                            count = ctx_lua.A_PATH_LIMIT },
+    { name = "ctx_fsm.cwd",                                type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
+    { name = "ctx_fsm.current_file_path",                  type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
+    { name = "ctx_fsm.ext",                                type = "char",                            count = ctx_lua.CONFIG_PATH_MAX },
     { name = "ctx_fsm.key_down",                           type = "uint8_t",                         count = ctx_lua.WR_KEYSYM_COUNT * ctx_lua.WR_MOD_COUNT },
     { name = "ctx_fsm.key_last_event_us",                  type = "uint64_t",                        count = ctx_lua.WR_KEYSYM_COUNT * ctx_lua.WR_MOD_COUNT },
     -- quads vertices
@@ -331,7 +334,7 @@ pool_wr = {
     { name = "tmp_control_payload",                        type = "uint8_t",                         count = ctx_lua.PC_CONTROL_BUFFER_SIZE },
     { name = "input_sequence",                             type = "char",                            count = ctx_lua.WR_INPUT_SEQUENCE_LENGTH_MAX },
     { name = "prompt",                                     type = "char",                            count = ctx_lua.WR_INPUT_SEQUENCE_LENGTH_MAX },
-    -- { name = "cwd",                                 type = "char",              count = ctx_lua.A_PATH_LIMIT },
+    -- { name = "cwd",                                 type = "char",              count = ctx_lua.CONFIG_PATH_MAX },
     -- undo tree
     { name = "undo_tree",                                  type = "war_undo_tree",                   count = 1 },
     { name = "undo_node.id",                               type = "uint64_t",                        count = ctx_lua.WR_UNDO_NODES_MAX },
@@ -377,7 +380,7 @@ keymap_flags = {
     handle_timeout = 1,
 }
 keymap = {
-    -- | Key           | Neovim String    |
+    -- | Key           | String           |
     -- | ------------- | ---------------- |
     -- | Up arrow      | `<Up>`           |
     -- | Down arrow    | `<Down>`         |

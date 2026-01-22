@@ -1,0 +1,19 @@
+# WAR sequence 0
+0 string WARS SEQUENCE
+>4 long 0 VERSION %u
+
+# WAR map 0
+0 string WARM MAP
+>4 long 0 VERSION %u
+
+# WAR undo 0
+0 string WARU UNDO
+>4 long 0 VERSION %u
+
+# WAR warpoon 0
+0 string WARW WARPOON
+>4 long 0 VERSION %u
+
+# WAR jumplist 0
+0 string WARJ JUMPLIST
+>4 long 0 VERSION %u

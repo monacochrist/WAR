@@ -41,7 +41,7 @@ static inline void war_roll_mode(war_env* env) {
     war_status_context* ctx_status = env->ctx_status;
     ctx_fsm->previous_mode = ctx_fsm->current_mode;
     ctx_fsm->current_mode = ctx_fsm->MODE_ROLL;
-    ctx_fsm->current_file_type = FILE_WAR;
+    ctx_fsm->current_file_type = WAR_FILE_TYPE_WAR;
     memset(ctx_status->middle, 0, ctx_status->capacity);
     memcpy(
         ctx_status->middle, ctx_status->MODE_ROLL, ctx_status->MODE_ROLL_size);
@@ -2808,7 +2808,7 @@ static inline void war_wav_mode(war_env* env) {
     war_fsm_context* ctx_fsm = env->ctx_fsm;
     ctx_fsm->previous_mode = ctx_fsm->current_mode;
     ctx_fsm->current_mode = ctx_fsm->MODE_WAV;
-    ctx_fsm->current_file_type = FILE_WAV;
+    ctx_fsm->current_file_type = WAR_FILE_TYPE_WAV;
     memset(ctx_status->middle, 0, ctx_status->capacity);
     memcpy(ctx_status->middle, ctx_status->MODE_WAV, ctx_status->MODE_WAV_size);
     ctx_wr->numeric_prefix = 0;
@@ -2826,7 +2826,7 @@ static inline void war_command_mode(war_env* env) {
     ctx_fsm->current_mode = ctx_fsm->MODE_COMMAND;
     war_command_reset(ctx_command, ctx_status);
     // TESTING LATENCY
-    //if (!ctx_command->prompt_type) {
+    // if (!ctx_command->prompt_type) {
     //    capture_wav->memfd_size = 44;
     //    memset(capture_wav->file, 0, capture_wav->memfd_capacity);
     //    *(war_riff_header*)capture_wav->file = ctx_wr->init_riff_header;
@@ -2872,7 +2872,7 @@ static inline void war_capture_mode(war_env* env) {
     ctx_fsm->timeout_state_index = 0;
     ctx_fsm->timeout_start_us = 0;
     if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) {
-        ctx_fsm->current_file_type = FILE_WAV;
+        ctx_fsm->current_file_type = WAR_FILE_TYPE_WAV;
         ctx_fsm->previous_mode = ctx_fsm->current_mode;
         ctx_fsm->current_mode = ctx_fsm->MODE_CAPTURE;
         pc_capture->i_from_a = pc_capture->i_to_a;
@@ -2881,23 +2881,7 @@ static inline void war_capture_mode(war_env* env) {
         memcpy(ctx_status->middle,
                ctx_status->MODE_CAPTURE,
                ctx_status->MODE_CAPTURE_size);
-        // reset (move some of this to gpu later)
-        capture_wav->memfd_size = 44;
-        memset(capture_wav->file, 0, capture_wav->memfd_capacity);
-        *(war_riff_header*)capture_wav->file = ctx_wr->init_riff_header;
-        *(war_fmt_chunk*)(capture_wav->file + sizeof(war_riff_header)) =
-            ctx_wr->init_fmt_chunk;
-        *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
-                           sizeof(war_fmt_chunk)) = ctx_wr->init_data_chunk;
-        ctx_nsgt->size[ctx_nsgt->idx_image] = 0;
-        ctx_nsgt->size[ctx_nsgt->idx_wav] = 0;
-        ctx_nsgt->size[ctx_nsgt->idx_nsgt] = 0;
-        ctx_nsgt->size[ctx_nsgt->idx_magnitude] = 0;
-        ctx_nsgt->size[ctx_nsgt->idx_transient] = 0;
-        ctx_nsgt->frame_cursor = 0;
-        ctx_nsgt->frame_filled = 0;
-        ctx_nsgt->dirty_compute = 1;
-
+        war_wav_reset(ctx_wr, capture_wav);
         ctx_wr->numeric_prefix = 0;
         return;
     }
@@ -3863,10 +3847,10 @@ static inline void war_previous_mode(war_env* env) {
         return;
     }
     switch (ctx_fsm->current_file_type) {
-    case FILE_WAR:
+    case WAR_FILE_TYPE_WAR:
         war_roll_mode(env);
         return;
-    case FILE_WAV:
+    case WAR_FILE_TYPE_WAV:
         war_wav_mode(env);
         return;
     }

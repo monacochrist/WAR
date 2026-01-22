@@ -42,6 +42,7 @@
 #include <stdint.h>
 #include <strings.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -73,6 +74,7 @@ int main() {
                            0);
     assert(pc_control.to_a);
     memset(pc_control.to_a, 0, pc_control.size);
+    mlock(pc_control.to_a, pc_control.size);
     pc_control.to_wr = mmap(NULL,
                             pc_control.size,
                             PROT_READ | PROT_WRITE,
@@ -81,6 +83,7 @@ int main() {
                             0);
     assert(pc_control.to_wr);
     memset(pc_control.to_wr, 0, pc_control.size);
+    mlock(pc_control.to_wr, pc_control.size);
     pc_control.i_to_a = 0;
     pc_control.i_to_wr = 0;
     pc_control.i_from_a = 0;
@@ -98,6 +101,7 @@ int main() {
                         0);
     assert(pc_play.to_a);
     memset(pc_play.to_a, 0, pc_play.size);
+    mlock(pc_play.to_a, pc_play.size);
     pc_play.to_wr = mmap(NULL,
                          pc_play.size,
                          PROT_READ | PROT_WRITE,
@@ -106,6 +110,7 @@ int main() {
                          0);
     assert(pc_play.to_wr);
     memset(pc_play.to_wr, 0, pc_play.size);
+    mlock(pc_play.to_wr, pc_play.size);
     pc_play.i_to_a = 0;
     pc_play.i_to_wr = 0;
     pc_play.i_from_a = 0;
@@ -123,6 +128,7 @@ int main() {
                            0);
     assert(pc_capture.to_a);
     memset(pc_capture.to_a, 0, pc_capture.size);
+    mlock(pc_capture.to_a, pc_capture.size);
     pc_capture.to_wr = mmap(NULL,
                             pc_capture.size,
                             PROT_READ | PROT_WRITE,
@@ -131,6 +137,7 @@ int main() {
                             0);
     assert(pc_capture.to_wr);
     memset(pc_capture.to_wr, 0, pc_capture.size);
+    mlock(pc_capture.to_wr, pc_capture.size);
     pc_capture.i_to_a = 0;
     pc_capture.i_to_wr = 0;
     pc_capture.i_from_a = 0;
@@ -168,6 +175,15 @@ int main() {
     //-------------------------------------------------------------------------
     // THREADS
     //-------------------------------------------------------------------------
+    struct rlimit r_limit;
+    if (getrlimit(RLIMIT_MEMLOCK, &r_limit) == -1) {
+        call_king_terry("failed to get r_limit");
+    }
+    if (r_limit.rlim_max != RLIM_INFINITY) {
+        call_king_terry("r_limit max: %ul", r_limit.rlim_max);
+    } else {
+        call_king_terry("r_limit max: %s", "unlimited");
+    }
     war_pool pool_wr;
     war_pool pool_a;
     pthread_t war_window_render_thread;
@@ -342,7 +358,7 @@ void* war_window_render(void* args) {
     //-------------------------------------------------------------------------
     war_command_context* ctx_command =
         war_pool_alloc(pool_wr, sizeof(war_command_context));
-    ctx_command->capacity = atomic_load(&ctx_lua->A_PATH_LIMIT);
+    ctx_command->capacity = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
     ctx_command->input =
         war_pool_alloc(pool_wr, sizeof(int) * ctx_command->capacity);
     ctx_command->text =
@@ -563,7 +579,7 @@ void* war_window_render(void* args) {
     ctx_fsm->name_limit = atomic_load(&ctx_lua->WR_FN_NAME_LIMIT);
     // paths
     ctx_fsm->current_file_path = war_pool_alloc(pool_wr, ctx_fsm->name_limit);
-    ctx_fsm->current_file_type = FILE_WAR;
+    ctx_fsm->current_file_type = WAR_FILE_TYPE_WAR;
     ctx_fsm->current_file_path_size = 0;
     ctx_fsm->cwd = war_pool_alloc(pool_wr, ctx_fsm->name_limit);
     getcwd(ctx_fsm->cwd, ctx_fsm->name_limit);
@@ -642,7 +658,7 @@ void* war_window_render(void* args) {
     //-------------------------------------------------------------------------
     war_status_context* ctx_status =
         war_pool_alloc(pool_wr, sizeof(war_status_context));
-    ctx_status->capacity = atomic_load(&ctx_lua->A_PATH_LIMIT);
+    ctx_status->capacity = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
     ctx_status->top =
         war_pool_alloc(pool_wr, sizeof(char) * ctx_status->capacity);
     memcpy(ctx_status->top,
@@ -851,21 +867,21 @@ void* war_window_render(void* args) {
     // CAPTURE WAV
     //-------------------------------------------------------------------------
     war_file* capture_wav = war_pool_alloc(pool_wr, sizeof(war_file));
-    capture_wav->type = FILE_WAV;
+    capture_wav->type = WAR_FILE_TYPE_WAV;
     capture_wav->fd = -1;
     capture_wav->fd_size = 0;
     capture_wav->memfd_size = 44;
-    capture_wav->name_limit = atomic_load(&ctx_lua->A_PATH_LIMIT);
+    capture_wav->path_capacity = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
     uint64_t init_capacity = 44 + sizeof(float) *
                                       atomic_load(&ctx_lua->A_SAMPLE_RATE) *
                                       atomic_load(&ctx_lua->A_SAMPLE_DURATION) *
                                       atomic_load(&ctx_lua->A_CHANNEL_COUNT);
     capture_wav->memfd_capacity = init_capacity;
-    capture_wav->fname =
-        war_pool_alloc(pool_wr, sizeof(char) * capture_wav->name_limit);
-    capture_wav->fname = "capture.wav";
-    capture_wav->fname_size = strlen(capture_wav->fname);
-    capture_wav->memfd = memfd_create(capture_wav->fname, MFD_CLOEXEC);
+    capture_wav->path =
+        war_pool_alloc(pool_wr, sizeof(char) * capture_wav->path_capacity);
+    capture_wav->path = "capture.wav";
+    capture_wav->path_size = strlen(capture_wav->path);
+    capture_wav->memfd = memfd_create(capture_wav->path, MFD_CLOEXEC);
     if (capture_wav->memfd < 0) {
         // call_king_terry("memfd failed to open: %s", capture_wav->fname);
     }
@@ -878,6 +894,7 @@ void* war_window_render(void* args) {
                              MAP_SHARED,
                              capture_wav->memfd,
                              0);
+    memset(capture_wav->file, 0, capture_wav->memfd_capacity);
     if (capture_wav->file == MAP_FAILED) {
         // call_king_terry("mmap failed: %s", capture_wav->fname);
     }
@@ -912,33 +929,44 @@ void* war_window_render(void* args) {
     //-------------------------------------------------------------------------
     //  CACHE
     //-------------------------------------------------------------------------
-    war_cache* cache = war_pool_alloc(pool_wr, sizeof(war_cache));
-    cache->capacity = atomic_load(&ctx_lua->A_CACHE_SIZE);
-    cache->id = war_pool_alloc(pool_wr, sizeof(uint64_t) * cache->capacity);
-    cache->timestamp =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache->capacity);
-    cache->file = war_pool_alloc(pool_wr, sizeof(uint8_t*) * cache->capacity);
-    cache->type = war_pool_alloc(pool_wr, sizeof(uint8_t) * cache->capacity);
-    cache->device = war_pool_alloc(pool_wr, sizeof(dev_t) * cache->capacity);
-    cache->inode = war_pool_alloc(pool_wr, sizeof(ino_t) * cache->capacity);
-    cache->memfd = war_pool_alloc(pool_wr, sizeof(int) * cache->capacity);
-    cache->memfd_size =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache->capacity);
-    cache->memfd_capacity =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache->capacity);
-    cache->fd = war_pool_alloc(pool_wr, sizeof(int) * cache->capacity);
-    cache->fd_size =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache->capacity);
-    cache->count = 0;
-    cache->next_id = 1;
-    cache->next_timestamp = 1;
+    war_cache_file* cache_file =
+        war_pool_alloc(pool_wr, sizeof(war_cache_file));
+    cache_file->capacity = atomic_load(&ctx_lua->CACHE_FILE_CAPACITY);
+    cache_file->id =
+        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
+    cache_file->timestamp =
+        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
+    cache_file->file =
+        war_pool_alloc(pool_wr, sizeof(uint8_t*) * cache_file->capacity);
+    cache_file->type =
+        war_pool_alloc(pool_wr, sizeof(uint8_t) * cache_file->capacity);
+    cache_file->device =
+        war_pool_alloc(pool_wr, sizeof(dev_t) * cache_file->capacity);
+    cache_file->inode =
+        war_pool_alloc(pool_wr, sizeof(ino_t) * cache_file->capacity);
+    cache_file->memfd =
+        war_pool_alloc(pool_wr, sizeof(int) * cache_file->capacity);
+    cache_file->memfd_size =
+        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
+    cache_file->memfd_capacity =
+        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
+    cache_file->fd =
+        war_pool_alloc(pool_wr, sizeof(int) * cache_file->capacity);
+    cache_file->fd_size =
+        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
+    cache_file->free =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * cache_file->capacity);
+    cache_file->count = 0;
+    cache_file->free_count = 0;
+    cache_file->next_id = 1;
+    cache_file->next_timestamp = 1;
     //-------------------------------------------------------------------------
     // MAP WAV
     //-------------------------------------------------------------------------
     war_map_wav* map_wav = war_pool_alloc(pool_wr, sizeof(war_map_wav));
     map_wav->note_count = atomic_load(&ctx_lua->A_NOTE_COUNT);
     map_wav->layer_count = atomic_load(&ctx_lua->A_LAYER_COUNT);
-    map_wav->name_limit = atomic_load(&ctx_lua->A_PATH_LIMIT);
+    map_wav->name_limit = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
     map_wav->capacity = map_wav->note_count * map_wav->layer_count;
     map_wav->id = war_pool_alloc(
         pool_wr, sizeof(uint64_t) * map_wav->note_count * map_wav->layer_count);
@@ -953,7 +981,7 @@ void* war_window_render(void* args) {
     //-------------------------------------------------------------------------
     war_capture_context* ctx_capture =
         war_pool_alloc(pool_wr, sizeof(war_capture_context));
-    ctx_capture->name_limit = atomic_load(&ctx_lua->A_PATH_LIMIT);
+    ctx_capture->name_limit = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
     ctx_capture->fps = atomic_load(&ctx_lua->WR_CAPTURE_CALLBACK_FPS);
     // rate
     ctx_capture->rate_us = (uint64_t)round((1.0 / (double)ctx_capture->fps) *
@@ -1026,7 +1054,7 @@ void* war_window_render(void* args) {
     env->ctx_vk = ctx_vk;
     env->capture_wav = capture_wav;
     env->ctx_fsm = ctx_fsm;
-    env->cache = cache;
+    env->cache_file = cache_file;
     env->pc_capture = pc_capture;
     env->ctx_nsgt = ctx_nsgt;
 war_label_wr: {
@@ -1059,7 +1087,7 @@ war_label_wr: {
         uint64_t target_samples =
             (uint64_t)((double)atomic_load(&ctx_lua->A_BYTES_NEEDED) / 8.0);
         //---------------------------------------------------------------------
-        // MIDI PLAYBACK
+        // PLAYBACK
         //---------------------------------------------------------------------
         for (uint32_t i = 0; i < ctx_play->note_count; i++) {}
     }
@@ -1111,6 +1139,18 @@ war_label_skip_play:
                     init_fmt_chunk;
                 *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
                                    sizeof(war_fmt_chunk)) = init_data_chunk;
+
+                // Reset NSGT append cursor to left edge
+                ctx_nsgt->frame_filled = 0;
+                ctx_nsgt->frame_cursor = 0;
+                ctx_nsgt->size[ctx_nsgt->idx_image] = 0;
+                ctx_nsgt->size[ctx_nsgt->idx_nsgt] = 0;
+                ctx_nsgt->size[ctx_nsgt->idx_magnitude] = 0;
+                ctx_nsgt->size[ctx_nsgt->idx_transient] = 0;
+                ctx_nsgt->size[ctx_nsgt->idx_wav] = 0;
+                ctx_nsgt->size[ctx_nsgt->idx_wav_temp] = 0;
+                ctx_nsgt->size[ctx_nsgt->idx_wav_stage] = 0;
+                ctx_nsgt->dirty_compute = 1;
             }
         } else if (!ctx_capture->capture_wait &&
                    ctx_capture->state == CAPTURE_WAITING) {
@@ -1190,7 +1230,6 @@ war_label_skip_capture:
                ctx_status->roll_position,
                roll_position_length);
         // path
-        // Build relative path display like Neovim
         if (ctx_fsm->current_file_path_size > 0) {
             // Calculate relative path inline without helper function
             char* display_path = ctx_status->top;
@@ -1322,7 +1361,7 @@ war_label_skip_capture:
                 ctx_capture->layer = __builtin_ctzll(layer);
                 uint64_t idx = ctx_capture->note * map_wav->layer_count +
                                ctx_capture->layer;
-                uint64_t id = cache->next_id++;
+                uint64_t id = cache_file->next_id++;
                 uint64_t old_id = map_wav->id[idx];
                 map_wav->id[idx] = id;
                 memset(map_wav->fname + idx * map_wav->name_limit,
@@ -1334,142 +1373,148 @@ war_label_skip_capture:
                 map_wav->fname_size[idx] = ctx_capture->fname_size;
                 uint32_t cache_idx = 0;
                 if (old_id > 0) {
-                    for (uint32_t i = 0; i < cache->count; i++) {
-                        if (cache->id[i] != old_id) { continue; }
+                    for (uint32_t i = 0; i < cache_file->count; i++) {
+                        if (cache_file->id[i] != old_id) { continue; }
                         cache_idx = i;
                         break;
                     }
-                } else if (old_id == 0 && cache->free_count > 0) {
-                    cache_idx = cache->free[--cache->free_count];
-                } else if (old_id == 0 && cache->count < cache->capacity) {
-                    cache_idx = cache->count++;
+                } else if (old_id == 0 && cache_file->free_count > 0) {
+                    cache_idx = cache_file->free[--cache_file->free_count];
+                } else if (old_id == 0 &&
+                           cache_file->count < cache_file->capacity) {
+                    cache_idx = cache_file->count++;
                 } else {
                     uint32_t oldest_idx = 0;
-                    for (uint32_t i = 1; i < cache->count; i++) {
-                        if (cache->timestamp[i] <=
-                            cache->timestamp[oldest_idx]) {
+                    for (uint32_t i = 1; i < cache_file->count; i++) {
+                        if (cache_file->timestamp[i] <=
+                            cache_file->timestamp[oldest_idx]) {
                             oldest_idx = i;
                         }
                     }
                     cache_idx = oldest_idx;
                 }
-                if (cache->id[cache_idx] != 0) {
-                    if (cache->fd[cache_idx] >= 0) {
-                        close(cache->fd[cache_idx]);
-                        cache->fd[cache_idx] = -1;
+                if (cache_file->id[cache_idx] != 0) {
+                    if (cache_file->fd[cache_idx] >= 0) {
+                        close(cache_file->fd[cache_idx]);
+                        cache_file->fd[cache_idx] = -1;
                     }
-                    if (cache->file[cache_idx] != MAP_FAILED) {
-                        munmap(cache->file[cache_idx],
-                               cache->memfd_capacity[cache_idx]);
-                        cache->file[cache_idx] = MAP_FAILED;
+                    if (cache_file->file[cache_idx] != MAP_FAILED) {
+                        munmap(cache_file->file[cache_idx],
+                               cache_file->memfd_capacity[cache_idx]);
+                        cache_file->file[cache_idx] = MAP_FAILED;
                     }
-                    if (cache->memfd[cache_idx] >= 0) {
-                        close(cache->memfd[cache_idx]);
-                        cache->memfd[cache_idx] = -1;
+                    if (cache_file->memfd[cache_idx] >= 0) {
+                        close(cache_file->memfd[cache_idx]);
+                        cache_file->memfd[cache_idx] = -1;
                     }
                 }
-                cache->id[cache_idx] = id;
-                cache->type[cache_idx] = FILE_WAV;
-                cache->timestamp[cache_idx] = cache->next_timestamp++;
-                cache->memfd_capacity[cache_idx] = capture_wav->memfd_capacity;
-                cache->memfd_size[cache_idx] = capture_wav->memfd_size;
-                cache->memfd[cache_idx] = memfd_create(
+                cache_file->id[cache_idx] = id;
+                cache_file->type[cache_idx] = WAR_FILE_TYPE_WAV;
+                cache_file->timestamp[cache_idx] = cache_file->next_timestamp++;
+                cache_file->memfd_capacity[cache_idx] =
+                    capture_wav->memfd_capacity;
+                cache_file->memfd_size[cache_idx] = capture_wav->memfd_size;
+                cache_file->memfd[cache_idx] = memfd_create(
                     map_wav->fname + idx * map_wav->name_limit, MFD_CLOEXEC);
-                if (cache->memfd[cache_idx] < 0) {
+                if (cache_file->memfd[cache_idx] < 0) {
                     // call_king_terry("memfd_create failed: %s",
                     //                 map_wav->fname + idx *
                     //                 map_wav->name_limit);
-                    cache->id[cache_idx] = 0;
+                    cache_file->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
                     goto war_label_command_processed;
                 }
-                cache->file[cache_idx] = mmap(NULL,
-                                              cache->memfd_capacity[cache_idx],
-                                              PROT_READ | PROT_WRITE,
-                                              MAP_SHARED,
-                                              cache->memfd[cache_idx],
-                                              0);
-                if (cache->file[cache_idx] == MAP_FAILED) {
+                cache_file->file[cache_idx] =
+                    mmap(NULL,
+                         cache_file->memfd_capacity[cache_idx],
+                         PROT_READ | PROT_WRITE,
+                         MAP_SHARED,
+                         cache_file->memfd[cache_idx],
+                         0);
+                if (cache_file->file[cache_idx] == MAP_FAILED) {
                     // call_king_terry("mmap failed: %s",
                     //                 map_wav->fname + idx *
                     //                 map_wav->name_limit);
-                    cache->id[cache_idx] = 0;
+                    cache_file->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
-                    close(cache->memfd[cache_idx]);
-                    cache->memfd[cache_idx] = -1;
+                    close(cache_file->memfd[cache_idx]);
+                    cache_file->memfd[cache_idx] = -1;
                 }
-                cache->fd[cache_idx] =
+                cache_file->fd[cache_idx] =
                     open(map_wav->fname + idx * map_wav->name_limit,
                          O_RDWR | O_CREAT | O_TRUNC,
                          0644);
-                if (cache->fd[cache_idx] == -1) {
+                if (cache_file->fd[cache_idx] == -1) {
                     // call_king_terry("fd failed to open: %s",
                     //                 map_wav->fname + idx *
                     //                 map_wav->name_limit);
-                    cache->id[cache_idx] = 0;
+                    cache_file->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
-                    close(cache->memfd[cache_idx]);
-                    cache->memfd[cache_idx] = -1;
-                    munmap(cache->file[cache_idx],
-                           cache->memfd_capacity[cache_idx]);
-                    cache->file[cache_idx] = MAP_FAILED;
+                    close(cache_file->memfd[cache_idx]);
+                    cache_file->memfd[cache_idx] = -1;
+                    munmap(cache_file->file[cache_idx],
+                           cache_file->memfd_capacity[cache_idx]);
+                    cache_file->file[cache_idx] = MAP_FAILED;
                     goto war_label_command_processed;
                 }
-                cache->fd_size[cache_idx] = capture_wav->memfd_size;
-                if (ftruncate(cache->fd[cache_idx],
-                              cache->fd_size[cache_idx]) == -1) {
+                cache_file->fd_size[cache_idx] = capture_wav->memfd_size;
+                if (ftruncate(cache_file->fd[cache_idx],
+                              cache_file->fd_size[cache_idx]) == -1) {
                     // call_king_terry("ftruncate failed: %s",
                     //                 map_wav->fname + idx *
                     //                 map_wav->name_limit);
-                    cache->id[cache_idx] = 0;
+                    cache_file->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
-                    close(cache->memfd[cache_idx]);
-                    cache->memfd[cache_idx] = -1;
-                    munmap(cache->file[cache_idx],
-                           cache->memfd_capacity[cache_idx]);
-                    cache->file[cache_idx] = MAP_FAILED;
-                    close(cache->fd[cache_idx]);
-                    cache->fd[cache_idx] = -1;
+                    close(cache_file->memfd[cache_idx]);
+                    cache_file->memfd[cache_idx] = -1;
+                    munmap(cache_file->file[cache_idx],
+                           cache_file->memfd_capacity[cache_idx]);
+                    cache_file->file[cache_idx] = MAP_FAILED;
+                    close(cache_file->fd[cache_idx]);
+                    cache_file->fd[cache_idx] = -1;
                     goto war_label_command_processed;
                 }
                 off_t offset_1 = 0;
-                ssize_t bytes_copied = sendfile(cache->memfd[cache_idx],
-                                                capture_wav->memfd,
-                                                &offset_1,
-                                                cache->memfd_size[cache_idx]);
-                if (bytes_copied != (ssize_t)cache->memfd_size[cache_idx]) {
+                ssize_t bytes_copied =
+                    sendfile(cache_file->memfd[cache_idx],
+                             capture_wav->memfd,
+                             &offset_1,
+                             cache_file->memfd_size[cache_idx]);
+                if (bytes_copied !=
+                    (ssize_t)cache_file->memfd_size[cache_idx]) {
                     // call_king_terry("sendfile failed: %s",
                     //                 map_wav->fname + idx *
                     //                 map_wav->name_limit);
-                    cache->id[cache_idx] = 0;
+                    cache_file->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
-                    close(cache->memfd[cache_idx]);
-                    cache->memfd[cache_idx] = -1;
-                    munmap(cache->file[cache_idx],
-                           cache->memfd_capacity[cache_idx]);
-                    cache->file[cache_idx] = MAP_FAILED;
-                    close(cache->fd[cache_idx]);
-                    cache->fd[cache_idx] = -1;
+                    close(cache_file->memfd[cache_idx]);
+                    cache_file->memfd[cache_idx] = -1;
+                    munmap(cache_file->file[cache_idx],
+                           cache_file->memfd_capacity[cache_idx]);
+                    cache_file->file[cache_idx] = MAP_FAILED;
+                    close(cache_file->fd[cache_idx]);
+                    cache_file->fd[cache_idx] = -1;
                     goto war_label_command_processed;
                 }
                 off_t offset_2 = 0;
-                bytes_copied = sendfile(cache->fd[cache_idx],
-                                        cache->memfd[cache_idx],
+                bytes_copied = sendfile(cache_file->fd[cache_idx],
+                                        cache_file->memfd[cache_idx],
                                         &offset_2,
-                                        cache->memfd_size[cache_idx]);
-                if (bytes_copied != (ssize_t)cache->memfd_size[cache_idx]) {
+                                        cache_file->memfd_size[cache_idx]);
+                if (bytes_copied !=
+                    (ssize_t)cache_file->memfd_size[cache_idx]) {
                     // call_king_terry("sendfile failed: %s",
                     //                 map_wav->fname + idx *
                     //                 map_wav->name_limit);
-                    cache->id[cache_idx] = 0;
+                    cache_file->id[cache_idx] = 0;
                     map_wav->id[idx] = 0;
-                    close(cache->memfd[cache_idx]);
-                    cache->memfd[cache_idx] = -1;
-                    munmap(cache->file[cache_idx],
-                           cache->memfd_capacity[cache_idx]);
-                    cache->file[cache_idx] = MAP_FAILED;
-                    close(cache->fd[cache_idx]);
-                    cache->fd[cache_idx] = -1;
+                    close(cache_file->memfd[cache_idx]);
+                    cache_file->memfd[cache_idx] = -1;
+                    munmap(cache_file->file[cache_idx],
+                           cache_file->memfd_capacity[cache_idx]);
+                    cache_file->file[cache_idx] = MAP_FAILED;
+                    close(cache_file->fd[cache_idx]);
+                    cache_file->fd[cache_idx] = -1;
                     goto war_label_command_processed;
                 }
                 war_command_reset(ctx_command, ctx_status);
@@ -1477,10 +1522,10 @@ war_label_skip_capture:
                 memset(ctx_command->prompt_text, 0, ctx_command->capacity);
                 ctx_command->prompt_text_size = 0;
                 switch (ctx_fsm->current_file_type) {
-                case FILE_WAR:
+                case WAR_FILE_TYPE_WAR:
                     war_roll_mode(env);
                     break;
-                case FILE_WAV:
+                case WAR_FILE_TYPE_WAV:
                     war_wav_mode(env);
                     break;
                 }
@@ -1543,17 +1588,17 @@ war_label_skip_capture:
                 ctx_fsm->ext_size = war_get_ext(
                     ctx_command->text, ctx_fsm->ext, ctx_fsm->name_limit);
                 if (strcmp(ctx_fsm->ext, "wav") == 0) {
-                    ctx_fsm->current_file_type = FILE_WAV;
+                    ctx_fsm->current_file_type = WAR_FILE_TYPE_WAV;
                     war_wav_mode(env);
                 } else if (strcmp(ctx_fsm->ext, "war") == 0) {
-                    ctx_fsm->current_file_type = FILE_WAR;
+                    ctx_fsm->current_file_type = WAR_FILE_TYPE_WAR;
                     war_roll_mode(env);
                 } else {
                     switch (ctx_fsm->current_file_type) {
-                    case FILE_WAR:
+                    case WAR_FILE_TYPE_WAR:
                         war_roll_mode(env);
                         break;
-                    case FILE_WAV:
+                    case WAR_FILE_TYPE_WAV:
                         war_wav_mode(env);
                         break;
                     }
@@ -2191,437 +2236,6 @@ war_label_cmd_timeout_done:
                                           &cmd_buffer_begin_info);
 
             assert(result == VK_SUCCESS);
-            //-------------------------------------------------------------------------
-            // NSGT COMPUTE PIPELINE
-            //-------------------------------------------------------------------------
-            if ((ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) ||
-                capture_wav->memfd_size <= 44) {
-                goto war_label_skip_nsgt_graphics_compute;
-            }
-            uint32_t current_bytes = ctx_nsgt->size[ctx_nsgt->idx_wav];
-            uint32_t current_samples =
-                current_bytes / sizeof(float) / ctx_nsgt->channel_count;
-            uint32_t total_bytes = capture_wav->memfd_size - 44;
-            uint32_t total_samples =
-                total_bytes / sizeof(float) / ctx_nsgt->channel_count;
-            uint32_t diff_samples = total_samples - current_samples;
-            uint32_t frame_capacity = ctx_nsgt->frame_capacity;
-
-            uint32_t hop = ctx_nsgt->hop_min;
-            uint32_t frame_count_raw = (hop > 0) ? (diff_samples / hop) : 0;
-            if (frame_count_raw == 0) {
-                call_king_terry("skip: frame_count_raw is 0");
-                goto war_label_skip_nsgt_graphics_compute;
-            }
-
-            uint32_t remaining_frames = frame_capacity - ctx_nsgt->frame_filled;
-            uint32_t max_frames_per_dispatch =
-                frame_capacity / 256; // default: 256
-            if (max_frames_per_dispatch == 0) max_frames_per_dispatch = 1;
-            uint32_t frame_count = frame_count_raw;
-            if (frame_count > remaining_frames) frame_count = remaining_frames;
-            if (frame_count > max_frames_per_dispatch)
-                frame_count = max_frames_per_dispatch;
-            if (frame_count == 0) {
-                call_king_terry("skip: frame_count capped to 0");
-                goto war_label_skip_nsgt_graphics_compute;
-            }
-
-            uint32_t tail_samples = frame_count * hop;
-
-            if (tail_samples > diff_samples) { tail_samples = diff_samples; }
-            uint32_t base_sample_capture = (total_samples > tail_samples) ?
-                                               (total_samples - tail_samples) :
-                                               0;
-            uint32_t base_sample = current_samples; // where we append in wav
-            uint32_t diff_bytes =
-                tail_samples * sizeof(float) * ctx_nsgt->channel_count;
-
-            if (tail_samples == 0 ||
-                diff_bytes + current_bytes >= capture_wav->memfd_capacity) {
-                call_king_terry("skip: tail samples is 0");
-                goto war_label_skip_nsgt_graphics_compute;
-            }
-            if (ctx_nsgt->dirty_compute) {
-                ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image;
-                ctx_nsgt->fn_image_layout[0] = VK_IMAGE_LAYOUT_GENERAL;
-                ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_wav;
-                ctx_nsgt->fn_image_layout[1] = 0;
-                ctx_nsgt->fn_src_idx[2] = ctx_nsgt->idx_nsgt;
-                ctx_nsgt->fn_image_layout[2] = 0;
-                ctx_nsgt->fn_src_idx[3] = ctx_nsgt->idx_magnitude;
-                ctx_nsgt->fn_image_layout[3] = 0;
-                ctx_nsgt->fn_src_idx[4] = ctx_nsgt->idx_transient;
-                ctx_nsgt->fn_image_layout[4] = 0;
-                ctx_nsgt->fn_idx_count = 5;
-                for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
-                    ctx_nsgt->fn_pipeline_stage_flags[i] =
-                        VK_PIPELINE_STAGE_TRANSFER_BIT;
-                    ctx_nsgt->fn_access_flags[i] = VK_ACCESS_TRANSFER_WRITE_BIT;
-                }
-                war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                                 ctx_nsgt->fn_src_idx,
-                                 0,
-                                 0,
-                                 ctx_nsgt->fn_pipeline_stage_flags,
-                                 ctx_nsgt->fn_access_flags,
-                                 ctx_nsgt->fn_image_layout,
-                                 ctx_vk->cmd_buffer,
-                                 ctx_nsgt);
-                war_nsgt_clear(ctx_nsgt->fn_idx_count,
-                               ctx_nsgt->fn_src_idx,
-                               0,
-                               0,
-                               ctx_vk->cmd_buffer,
-                               ctx_nsgt);
-            }
-            float* capture_wav_samples = (float*)(capture_wav->file + 44);
-            float* stage_samples =
-                (float*)(ctx_nsgt->map[ctx_nsgt->idx_wav_stage]);
-            memcpy(stage_samples,
-                   &capture_wav_samples[base_sample_capture],
-                   diff_bytes);
-
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_stage;
-            ctx_nsgt->fn_size[0] = diff_bytes;
-            ctx_nsgt->fn_idx_count = 1;
-            war_nsgt_flush(ctx_nsgt->fn_idx_count,
-                           ctx_nsgt->fn_dst_idx,
-                           0,
-                           ctx_nsgt->fn_size,
-                           ctx_vk->device,
-                           ctx_nsgt);
-            ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_wav_stage;
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav_temp;
-            ctx_nsgt->fn_pipeline_stage_flags[0] =
-                VK_PIPELINE_STAGE_TRANSFER_BIT;
-            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_TRANSFER_READ_BIT;
-            ctx_nsgt->fn_idx_count = 1;
-            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                             ctx_nsgt->fn_src_idx,
-                             0,
-                             0,
-                             ctx_nsgt->fn_pipeline_stage_flags,
-                             ctx_nsgt->fn_access_flags,
-                             0,
-                             ctx_vk->cmd_buffer,
-                             ctx_nsgt);
-            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_TRANSFER_WRITE_BIT;
-            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                             ctx_nsgt->fn_dst_idx,
-                             0,
-                             0,
-                             ctx_nsgt->fn_pipeline_stage_flags,
-                             ctx_nsgt->fn_access_flags,
-                             0,
-                             ctx_vk->cmd_buffer,
-                             ctx_nsgt);
-            ctx_nsgt->fn_size[0] = diff_bytes;
-            war_nsgt_copy(ctx_nsgt->fn_idx_count,
-                          ctx_nsgt->fn_src_idx,
-                          ctx_nsgt->fn_dst_idx,
-                          0,
-                          0,
-                          ctx_nsgt->fn_size,
-                          ctx_vk->cmd_buffer,
-                          ctx_nsgt);
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_wav;
-            ctx_nsgt->fn_pipeline_stage_flags[0] =
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
-            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_nsgt_temp;
-            ctx_nsgt->fn_pipeline_stage_flags[1] =
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            ctx_nsgt->fn_access_flags[1] = VK_ACCESS_SHADER_WRITE_BIT;
-            ctx_nsgt->fn_idx_count = 2;
-            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                             ctx_nsgt->fn_dst_idx,
-                             0,
-                             0,
-                             ctx_nsgt->fn_pipeline_stage_flags,
-                             ctx_nsgt->fn_access_flags,
-                             0,
-                             ctx_vk->cmd_buffer,
-                             ctx_nsgt);
-            uint32_t nsgt_local_size_x =
-                ctx_nsgt
-                    ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_nsgt *
-                                              ctx_nsgt->groups +
-                                          0];
-            uint32_t max_work_groups = ctx_nsgt->physical_device_properties
-                                           .limits.maxComputeWorkGroupCount[0];
-            uint32_t nsgt_group_count_x =
-                (frame_count + nsgt_local_size_x - 1) / nsgt_local_size_x;
-            if (nsgt_group_count_x > max_work_groups) {
-                nsgt_group_count_x = max_work_groups;
-            }
-            ctx_nsgt->pipeline_dispatch_group
-                [ctx_nsgt->pipeline_idx_compute_nsgt * ctx_nsgt->groups + 0] =
-                nsgt_group_count_x;
-            ctx_nsgt->compute_push_constant.arg_1 = frame_count;
-            ctx_nsgt->compute_push_constant.arg_2 = base_sample;
-            ctx_nsgt->compute_push_constant.arg_3 = ctx_nsgt->bin_capacity;
-            ctx_nsgt->compute_push_constant.arg_4 = hop;
-            war_nsgt_compute_pipeline_bind_set_dispatch(
-                ctx_nsgt->pipeline_idx_compute_nsgt,
-                ctx_vk->cmd_buffer,
-                ctx_nsgt);
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_nsgt_temp;
-            ctx_nsgt->fn_pipeline_stage_flags[0] =
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
-            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_magnitude_temp;
-            ctx_nsgt->fn_pipeline_stage_flags[1] =
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            ctx_nsgt->fn_access_flags[1] = VK_ACCESS_SHADER_WRITE_BIT;
-            ctx_nsgt->fn_idx_count = 2;
-            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                             ctx_nsgt->fn_dst_idx,
-                             0,
-                             0,
-                             ctx_nsgt->fn_pipeline_stage_flags,
-                             ctx_nsgt->fn_access_flags,
-                             0,
-                             ctx_vk->cmd_buffer,
-                             ctx_nsgt);
-            uint32_t magnitude_local_size_x =
-                ctx_nsgt
-                    ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_nsgt *
-                                              ctx_nsgt->groups +
-                                          0];
-            uint32_t magnitude_group_count_x =
-                (frame_count + magnitude_local_size_x - 1) /
-                magnitude_local_size_x;
-            if (magnitude_group_count_x > max_work_groups) {
-                magnitude_group_count_x = max_work_groups;
-            }
-            ctx_nsgt->pipeline_dispatch_group
-                [ctx_nsgt->pipeline_idx_compute_magnitude * ctx_nsgt->groups +
-                 0] = magnitude_group_count_x;
-            war_nsgt_compute_pipeline_dispatch(
-                ctx_nsgt->pipeline_idx_compute_magnitude,
-                ctx_vk->cmd_buffer,
-                ctx_nsgt);
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_magnitude_temp;
-            ctx_nsgt->fn_pipeline_stage_flags[0] =
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
-            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_transient_temp;
-            ctx_nsgt->fn_pipeline_stage_flags[1] =
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            ctx_nsgt->fn_access_flags[1] = VK_ACCESS_SHADER_WRITE_BIT;
-            ctx_nsgt->fn_idx_count = 2;
-            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                             ctx_nsgt->fn_dst_idx,
-                             0,
-                             0,
-                             ctx_nsgt->fn_pipeline_stage_flags,
-                             ctx_nsgt->fn_access_flags,
-                             0,
-                             ctx_vk->cmd_buffer,
-                             ctx_nsgt);
-            uint32_t transient_local_size_x =
-                ctx_nsgt->pipeline_local_size
-                    [ctx_nsgt->pipeline_idx_compute_transient *
-                         ctx_nsgt->groups +
-                     0];
-            uint32_t transient_group_count_x =
-                (frame_count + transient_local_size_x - 1) /
-                transient_local_size_x;
-            if (transient_group_count_x > max_work_groups) {
-                transient_group_count_x = max_work_groups;
-            }
-            ctx_nsgt->pipeline_dispatch_group
-                [ctx_nsgt->pipeline_idx_compute_transient * ctx_nsgt->groups +
-                 0] = transient_group_count_x;
-            war_nsgt_compute_pipeline_dispatch(
-                ctx_nsgt->pipeline_idx_compute_transient,
-                ctx_vk->cmd_buffer,
-                ctx_nsgt);
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_transient_temp;
-            ctx_nsgt->fn_pipeline_stage_flags[0] =
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
-            ctx_nsgt->fn_image_layout[0] = 0;
-            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_image_temp;
-            ctx_nsgt->fn_pipeline_stage_flags[1] =
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-            ctx_nsgt->fn_access_flags[1] = VK_ACCESS_SHADER_WRITE_BIT;
-            ctx_nsgt->fn_image_layout[1] = VK_IMAGE_LAYOUT_GENERAL;
-            ctx_nsgt->fn_idx_count = 2;
-            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                             ctx_nsgt->fn_dst_idx,
-                             0,
-                             0,
-                             ctx_nsgt->fn_pipeline_stage_flags,
-                             ctx_nsgt->fn_access_flags,
-                             ctx_nsgt->fn_image_layout,
-                             ctx_vk->cmd_buffer,
-                             ctx_nsgt);
-            uint32_t image_local_size_x =
-                ctx_nsgt
-                    ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_image *
-                                              ctx_nsgt->groups +
-                                          0];
-            uint32_t image_local_size_y =
-                ctx_nsgt
-                    ->pipeline_local_size[ctx_nsgt->pipeline_idx_compute_image *
-                                              ctx_nsgt->groups +
-                                          1];
-            uint32_t image_group_count_x =
-                (frame_count + image_local_size_x - 1) / image_local_size_x;
-            uint32_t image_group_count_y =
-                (ctx_nsgt->bin_capacity + image_local_size_y - 1) /
-                image_local_size_y;
-            if (image_group_count_x > max_work_groups) {
-                image_group_count_x = max_work_groups;
-            }
-            if (image_group_count_y > max_work_groups) {
-                image_group_count_y = max_work_groups;
-            }
-            ctx_nsgt->pipeline_dispatch_group
-                [ctx_nsgt->pipeline_idx_compute_image * ctx_nsgt->groups + 0] =
-                image_group_count_x;
-            ctx_nsgt->pipeline_dispatch_group
-                [ctx_nsgt->pipeline_idx_compute_image * ctx_nsgt->groups + 1] =
-                image_group_count_y;
-            war_nsgt_compute_pipeline_dispatch(
-                ctx_nsgt->pipeline_idx_compute_image,
-                ctx_vk->cmd_buffer,
-                ctx_nsgt);
-            // image_temp -> image
-            ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image_temp;
-            ctx_nsgt->fn_image_layout[0] = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
-            // wav_temp -> wav
-            ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_wav_temp;
-            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_wav;
-            ctx_nsgt->fn_image_layout[1] = 0;
-            //  nsgt_temp -> nsgt
-            ctx_nsgt->fn_src_idx[2] = ctx_nsgt->idx_nsgt_temp;
-            ctx_nsgt->fn_dst_idx[2] = ctx_nsgt->idx_nsgt;
-            ctx_nsgt->fn_image_layout[2] = 0;
-            // magnitude_temp -> magnitude
-            ctx_nsgt->fn_src_idx[3] = ctx_nsgt->idx_magnitude_temp;
-            ctx_nsgt->fn_dst_idx[3] = ctx_nsgt->idx_magnitude;
-            ctx_nsgt->fn_image_layout[3] = 0;
-            // transient_temp -> transient
-            ctx_nsgt->fn_src_idx[4] = ctx_nsgt->idx_transient_temp;
-            ctx_nsgt->fn_dst_idx[4] = ctx_nsgt->idx_transient;
-            ctx_nsgt->fn_image_layout[4] = 0;
-            ctx_nsgt->fn_idx_count = 5;
-            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
-                ctx_nsgt->fn_pipeline_stage_flags[i] =
-                    VK_PIPELINE_STAGE_TRANSFER_BIT;
-                ctx_nsgt->fn_access_flags[i] = VK_ACCESS_TRANSFER_READ_BIT;
-            }
-            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                             ctx_nsgt->fn_src_idx,
-                             0,
-                             0,
-                             ctx_nsgt->fn_pipeline_stage_flags,
-                             ctx_nsgt->fn_access_flags,
-                             ctx_nsgt->fn_image_layout,
-                             ctx_vk->cmd_buffer,
-                             ctx_nsgt);
-            for (uint32_t i = 0; i < ctx_nsgt->fn_idx_count; i++) {
-                ctx_nsgt->fn_access_flags[i] = VK_ACCESS_TRANSFER_WRITE_BIT;
-            }
-            ctx_nsgt->fn_image_layout[0] = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                             ctx_nsgt->fn_dst_idx,
-                             0,
-                             0,
-                             ctx_nsgt->fn_pipeline_stage_flags,
-                             ctx_nsgt->fn_access_flags,
-                             ctx_nsgt->fn_image_layout,
-                             ctx_vk->cmd_buffer,
-                             ctx_nsgt);
-            VkDeviceSize image_span_bytes = ctx_nsgt->frame_capacity *
-                                            ctx_nsgt->bin_capacity *
-                                            sizeof(float);
-            // image_temp -> image (append, no wrap)
-            uint32_t frame_cap = ctx_nsgt->frame_capacity;
-            uint32_t cursor = ctx_nsgt->frame_filled;
-            uint32_t chunk_frames = frame_count;
-            if (cursor + chunk_frames > frame_cap) {
-                chunk_frames = frame_cap - cursor;
-            }
-            VkDeviceSize image_dst_offset =
-                (VkDeviceSize)cursor * ctx_nsgt->bin_capacity * sizeof(float);
-
-            ctx_nsgt->fn_src_idx[0] = ctx_nsgt->idx_image_temp;
-            ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
-            ctx_nsgt->fn_src_offset[0] = 0;
-            ctx_nsgt->fn_size[0] = (VkDeviceSize)chunk_frames *
-                                   ctx_nsgt->bin_capacity * sizeof(float);
-            if (ctx_nsgt->fn_size[0] > image_span_bytes)
-                ctx_nsgt->fn_size[0] = image_span_bytes;
-            ctx_nsgt->fn_dst_offset[0] = image_dst_offset;
-
-            ctx_nsgt->fn_idx_count = 5;
-            war_nsgt_copy(ctx_nsgt->fn_idx_count,
-                          ctx_nsgt->fn_src_idx,
-                          ctx_nsgt->fn_dst_idx,
-                          ctx_nsgt->fn_src_offset,
-                          ctx_nsgt->fn_dst_offset,
-                          ctx_nsgt->fn_size,
-                          ctx_vk->cmd_buffer,
-                          ctx_nsgt);
-
-            // wav_temp -> wav
-
-            ctx_nsgt->fn_src_idx[1] = ctx_nsgt->idx_wav_temp;
-            ctx_nsgt->fn_dst_idx[1] = ctx_nsgt->idx_wav;
-            ctx_nsgt->fn_size[1] = diff_bytes;
-            ctx_nsgt->fn_dst_offset[1] = ctx_nsgt->size[ctx_nsgt->idx_wav];
-            //  nsgt_temp -> nsgt
-            ctx_nsgt->fn_src_idx[2] = ctx_nsgt->idx_nsgt_temp;
-            ctx_nsgt->fn_dst_idx[2] = ctx_nsgt->idx_nsgt;
-            ctx_nsgt->fn_size[2] = frame_count * ctx_nsgt->bin_capacity *
-                                   sizeof(float) * 2; // vec2
-            ctx_nsgt->fn_dst_offset[2] = ctx_nsgt->size[ctx_nsgt->idx_nsgt];
-            // magnitude_temp -> magnitude
-            ctx_nsgt->fn_src_idx[3] = ctx_nsgt->idx_magnitude_temp;
-            ctx_nsgt->fn_dst_idx[3] = ctx_nsgt->idx_magnitude;
-            ctx_nsgt->fn_size[3] =
-                frame_count * ctx_nsgt->bin_capacity * sizeof(float);
-            ctx_nsgt->fn_dst_offset[3] =
-                ctx_nsgt->size[ctx_nsgt->idx_magnitude];
-            // transient_temp -> transient
-            ctx_nsgt->fn_src_idx[4] = ctx_nsgt->idx_transient_temp;
-            ctx_nsgt->fn_dst_idx[4] = ctx_nsgt->idx_transient;
-            ctx_nsgt->fn_size[4] =
-                frame_count * ctx_nsgt->bin_capacity * sizeof(float);
-            ctx_nsgt->fn_dst_offset[4] =
-                ctx_nsgt->size[ctx_nsgt->idx_transient];
-            uint32_t filled = ctx_nsgt->frame_filled + frame_count;
-            if (filled > ctx_nsgt->frame_capacity)
-                filled = ctx_nsgt->frame_capacity;
-            ctx_nsgt->frame_filled = filled;
-            ctx_nsgt->frame_cursor = filled; // no wrap in display
-            ctx_nsgt->size[ctx_nsgt->idx_image] =
-                (VkDeviceSize)ctx_nsgt->frame_filled * ctx_nsgt->bin_capacity *
-                sizeof(float);
-            ctx_nsgt->size[ctx_nsgt->idx_wav] += diff_bytes;
-            ctx_nsgt->size[ctx_nsgt->idx_nsgt] += frame_count *
-                                                  ctx_nsgt->bin_capacity *
-                                                  sizeof(float) * 2; // vec2
-            ctx_nsgt->size[ctx_nsgt->idx_magnitude] +=
-                frame_count * ctx_nsgt->bin_capacity * sizeof(float);
-            ctx_nsgt->size[ctx_nsgt->idx_transient] +=
-                frame_count * ctx_nsgt->bin_capacity * sizeof(float);
-            ctx_nsgt->graphics_push_constant.frame_capacity =
-                (int)ctx_nsgt->frame_capacity;
-            ctx_nsgt->graphics_push_constant.bin_capacity =
-                (int)ctx_nsgt->bin_capacity;
-            ctx_nsgt->graphics_push_constant.frame_offset = 0;
-            ctx_nsgt->graphics_push_constant.frame_count = (int)frame_count;
-            ctx_nsgt->graphics_push_constant.frame_filled =
-                (int)ctx_nsgt->frame_filled;
-
-            ctx_nsgt->dirty_compute = 0;
-        war_label_skip_nsgt_graphics_compute:
             if (ctx_nsgt->image_layout[ctx_nsgt->idx_image] !=
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
                 ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
@@ -3554,6 +3168,16 @@ war_label_cmd_timeout_done:
                  ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE)) {
                 goto war_label_end_render_pass;
             }
+            ctx_nsgt->graphics_viewport.x = 0.0f;
+            ctx_nsgt->graphics_viewport.y = 0.0f;
+            ctx_nsgt->graphics_viewport.width = (float)physical_width;
+            ctx_nsgt->graphics_viewport.height = (float)physical_height;
+            ctx_nsgt->graphics_viewport.minDepth = 0.0f,
+            ctx_nsgt->graphics_viewport.maxDepth = 1.0f,
+            ctx_nsgt->graphics_rect_2d.offset.x = 0;
+            ctx_nsgt->graphics_rect_2d.extent.width = (uint32_t)physical_width;
+            ctx_nsgt->graphics_rect_2d.extent.height =
+                (uint32_t)physical_height;
             ctx_nsgt->graphics_push_constant.z_layer =
                 ctx_wr->z_layers[LAYER_GRIDLINES];
             war_nsgt_draw(ctx_vk->cmd_buffer, ctx_nsgt);

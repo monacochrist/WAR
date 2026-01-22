@@ -219,91 +219,6 @@ typedef struct war_note_quad {
     uint32_t mute;
 } war_note_quad;
 
-typedef struct war_payload_add_note {
-    war_note note;
-    war_note_quad note_quad;
-} war_payload_add_note;
-
-typedef struct war_payload_delete_note {
-    war_note note;
-    war_note_quad note_quad;
-} war_payload_delete_note;
-
-typedef struct war_payload_add_notes {
-    war_note* note;
-    war_note_quad* note_quad;
-    uint32_t count;
-} war_payload_add_notes;
-
-typedef struct war_payload_delete_notes {
-    war_note* note;
-    war_note_quad* note_quad;
-    uint32_t count;
-} war_payload_delete_notes;
-
-typedef struct war_payload_add_notes_same {
-    war_note note;
-    war_note_quad note_quad;
-    uint64_t* ids;
-    uint32_t count;
-} war_payload_add_notes_same;
-
-typedef struct war_payload_delete_notes_same {
-    war_note note;
-    war_note_quad note_quad;
-    uint64_t* ids;
-    uint32_t count;
-} war_payload_delete_notes_same;
-
-typedef struct war_payload_swap_add_notes {
-    char* fname;
-    uint32_t count;
-} war_payload_swap_add_notes;
-
-typedef struct war_payload_swap_delete_notes {
-    char* fname;
-    uint32_t count;
-} war_payload_swap_delete_notes;
-
-typedef union war_payload_union {
-    war_payload_add_note add_note;
-    war_payload_delete_note delete_note;
-    war_payload_add_notes add_notes;
-    war_payload_delete_notes delete_notes;
-    war_payload_add_notes_same add_notes_same;
-    war_payload_delete_notes_same delete_notes_same;
-    war_payload_swap_add_notes swap_add_notes;
-    war_payload_swap_delete_notes swap_delete_notes;
-} war_payload_union;
-
-typedef struct war_undo_node {
-    uint64_t id;
-    uint64_t seq_num;
-    uint32_t branch_id;
-    uint32_t command;
-    war_payload_union payload;
-    double cursor_pos_x;
-    double cursor_pos_y;
-    uint32_t left_col;
-    uint32_t right_col;
-    uint32_t top_row;
-    uint32_t bottom_row;
-    char* timestamp;
-    struct war_undo_node* parent;
-    struct war_undo_node* next;
-    struct war_undo_node* prev;
-    struct war_undo_node* alt_next;
-    struct war_undo_node* alt_prev;
-} war_undo_node;
-
-typedef struct war_undo_tree {
-    war_undo_node* root;
-    war_undo_node* current;
-    uint64_t next_id;
-    uint64_t next_seq_num;
-    uint32_t next_branch_id;
-} war_undo_tree;
-
 typedef struct war_lua_context {
     // audio
     _Atomic int A_SAMPLE_RATE;
@@ -329,8 +244,8 @@ typedef struct war_lua_context {
     _Atomic int A_BUILDER_DATA_SIZE;
     _Atomic int A_PLAY_DATA_SIZE;
     _Atomic int A_CAPTURE_DATA_SIZE;
-    _Atomic int A_CACHE_SIZE;
-    _Atomic int A_PATH_LIMIT;
+    _Atomic int CACHE_FILE_CAPACITY;
+    _Atomic int CONFIG_PATH_MAX;
     _Atomic int A_WARMUP_FRAMES_FACTOR;
     // window render
     _Atomic int WR_VIEWS_SAVED;
@@ -394,6 +309,8 @@ typedef struct war_lua_context {
     _Atomic int NSGT_PIPELINE_COUNT;
     _Atomic int NSGT_GRAPHICS_FPS;
     _Atomic int NSGT_GROUPS;
+    // cache nsgt
+    _Atomic int CACHE_NSGT_CAPACITY;
     // nsgt visual
     _Atomic int VK_NSGT_VISUAL_QUAD_CAPACITY;
     _Atomic int VK_NSGT_VISUAL_RESOURCE_COUNT;
@@ -540,57 +457,337 @@ typedef struct war_pool {
     size_t pool_alignment;
 } war_pool;
 
-typedef struct war_map_wav {
-    uint64_t* id;
-    char* fname;
-    uint32_t* fname_size;
-    uint32_t capacity;
-    // limits
-    uint32_t note_count;
-    uint32_t layer_count;
-    uint32_t name_limit;
-} war_map_wav;
+typedef uint32_t war_diff_type_u32;
+typedef uint64_t war_diff_type_u64;
+typedef enum war_diff_type_bits {
+    WAR_DIFF_TYPE_NONE = 0,
+} war_diff_type_bits;
 
-enum war_file_types {
-    FILE_NONE = 0,
-    FILE_WAR = 1,
-    FILE_WAV = 2,
-};
-
-typedef struct war_cache {
-    uint64_t* id;
-    uint64_t* timestamp;
-    uint8_t** file;
-    uint8_t* type;
-    dev_t* device;
-    ino_t* inode;
-    int* memfd;
-    uint64_t* memfd_size;
-    uint64_t* memfd_capacity;
-    int* fd;
-    uint64_t* fd_size;
-    uint32_t* free;
-    uint32_t free_count;
-    uint32_t count;
-    uint64_t next_id;
-    uint64_t next_timestamp;
-    uint32_t capacity;
-} war_cache;
+typedef uint32_t war_file_type_u32;
+typedef uint64_t war_file_type_u64;
+typedef enum war_file_type_bits {
+    WAR_FILE_TYPE_NONE = 0,
+    WAR_FILE_TYPE_WAV = 1,
+    WAR_FILE_TYPE_SEQUENCE = 2,
+    WAR_FILE_TYPE_MAP = 3,
+    WAR_FILE_TYPE_UNDO = 4,
+} war_file_type_bits;
 
 typedef struct war_file {
     uint8_t* file;
-    uint8_t type;
+    war_file_type_u32 type;
     int memfd;
     uint64_t memfd_size;
     uint64_t memfd_capacity;
     int fd;
     uint64_t fd_size;
-    char* fname;
-    uint32_t fname_size;
-    uint32_t name_limit;
-    dev_t device;
-    ino_t inode;
+    char* path;
+    uint32_t path_size;
+    uint32_t path_capacity;
+    dev_t* st_dev;
+    ino_t* st_ino;
+    struct timespec st_mtim;
 } war_file;
+
+typedef struct __attribute__((packed)) war_jumplist_header {
+    char magic_container[4];
+    char magic[4];
+    uint32_t version; // 0
+} war_jumplist_header;
+
+typedef struct __attribute__((packed)) war_jumplist_entry {
+    uint64_t col;
+    uint64_t row;
+    uint64_t bottom_row;
+    uint64_t top_row;
+    uint64_t left_col;
+    uint64_t right_col;
+    war_file_type_u64 type;
+    uint64_t path_size;
+    uint64_t path_offset;
+} war_jumplist_entry;
+
+typedef struct war_jumplist_context {
+    // jumplist
+    char** path;
+    uint32_t* path_size;
+    uint32_t* path_capacity;
+    uint8_t** head;
+    uint64_t* head_size;
+    uint64_t* head_capacity;
+    uint8_t** body;
+    uint64_t* body_capacity;
+    // misc
+    uint64_t* id;
+    uint64_t* timestamp;
+    war_file_type_u32* file_type;
+    dev_t* st_dev;
+    ino_t* st_ino;
+    struct timespec* st_mtim;
+    int* memfd;
+    int* fd;
+    uint32_t config_path_max;
+    uint32_t* free;
+    uint32_t free_count;
+    uint32_t count;
+    uint32_t capacity;
+    uint64_t next_id;
+    uint64_t next_timestamp;
+} war_jumplist_context;
+
+typedef struct __attribute__((packed)) war_warpoon_header {
+    char magic_container[4];
+    char magic[4];
+    uint32_t version; // 0
+} war_warpoon_header;
+
+typedef struct __attribute__((packed)) war_warpoon_entry {
+    uint64_t col;
+    uint64_t row;
+    uint64_t bottom_row;
+    uint64_t top_row;
+    uint64_t left_col;
+    uint64_t right_col;
+    war_file_type_u64 type;
+    uint64_t path_size;
+    uint64_t path_offset;
+} war_warpoon_entry;
+
+typedef struct war_warpoon_context {
+    // warpoon
+    char** path;
+    uint32_t* path_size;
+    uint32_t* path_capacity;
+    uint8_t** head;
+    uint64_t* head_size;
+    uint64_t* head_capacity;
+    uint8_t** body;
+    uint64_t* body_capacity;
+    // misc
+    uint64_t* id;
+    uint64_t* timestamp;
+    war_file_type_u32* file_type;
+    dev_t* st_dev;
+    ino_t* st_ino;
+    struct timespec* st_mtim;
+    int* memfd;
+    int* fd;
+    uint32_t config_path_max;
+    uint32_t* free;
+    uint32_t free_count;
+    uint32_t count;
+    uint32_t capacity;
+    uint64_t next_id;
+    uint64_t next_timestamp;
+} war_warpoon_context;
+
+typedef struct __attribute__((packed)) war_sequence_header {
+    char magic_container[4];
+    char magic[4];
+    uint32_t version; // 0
+} war_sequence_header;
+
+typedef struct __attribute__((packed)) war_sequence_entry {
+    uint64_t col_frames;
+    uint64_t size_frames;
+    uint64_t row;
+    war_file_type_u64 type;
+    uint64_t path_size;
+    uint64_t path_offset;
+} war_sequence_entry;
+
+typedef struct war_sequence_context {
+    // sequence
+    char** path;
+    uint32_t* path_size;
+    uint32_t* path_capacity;
+    uint8_t** head;
+    uint64_t* head_size;
+    uint64_t* head_capacity;
+    uint8_t** body;
+    uint64_t* body_capacity;
+    // misc
+    uint64_t* id;
+    uint64_t* timestamp;
+    war_file_type_u32* file_type;
+    dev_t* st_dev;
+    ino_t* st_ino;
+    struct timespec* st_mtim;
+    int* memfd;
+    int* fd;
+    uint32_t config_path_max;
+    uint32_t* free;
+    uint32_t free_count;
+    uint32_t count;
+    uint32_t capacity;
+    uint64_t next_id;
+    uint64_t next_timestamp;
+} war_sequence_context;
+
+typedef struct __attribute__((packed)) war_undo_header {
+    char magic_container[4];
+    char magic[4];
+    uint32_t version; // 0
+    uint32_t current_node_id_lo;
+    uint32_t current_node_id_hi;
+    war_file_type_u32 src_file_type;
+    uint32_t src_path_size;
+    uint32_t src_path_offset;
+} war_undo_header;
+
+typedef struct __attribute__((packed)) war_undo_node {
+    uint64_t node_id;
+    uint64_t timestamp;
+    uint64_t seq_num;
+    uint64_t branch_id;
+    uint64_t command;
+    uint64_t cursor_pos_x_double;
+    uint64_t cursor_pos_y_double;
+    uint64_t left_col;
+    uint64_t right_col;
+    uint64_t top_row;
+    uint64_t bottom_row;
+    uint64_t parent_id;
+    uint64_t next_id;
+    uint64_t prev_id;
+    uint64_t alt_next_id;
+    uint64_t alt_prev_id;
+    war_diff_type_u64 diff_type;
+    uint64_t diff_size;
+    uint64_t diff_size_frames;
+    uint64_t diff_src_offset;
+    uint64_t diff_src_offset_frames;
+    uint64_t diff_offset;
+} war_undo_node;
+
+typedef struct war_undo_context {
+    // undo
+    char** path;
+    uint32_t* path_size;
+    uint32_t* path_capacity;
+    uint8_t** head;
+    uint64_t* head_size;
+    uint64_t* head_capacity;
+    uint64_t* body_offset;
+    uint64_t* body_capacity;
+    uint8_t** node; // into og. file body
+    //  misc
+    uint64_t* id;
+    uint64_t* timestamp;
+    war_file_type_u32* file_type;
+    dev_t* st_dev;
+    ino_t* st_ino;
+    struct timespec* st_mtim;
+    int* memfd;
+    int* fd;
+    uint32_t config_path_max;
+    uint32_t* free;
+    uint32_t free_count;
+    uint32_t count;
+    uint32_t capacity;
+    uint64_t next_id;
+    uint64_t next_timestamp;
+} war_undo_context;
+
+typedef struct __attribute__((packed)) war_map_header {
+    char magic_container[4];
+    char magic[4];
+    uint32_t version; // 0
+} war_map_header;
+
+typedef struct __attribute__((packed)) war_map_entry {
+    uint32_t key;
+    uint32_t layer;
+    uint32_t path_size;
+    uint32_t path_offset;
+} war_map_entry;
+
+typedef struct war_map_context {
+    // map file
+    char** path;
+    uint32_t* path_size;
+    uint32_t* path_capacity;
+    uint8_t** head;
+    uint64_t* head_size;
+    uint64_t* head_capacity;
+    uint8_t** body;
+    uint64_t* body_capacity;
+    // key, layer, path_size, path
+    // 4 + 4 + 4 + ((path_size + alignment - 1) & ~(alignment - 1))
+    // misc
+    uint64_t* id;
+    uint64_t* timestamp;
+    war_file_type_u32* file_type;
+    dev_t* st_dev;
+    ino_t* st_ino;
+    struct timespec* st_mtim;
+    int* memfd;
+    int* fd;
+    uint32_t config_path_max;
+    uint32_t* free;
+    uint32_t free_count;
+    uint32_t count;
+    uint32_t capacity;
+    uint64_t next_id;
+    uint64_t next_timestamp;
+} war_map_context;
+
+typedef struct war_part_context {
+    // slice
+    char** path;
+    uint32_t* path_size;
+    uint32_t* path_capacity;
+    uint8_t** head;
+    uint64_t* head_size;
+    uint64_t* head_capacity;
+    uint8_t** tail;
+    uint64_t* tail_size;
+    uint64_t* tail_capacity;
+    uint64_t* body_offset;
+    uint64_t* body_capacity;
+    uint64_t* body_offset_frames;
+    uint64_t* body_capacity_frames;
+    uint8_t** part; // into og. file body
+    uint64_t* part_edit_size;
+    uint64_t* part_edit_frames;
+    uint64_t* part_edit_offset;
+    uint64_t* part_edit_offset_frames;
+    uint64_t* part_capacity;
+    uint64_t* part_capacity_frames;
+    float** pcm_l;
+    float** pcm_r;
+    uint64_t* pcm_edit_size;
+    uint64_t* pcm_edit_frames;
+    uint64_t* pcm_edit_offset;
+    uint64_t* pcm_edit_offset_frames;
+    uint64_t* pcm_capacity;
+    uint64_t* pcm_capacity_frames;
+    float** pcm_temp_l;
+    float** pcm_temp_r;
+    uint64_t* pcm_temp_edit_size;
+    uint64_t* pcm_temp_edit_frames;
+    uint64_t* pcm_temp_edit_offset;
+    uint64_t* pcm_temp_capacity;
+    uint64_t* pcm_temp_edit_offset_frames;
+    uint64_t* pcm_temp_capacity_frames;
+    // float** video;
+    // misc
+    uint64_t* id;
+    uint64_t* timestamp;
+    war_file_type_u32* file_type;
+    dev_t* st_dev;
+    ino_t* st_ino;
+    struct timespec* st_mtim;
+    int* memfd;
+    int* fd;
+    uint32_t config_path_max;
+    uint32_t* free;
+    uint32_t free_count;
+    uint32_t count;
+    uint32_t capacity;
+    uint64_t next_id;
+    uint64_t next_timestamp;
+} war_part_context;
 
 typedef struct war_audio_context {
     double BPM;
@@ -1009,6 +1206,21 @@ typedef struct war_nsgt_graphics_push_constant {
     int frame_filled;
 } war_nsgt_graphics_push_constant;
 
+typedef struct war_nsgt_cache {
+    VkImage* image;
+    uint32_t* frame_offset;
+    uint64_t* id;
+    uint64_t* timestamp;
+    uint32_t* frame_count;
+    uint32_t* frame_capacity;
+    uint32_t* free;
+    uint32_t free_count;
+    uint32_t count;
+    uint64_t next_id;
+    uint64_t next_timestamp;
+    uint32_t capacity;
+} war_nsgt_cache;
+
 typedef struct war_nsgt_context {
     // pipeline
     uint32_t pipeline_idx_compute_nsgt;
@@ -1149,6 +1361,12 @@ typedef struct war_nsgt_context {
     VkDeviceSize path_limit;
     VkDeviceSize cis_capacity;
     VkDeviceSize transient_capacity;
+    VkDeviceSize frames_per_bin_capacity;
+    VkDeviceSize frame_offset_capacity;
+    VkDeviceSize image_frame_capacity;
+    VkDeviceSize max_image_dimension_2d;
+    VkDeviceSize optimal_buffer_copy_row_pitch_alignment;
+    VkDeviceSize image_count;
     uint32_t groups;
     // graphics fps
     uint32_t graphics_fps;
@@ -1361,7 +1579,7 @@ struct war_env {
     war_vulkan_context* ctx_vk;
     war_file* capture_wav;
     war_fsm_context* ctx_fsm;
-    war_cache* cache;
+    war_cache_file* cache_file;
     war_producer_consumer* pc_capture;
     war_nsgt_context* ctx_nsgt;
 };

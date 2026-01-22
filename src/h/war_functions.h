@@ -86,8 +86,8 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(A_BYTES_NEEDED)
     LOAD_INT(A_EDO)
     LOAD_INT(A_NOTES_MAX)
-    LOAD_INT(A_CACHE_SIZE)
-    LOAD_INT(A_PATH_LIMIT)
+    LOAD_INT(CACHE_FILE_CAPACITY)
+    LOAD_INT(CONFIG_PATH_MAX)
     LOAD_INT(A_WARMUP_FRAMES_FACTOR)
     LOAD_INT(ROLL_POSITION_X_Y)
     LOAD_INT(A_SCHED_FIFO_PRIORITY)
@@ -134,6 +134,7 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(NSGT_PIPELINE_COUNT)
     LOAD_INT(NSGT_GRAPHICS_FPS)
     LOAD_INT(NSGT_GROUPS)
+    LOAD_INT(CACHE_NSGT_CAPACITY)
     // nsgt visual
     LOAD_INT(VK_NSGT_VISUAL_QUAD_CAPACITY)
     LOAD_INT(VK_NSGT_VISUAL_RESOURCE_COUNT)
@@ -336,6 +337,12 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(uint16_t);
             else if (strcmp(type, "uint32_t") == 0)
                 type_size = sizeof(uint32_t);
+            else if (strcmp(type, "war_file_type") == 0)
+                type_size = sizeof(war_file_type);
+            else if (strcmp(type, "timespec") == 0)
+                type_size = sizeof(struct timespec);
+            else if (strcmp(type, "struct timespec") == 0)
+                type_size = sizeof(struct timespec);
             else if (strcmp(type, "uint64_t") == 0)
                 type_size = sizeof(uint64_t);
             else if (strcmp(type, "int16_t") == 0)
@@ -462,8 +469,8 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(VkWriteDescriptorSet);
             else if (strcmp(type, "VkShaderStageFlags") == 0)
                 type_size = sizeof(VkShaderStageFlags);
-            else if (strcmp(type, "war_cache") == 0)
-                type_size = sizeof(war_cache);
+            else if (strcmp(type, "war_cache_file") == 0)
+                type_size = sizeof(war_cache_file);
             else if (strcmp(type, "war_map_wav") == 0)
                 type_size = sizeof(war_map_wav);
             else if (strcmp(type, "ino_t") == 0)
@@ -1795,6 +1802,17 @@ war_get_ext(const char* file_name, char* ext, uint32_t name_limit) {
     memcpy(ext, ext_start, copy_len);
     ext[copy_len] = '\0';
     return copy_len;
+}
+
+static inline void war_wav_reset(war_window_render_context* ctx_wr,
+                                 war_file* file) {
+    file->memfd_size = 44;
+    memset(file->file, 0, file->memfd_capacity);
+    *(war_riff_header*)file->file = ctx_wr->init_riff_header;
+    *(war_fmt_chunk*)(file->file + sizeof(war_riff_header)) =
+        ctx_wr->init_fmt_chunk;
+    *(war_data_chunk*)(file->file + sizeof(war_riff_header) +
+                       sizeof(war_fmt_chunk)) = ctx_wr->init_data_chunk;
 }
 
 #endif // WAR_FUNCTIONS_H

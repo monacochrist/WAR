@@ -152,8 +152,7 @@ static inline void war_nsgt_copy(uint32_t idx_count,
         };
 
         // Get size in bytes and convert to number of pixels
-        VkDeviceSize num_bytes =
-            (size && size[i]) ? size[i] : ctx_nsgt->size[idx_src[i]];
+        VkDeviceSize num_bytes = size ? size[i] : 0;
         if (num_bytes == 0) continue;
 
         uint32_t num_pixels = (uint32_t)(num_bytes / sizeof(float));
@@ -164,8 +163,8 @@ static inline void war_nsgt_copy(uint32_t idx_count,
             (dst_offset ? dst_offset[i] / sizeof(float) : 0);
 
         // Image dimensions
-        uint32_t image_width = ctx_nsgt->frame_capacity;
-        uint32_t image_height = ctx_nsgt->bin_capacity;
+        uint32_t image_width = ctx_nsgt->extent_3d[idx_src[i]].width;
+        uint32_t image_height = ctx_nsgt->extent_3d[idx_src[i]].height;
 
         if (linear_offset >= image_width * image_height) continue;
 
@@ -333,14 +332,17 @@ static inline void war_nsgt_compute_pipeline_bind_set_dispatch(
     VkPipelineBindPoint pipeline_bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
     vkCmdBindPipeline(
         cmd, pipeline_bind_point, ctx_nsgt->pipeline[idx_pipeline]);
-    vkCmdBindDescriptorSets(cmd,
-                            pipeline_bind_point,
-                            ctx_nsgt->pipeline_layout[idx_pipeline],
-                            0,
-                            descriptor_set_count,
-                            &ctx_nsgt->descriptor_set[idx_pipeline],
-                            0,
-                            NULL);
+    vkCmdBindDescriptorSets(
+        cmd,
+        pipeline_bind_point,
+        ctx_nsgt->pipeline_layout[idx_pipeline],
+        0,
+        descriptor_set_count,
+        &ctx_nsgt->descriptor_set
+             [ctx_nsgt->pipeline_set_idx[idx_pipeline *
+                                         ctx_nsgt->descriptor_set_count]],
+        0,
+        NULL);
     vkCmdPushConstants(cmd,
                        ctx_nsgt->pipeline_layout[idx_pipeline],
                        VK_SHADER_STAGE_COMPUTE_BIT,
@@ -397,37 +399,49 @@ static inline void war_nsgt_draw(VkCommandBuffer cmd,
         0,
         ctx_nsgt->push_constant_size[ctx_nsgt->pipeline_idx_graphics],
         &ctx_nsgt->graphics_push_constant);
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdDraw(cmd, 6, 1, 0, 0);
 }
 
-static inline void war_nsgt_compute(VkDevice device,
-                                    VkQueue queue,
-                                    VkCommandBuffer cmd,
-                                    VkFence fence,
-                                    uint8_t* wav,
-                                    uint32_t samples_size) {
-    VkResult result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+static inline void war_nsgt_generate(war_file* wav,
+                                     war_nsgt_context* ctx_nsgt,
+                                     war_vulkan_context* ctx_vk,
+                                     war_fsm_context* ctx_fsm) {
+    return;
+    VkResult result =
+        vkWaitForFences(ctx_vk->device,
+                        1,
+                        &ctx_vk->in_flight_fences[ctx_vk->current_frame],
+                        VK_TRUE,
+                        UINT64_MAX);
     assert(result == VK_SUCCESS);
-    result = vkResetFences(device, 1, &fence);
+    result = vkResetFences(
+        ctx_vk->device, 1, &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
     assert(result == VK_SUCCESS);
-    result = vkResetCommandBuffer(cmd, 0);
+    result = vkResetCommandBuffer(ctx_vk->cmd_buffer, 0);
     assert(result == VK_SUCCESS);
     VkCommandBufferBeginInfo cmd_buffer_begin_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
-    result = vkBeginCommandBuffer(cmd, &cmd_buffer_begin_info);
+    result = vkBeginCommandBuffer(ctx_vk->cmd_buffer, &cmd_buffer_begin_info);
+    //
     assert(result == VK_SUCCESS);
-
-    result = vkEndCommandBuffer(cmd);
+    result = vkEndCommandBuffer(ctx_vk->cmd_buffer);
     assert(result == VK_SUCCESS);
     VkSubmitInfo submit_info = {0};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &cmd;
-    result = vkResetFences(device, 1, &fence);
+    submit_info.pCommandBuffers = &ctx_vk->cmd_buffer;
+    result = vkQueueSubmit(ctx_vk->queue,
+                           1,
+                           &submit_info,
+                           ctx_vk->in_flight_fences[ctx_vk->current_frame]);
     assert(result == VK_SUCCESS);
-    result = vkQueueSubmit(queue, 1, &submit_info, fence);
+    result = vkWaitForFences(ctx_vk->device,
+                             1,
+                             &ctx_vk->in_flight_fences[ctx_vk->current_frame],
+                             VK_TRUE,
+                             UINT64_MAX);
     assert(result == VK_SUCCESS);
 }
 
@@ -445,6 +459,11 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     header("war_nsgt_init");
     vkGetPhysicalDeviceProperties(physical_device,
                                   &ctx_nsgt->physical_device_properties);
+    ctx_nsgt->max_image_dimension_2d =
+        ctx_nsgt->physical_device_properties.limits.maxImageDimension2D;
+    ctx_nsgt->optimal_buffer_copy_row_pitch_alignment =
+        ctx_nsgt->physical_device_properties.limits
+            .optimalBufferCopyRowPitchAlignment;
     ctx_nsgt->descriptor_count = 0;
     ctx_nsgt->descriptor_image_count = 0;
     ctx_nsgt->resource_count = atomic_load(&ctx_lua->NSGT_RESOURCE_COUNT);
@@ -452,9 +471,10 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         atomic_load(&ctx_lua->NSGT_DESCRIPTOR_SET_COUNT);
     ctx_nsgt->shader_count = atomic_load(&ctx_lua->NSGT_SHADER_COUNT);
     ctx_nsgt->pipeline_count = atomic_load(&ctx_lua->NSGT_PIPELINE_COUNT);
-    ctx_nsgt->path_limit = atomic_load(&ctx_lua->A_PATH_LIMIT);
+    ctx_nsgt->path_limit = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
     ctx_nsgt->bin_capacity = atomic_load(&ctx_lua->NSGT_BIN_CAPACITY);
-    ctx_nsgt->frame_capacity = atomic_load(&ctx_lua->NSGT_FRAME_CAPACITY);
+    ctx_nsgt->image_frame_capacity = atomic_load(&ctx_lua->NSGT_FRAME_CAPACITY);
+    ctx_nsgt->frame_capacity = ctx_nsgt->image_frame_capacity;
     ctx_nsgt->sample_rate = atomic_load(&ctx_lua->A_SAMPLE_RATE);
     ctx_nsgt->sample_duration = atomic_load(&ctx_lua->A_SAMPLE_DURATION);
     ctx_nsgt->channel_count = atomic_load(&ctx_lua->A_CHANNEL_COUNT);
@@ -466,15 +486,18 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     ctx_nsgt->groups = atomic_load(&ctx_lua->NSGT_GROUPS);
     ctx_nsgt->wav_capacity = ctx_nsgt->sample_rate * ctx_nsgt->sample_duration *
                              ctx_nsgt->channel_count * sizeof(float);
+    ctx_nsgt->offset_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
+    ctx_nsgt->length_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
+    ctx_nsgt->frequency_capacity = ctx_nsgt->bin_capacity * sizeof(float);
+    ctx_nsgt->hop_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
+    ctx_nsgt->frames_per_bin_capacity =
+        ctx_nsgt->bin_capacity * sizeof(uint32_t);
+    ctx_nsgt->frame_offset_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
     ctx_nsgt->nsgt_capacity = ctx_nsgt->bin_capacity *
                               ctx_nsgt->frame_capacity * sizeof(float) *
                               2; // vec2 storage
     ctx_nsgt->magnitude_capacity =
         ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity * sizeof(float);
-    ctx_nsgt->offset_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
-    ctx_nsgt->length_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
-    ctx_nsgt->frequency_capacity = ctx_nsgt->bin_capacity * sizeof(float);
-    ctx_nsgt->hop_capacity = ctx_nsgt->bin_capacity * sizeof(uint32_t);
     ctx_nsgt->transient_capacity =
         ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity * sizeof(float);
     //-------------------------------------------------------------------------
@@ -484,6 +507,8 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     uint32_t* length = malloc(ctx_nsgt->length_capacity);
     uint32_t* hop = malloc(ctx_nsgt->hop_capacity);
     uint32_t* offset = malloc(ctx_nsgt->offset_capacity);
+    uint32_t* frame_offset = malloc(ctx_nsgt->frame_offset_capacity);
+    uint32_t* frames_per_bin = malloc(ctx_nsgt->frames_per_bin_capacity);
     float* cis = NULL;
     float* window = NULL;
     float* dual_window = NULL;
@@ -507,6 +532,33 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         length[i] = length_temp;
         hop[i] = length[i] / 2;
         window_cursor += length[i];
+    }
+    uint32_t total_samples =
+        ctx_nsgt->wav_capacity / sizeof(float) / ctx_nsgt->channel_count;
+    uint32_t frame_capacity = 0;
+    for (uint32_t b = 0; b < ctx_nsgt->bin_capacity; b++) {
+        frames_per_bin[b] =
+            ceil((total_samples - length[b]) / (float)hop[b]) + 1;
+        if (frames_per_bin[b] > frame_capacity) {
+            frame_capacity = frames_per_bin[b];
+        }
+    }
+    // ctx_nsgt->image_count =
+    //     (frame_capacity + ctx_nsgt->max_image_dimension_2d - 1) /
+    //     ctx_nsgt->max_image_dimension_2d;
+    // call_king_terry("num images: %u", ctx_nsgt->image_count);
+    // call_king_terry("calculated frame_capacity: %u", frame_capacity);
+    //  ctx_nsgt->frame_capacity = frame_capacity;
+    //  ctx_nsgt->nsgt_capacity = ctx_nsgt->bin_capacity *
+    //                            ctx_nsgt->frame_capacity * sizeof(float) *
+    //                            2; // vec2 storage
+    //  ctx_nsgt->magnitude_capacity =
+    //      ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity * sizeof(float);
+    //  ctx_nsgt->transient_capacity =
+    //      ctx_nsgt->bin_capacity * ctx_nsgt->frame_capacity * sizeof(float);
+    frame_offset[0] = 0;
+    for (uint32_t b = 1; b < ctx_nsgt->bin_capacity; b++) {
+        frame_offset[b] = frame_offset[b - 1] + frames_per_bin[b - 1];
     }
     offset[0] = 0;
     for (uint32_t i = 1; i < ctx_nsgt->bin_capacity; i++) {
@@ -597,19 +649,6 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
             cis[(off + t) * 2 + 1] = sinf(phase);
         }
     }
-    for (uint32_t i = 0; i < ctx_nsgt->bin_capacity; i++) {
-        if (length[i] > ctx_nsgt->window_length_max) {
-            ctx_nsgt->window_length_max = length[i];
-        }
-        if (hop[i] < ctx_nsgt->hop_min) { ctx_nsgt->hop_min = hop[i]; }
-    }
-    call_king_terry("window length max: %u", ctx_nsgt->window_length_max);
-    if (ctx_nsgt->hop_min == 0) { ctx_nsgt->hop_min = 1; }
-    call_king_terry("hop min: %u", ctx_nsgt->hop_min);
-    ctx_nsgt->compute_push_constant.arg_3 = (uint32_t)ctx_nsgt->bin_capacity;
-    ctx_nsgt->compute_push_constant.arg_4 = (uint32_t)ctx_nsgt->hop_min;
-    ctx_nsgt->frame_cursor = 0;
-    ctx_nsgt->frame_filled = 0;
     //-------------------------------------------------------------------------
     // Cleanup
     free(sum_squares);
@@ -1167,7 +1206,7 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     ctx_nsgt->format[ctx_nsgt->idx_image_temp] = VK_FORMAT_R32_SFLOAT;
     ctx_nsgt->extent_3d[ctx_nsgt->idx_image_temp] =
-        (VkExtent3D){.width = ctx_nsgt->frame_capacity,
+        (VkExtent3D){.width = ctx_nsgt->image_frame_capacity,
                      .height = ctx_nsgt->bin_capacity,
                      .depth = 1};
     ctx_nsgt->image_usage_flags[ctx_nsgt->idx_image_temp] =
@@ -1180,7 +1219,7 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
         VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     ctx_nsgt->format[ctx_nsgt->idx_image] = VK_FORMAT_R32_SFLOAT;
     ctx_nsgt->extent_3d[ctx_nsgt->idx_image] =
-        (VkExtent3D){.width = ctx_nsgt->frame_capacity,
+        (VkExtent3D){.width = ctx_nsgt->image_frame_capacity,
                      .height = ctx_nsgt->bin_capacity,
                      .depth = 1};
     ctx_nsgt->image_usage_flags[ctx_nsgt->idx_image] =
@@ -1676,6 +1715,8 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     free(dual_window);
     free(frequency);
     free(cis);
+    free(frames_per_bin);
+    free(frame_offset);
     //-------------------------------------------------------------------------
     // RIGHT AFTER INITIALIZATION (ONE TIME) UNDEFINED -> GENERAL
     //-------------------------------------------------------------------------
@@ -1767,15 +1808,6 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
     assert(result == VK_SUCCESS);
     result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
     assert(result == VK_SUCCESS);
-    ctx_nsgt->graphics_viewport.x = 0.0f;
-    ctx_nsgt->graphics_viewport.y = 0.0f;
-    ctx_nsgt->graphics_viewport.width = (float)physical_width;
-    ctx_nsgt->graphics_viewport.height = (float)physical_height;
-    ctx_nsgt->graphics_viewport.minDepth = 0.0f,
-    ctx_nsgt->graphics_viewport.maxDepth = 1.0f,
-    ctx_nsgt->graphics_rect_2d.offset.x = 0;
-    ctx_nsgt->graphics_rect_2d.extent.width = (uint32_t)physical_width;
-    ctx_nsgt->graphics_rect_2d.extent.height = (uint32_t)physical_height;
     //-------------------------------------------------------------------------
     // FLAGS
     //-------------------------------------------------------------------------

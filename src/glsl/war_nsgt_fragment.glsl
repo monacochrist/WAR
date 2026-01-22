@@ -33,22 +33,6 @@ layout(location = 0) in vec2 frag_uv;
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    float fc = float(max(push_constant.frame_capacity, 1));
-    int filled_i = push_constant.frame_filled;
-    if (filled_i <= 0) {
-        out_color = vec4(0.0, 0.0, 0.0, 1.0);
-        return;
-    }
-
-    // Direct mapping: show only written frames, no stretch
-    float x = frag_uv.x * fc; // frame index
-    if (filled_i < push_constant.frame_capacity && x >= float(filled_i)) {
-        out_color = vec4(0.0, 0.0, 0.0, 1.0);
-        return;
-    }
-    float u = frag_uv.x;
-
-    vec2 uv = vec2(u, frag_uv.y);
-    vec4 tex = texture(image, uv);
+    vec4 tex = texture(image, frag_uv);
     out_color = vec4(tex.r, 0.0, 0.0, 1.0);
 }
