@@ -14,7 +14,7 @@
 #include "h/war_data.h"
 #include "h/war_debug_macros.h"
 #include "h/war_functions.h"
-#include "h/war_vulkan.h"
+#include "h/war_new_vulkan.h"
 
 #include <assert.h>
 #include <dirent.h>
@@ -51,11 +51,11 @@ static inline void war_nsgt_flush(uint32_t idx_count,
     for (uint32_t i = 0; i < idx_count; i++) {
         VkDeviceSize off = offset ? offset[i] : 0;
         VkDeviceSize sz = size ? size[i] : ctx_nsgt->capacity[idx[i]];
-        VkDeviceSize aligned_offset = war_vulkan_align_offset_down(
+        VkDeviceSize aligned_offset = war_new_vulkan_align_offset_down(
             off,
             ctx_nsgt->memory_requirements[idx[i]].alignment,
             ctx_nsgt->capacity[idx[i]]);
-        VkDeviceSize aligned_size = war_vulkan_align_size_up(
+        VkDeviceSize aligned_size = war_new_vulkan_align_size_up(
             sz + (off - aligned_offset),
             ctx_nsgt->memory_requirements[idx[i]].alignment,
             ctx_nsgt->capacity[idx[i]] - aligned_offset);
@@ -81,11 +81,11 @@ static inline void war_nsgt_invalidate(uint32_t idx_count,
     for (uint32_t i = 0; i < idx_count; i++) {
         VkDeviceSize off = offset ? offset[i] : 0;
         VkDeviceSize sz = size ? size[i] : ctx_nsgt->capacity[idx[i]];
-        VkDeviceSize aligned_offset = war_vulkan_align_offset_down(
+        VkDeviceSize aligned_offset = war_new_vulkan_align_offset_down(
             off,
             ctx_nsgt->memory_requirements[idx[i]].alignment,
             ctx_nsgt->capacity[idx[i]]);
-        VkDeviceSize aligned_size = war_vulkan_align_size_up(
+        VkDeviceSize aligned_size = war_new_vulkan_align_size_up(
             sz + (off - aligned_offset),
             ctx_nsgt->memory_requirements[idx[i]].alignment,
             ctx_nsgt->capacity[idx[i]] - aligned_offset);
@@ -404,44 +404,35 @@ static inline void war_nsgt_draw(VkCommandBuffer cmd,
 
 static inline void war_nsgt_generate(war_file* wav,
                                      war_nsgt_context* ctx_nsgt,
-                                     war_vulkan_context* ctx_vk,
+                                     war_new_vulkan_context* ctx_new_vulkan,
                                      war_fsm_context* ctx_fsm) {
     return;
-    VkResult result =
-        vkWaitForFences(ctx_vk->device,
-                        1,
-                        &ctx_vk->in_flight_fences[ctx_vk->current_frame],
-                        VK_TRUE,
-                        UINT64_MAX);
+    VkResult result = vkWaitForFences(
+        ctx_new_vulkan->device, 1, &ctx_new_vulkan->fence, VK_TRUE, UINT64_MAX);
     assert(result == VK_SUCCESS);
-    result = vkResetFences(
-        ctx_vk->device, 1, &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+    result = vkResetFences(ctx_new_vulkan->device, 1, &ctx_new_vulkan->fence);
     assert(result == VK_SUCCESS);
-    result = vkResetCommandBuffer(ctx_vk->cmd_buffer, 0);
+    result = vkResetCommandBuffer(ctx_new_vulkan->cmd_buffer, 0);
     assert(result == VK_SUCCESS);
     VkCommandBufferBeginInfo cmd_buffer_begin_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
-    result = vkBeginCommandBuffer(ctx_vk->cmd_buffer, &cmd_buffer_begin_info);
+    result = vkBeginCommandBuffer(ctx_new_vulkan->cmd_buffer,
+                                  &cmd_buffer_begin_info);
     //
     assert(result == VK_SUCCESS);
-    result = vkEndCommandBuffer(ctx_vk->cmd_buffer);
+    result = vkEndCommandBuffer(ctx_new_vulkan->cmd_buffer);
     assert(result == VK_SUCCESS);
     VkSubmitInfo submit_info = {0};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &ctx_vk->cmd_buffer;
-    result = vkQueueSubmit(ctx_vk->queue,
-                           1,
-                           &submit_info,
-                           ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+    submit_info.pCommandBuffers = &ctx_new_vulkan->cmd_buffer;
+    result = vkQueueSubmit(
+        ctx_new_vulkan->queue, 1, &submit_info, ctx_new_vulkan->fence);
     assert(result == VK_SUCCESS);
-    result = vkWaitForFences(ctx_vk->device,
-                             1,
-                             &ctx_vk->in_flight_fences[ctx_vk->current_frame],
-                             VK_TRUE,
-                             UINT64_MAX);
+    result = vkWaitForFences(
+        ctx_new_vulkan->device, 1, &ctx_new_vulkan->fence, VK_TRUE, UINT64_MAX);
     assert(result == VK_SUCCESS);
 }
 
@@ -1502,7 +1493,7 @@ static inline void war_nsgt_init(war_nsgt_context* ctx_nsgt,
                                NULL);
     }
     for (uint32_t i = 0; i < ctx_nsgt->shader_count; i++) {
-        uint8_t fn_result = war_vulkan_get_shader_module(
+        uint8_t fn_result = war_new_vulkan_get_shader_module(
             device,
             &ctx_nsgt->shader_module[i],
             &ctx_nsgt->shader_path[i * ctx_nsgt->path_limit]);

@@ -135,6 +135,70 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_INT(NSGT_GRAPHICS_FPS)
     LOAD_INT(NSGT_GROUPS)
     LOAD_INT(CACHE_NSGT_CAPACITY)
+    LOAD_INT(NEW_VULKAN_RESOURCE_COUNT)
+    LOAD_INT(NEW_VULKAN_DESCRIPTOR_SET_COUNT)
+    LOAD_INT(NEW_VULKAN_SHADER_COUNT)
+    LOAD_INT(NEW_VULKAN_PIPELINE_COUNT)
+    LOAD_INT(NEW_VULKAN_GROUPS)
+    LOAD_INT(NEW_VULKAN_NOTE_INSTANCE_MAX)
+    LOAD_INT(NEW_VULKAN_TEXT_INSTANCE_MAX)
+    LOAD_INT(NEW_VULKAN_LINE_INSTANCE_MAX)
+    LOAD_INT(NEW_VULKAN_CURSOR_INSTANCE_MAX)
+    LOAD_INT(NEW_VULKAN_HUD_INSTANCE_MAX)
+    LOAD_INT(NEW_VULKAN_HUD_CURSOR_INSTANCE_MAX)
+    LOAD_INT(NEW_VULKAN_HUD_TEXT_INSTANCE_MAX)
+    LOAD_INT(NEW_VULKAN_HUD_LINE_INSTANCE_MAX)
+    LOAD_INT(NEW_VULKAN_ATLAS_WIDTH)
+    LOAD_INT(NEW_VULKAN_ATLAS_HEIGHT)
+    LOAD_INT(NEW_VULKAN_FONT_PIXEL_HEIGHT)
+    LOAD_INT(NEW_VULKAN_GLYPH_COUNT)
+    LOAD_INT(NEW_VULKAN_SDF_SCALE)
+    LOAD_INT(NEW_VULKAN_SDF_PADDING)
+    LOAD_INT(NEW_VULKAN_BUFFER_MAX)
+    // hud
+    LOAD_INT(HUD_COUNT)
+    LOAD_INT(HUD_STATUS_BOTTOM_INSTANCE_MAX)
+    LOAD_INT(HUD_STATUS_TOP_INSTANCE_MAX)
+    LOAD_INT(HUD_STATUS_MIDDLE_INSTANCE_MAX)
+    LOAD_INT(HUD_LINE_NUMBERS_INSTANCE_MAX)
+    LOAD_INT(HUD_PIANO_INSTANCE_MAX)
+    LOAD_INT(HUD_EXPLORE_INSTANCE_MAX)
+    // hud line
+    LOAD_INT(HUD_LINE_COUNT)
+    LOAD_INT(HUD_LINE_PIANO_INSTANCE_MAX)
+    // hud text
+    LOAD_INT(HUD_TEXT_COUNT)
+    LOAD_INT(HUD_TEXT_STATUS_BOTTOM_INSTANCE_MAX)
+    LOAD_INT(HUD_TEXT_STATUS_TOP_INSTANCE_MAX)
+    LOAD_INT(HUD_TEXT_STATUS_MIDDLE_INSTANCE_MAX)
+    LOAD_INT(HUD_TEXT_PIANO_INSTANCE_MAX)
+    LOAD_INT(HUD_TEXT_LINE_NUMBERS_INSTANCE_MAX)
+    LOAD_INT(HUD_TEXT_RELATIVE_LINE_NUMBERS_INSTANCE_MAX)
+    LOAD_INT(HUD_TEXT_EXPLORE_INSTANCE_MAX)
+    LOAD_INT(HUD_TEXT_ERROR_INSTANCE_MAX)
+    // hud cursor
+    LOAD_INT(HUD_CURSOR_COUNT)
+    LOAD_INT(HUD_CURSOR_DEFAULT_INSTANCE_MAX)
+    // cursor
+    LOAD_INT(CURSOR_COUNT)
+    LOAD_INT(CURSOR_DEFAULT_INSTANCE_MAX)
+    // line
+    LOAD_INT(LINE_COUNT)
+    LOAD_INT(LINE_CELL_INSTANCE_MAX)
+    LOAD_INT(LINE_BPM_INSTANCE_MAX)
+    // text
+    LOAD_INT(TEXT_COUNT)
+    LOAD_INT(TEXT_STATUS_BOTTOM_INSTANCE_MAX)
+    LOAD_INT(TEXT_STATUS_TOP_INSTANCE_MAX)
+    LOAD_INT(TEXT_STATUS_MIDDLE_INSTANCE_MAX)
+    LOAD_INT(TEXT_PIANO_INSTANCE_MAX)
+    LOAD_INT(TEXT_LINE_NUMBERS_INSTANCE_MAX)
+    LOAD_INT(TEXT_RELATIVE_LINE_NUMBERS_INSTANCE_MAX)
+    LOAD_INT(TEXT_EXPLORE_INSTANCE_MAX)
+    LOAD_INT(TEXT_ERROR_INSTANCE_MAX)
+    // sequence
+    LOAD_INT(NOTE_COUNT)
+    LOAD_INT(NOTE_GRID_INSTANCE_MAX)
     // nsgt visual
     LOAD_INT(VK_NSGT_VISUAL_QUAD_CAPACITY)
     LOAD_INT(VK_NSGT_VISUAL_RESOURCE_COUNT)
@@ -176,6 +240,8 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_FLOAT(DEFAULT_WINDOWED_CURSOR_ALPHA_SCALE)
     LOAD_FLOAT(DEFAULT_WINDOWED_ALPHA_SCALE)
     LOAD_FLOAT(WR_COLOR_STEP)
+    LOAD_FLOAT(NEW_VULKAN_SDF_RANGE)
+    LOAD_FLOAT(NEW_VULKAN_SDF_LARGE)
     // vk nsgt
     LOAD_FLOAT(NSGT_ALPHA)
     LOAD_FLOAT(NSGT_SHAPE_FACTOR)
@@ -193,6 +259,8 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     LOAD_DOUBLE(A_DEFAULT_COLUMNS_PER_BEAT)
     LOAD_DOUBLE(A_TARGET_SAMPLES_FACTOR)
     LOAD_DOUBLE(A_BPM)
+    LOAD_DOUBLE(BPM_SECONDS_PER_CELL)
+    LOAD_DOUBLE(SUBDIVISION_SECONDS_PER_CELL)
     LOAD_DOUBLE(A_SAMPLE_DURATION)
     LOAD_DOUBLE(WR_FPS)
     LOAD_DOUBLE(WR_PLAY_CALLBACK_FPS)
@@ -258,8 +326,6 @@ static inline size_t war_get_pool_a_size(war_pool* pool,
                 type_size = sizeof(int32_t);
             else if (strcmp(type, "void*") == 0)
                 type_size = sizeof(void*);
-            else if (strcmp(type, "war_audio_context") == 0)
-                type_size = sizeof(war_audio_context);
             else if (strcmp(type, "char*") == 0)
                 type_size = sizeof(char*);
             else if (strcmp(type, "char") == 0)
@@ -286,9 +352,7 @@ static inline size_t war_get_pool_a_size(war_pool* pool,
                 type_size = sizeof(war_fmt_chunk);
             else if (strcmp(type, "war_data_chunk") == 0)
                 type_size = sizeof(war_data_chunk);
-            else if (strcmp(type, "war_notes") == 0) {
-                type_size = sizeof(war_notes);
-            } else if (strcmp(type, "bool") == 0) {
+            else if (strcmp(type, "bool") == 0) {
                 type_size = sizeof(bool);
             } else {
                 call_king_terry("Unknown pool_a type: %s", type);
@@ -337,8 +401,6 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(uint16_t);
             else if (strcmp(type, "uint32_t") == 0)
                 type_size = sizeof(uint32_t);
-            else if (strcmp(type, "war_file_type") == 0)
-                type_size = sizeof(war_file_type);
             else if (strcmp(type, "timespec") == 0)
                 type_size = sizeof(struct timespec);
             else if (strcmp(type, "struct timespec") == 0)
@@ -355,10 +417,45 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(float);
             else if (strcmp(type, "float*") == 0)
                 type_size = sizeof(float*);
+            else if (strcmp(type, "war_hud_context") == 0)
+                type_size = sizeof(war_hud_context);
+            else if (strcmp(type, "war_hud_text_context") == 0)
+                type_size = sizeof(war_hud_text_context);
+            else if (strcmp(type, "war_new_vulkan_note_push_constant") == 0)
+                type_size = sizeof(war_new_vulkan_note_push_constant);
+            else if (strcmp(type, "war_new_vulkan_text_push_constant") == 0)
+                type_size = sizeof(war_new_vulkan_text_push_constant);
+            else if (strcmp(type, "war_new_vulkan_line_push_constant") == 0)
+                type_size = sizeof(war_new_vulkan_line_push_constant);
+            else if (strcmp(type, "war_new_vulkan_cursor_push_constant") == 0)
+                type_size = sizeof(war_new_vulkan_cursor_push_constant);
+            else if (strcmp(type, "war_new_vulkan_hud_push_constant") == 0)
+                type_size = sizeof(war_new_vulkan_hud_push_constant);
+            else if (strcmp(type, "war_new_vulkan_hud_cursor_push_constant") ==
+                     0)
+                type_size = sizeof(war_new_vulkan_hud_cursor_push_constant);
+            else if (strcmp(type, "war_new_vulkan_hud_text_push_constant") == 0)
+                type_size = sizeof(war_new_vulkan_hud_text_push_constant);
+            else if (strcmp(type, "war_new_vulkan_hud_line_push_constant") == 0)
+                type_size = sizeof(war_new_vulkan_hud_line_push_constant);
+            else if (strcmp(type, "war_text_context") == 0)
+                type_size = sizeof(war_text_context);
+            else if (strcmp(type, "war_line_context") == 0)
+                type_size = sizeof(war_line_context);
             else if (strcmp(type, "double") == 0)
                 type_size = sizeof(double);
             else if (strcmp(type, "void*") == 0)
                 type_size = sizeof(void*);
+            else if (strcmp(type, "war_cursor_context") == 0)
+                type_size = sizeof(war_cursor_context);
+            else if (strcmp(type, "war_misc_context") == 0)
+                type_size = sizeof(war_misc_context);
+            else if (strcmp(type, "VkPipelineDepthStencilStateCreateInfo") == 0)
+                type_size = sizeof(VkPipelineDepthStencilStateCreateInfo);
+            else if (strcmp(type, "VkPipelineColorBlendStateCreateInfo") == 0)
+                type_size = sizeof(VkPipelineColorBlendStateCreateInfo);
+            else if (strcmp(type, "VkPipelineColorBlendAttachmentState") == 0)
+                type_size = sizeof(VkPipelineColorBlendAttachmentState);
             else if (strcmp(type, "VkFence*") == 0)
                 type_size = sizeof(VkFence*);
             else if (strcmp(type, "VkFence") == 0)
@@ -381,18 +478,10 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(war_undo_node);
             else if (strcmp(type, "war_fsm_context") == 0)
                 type_size = sizeof(war_fsm_context);
-            else if (strcmp(type, "war_quad_vertex") == 0)
-                type_size = sizeof(war_quad_vertex);
-            else if (strcmp(type, "war_note_quads") == 0)
-                type_size = sizeof(war_note_quads);
             else if (strcmp(type, "war_function_union") == 0)
                 type_size = sizeof(war_function_union);
             else if (strcmp(type, "void (*)(war_env*)") == 0)
                 type_size = sizeof(void (*)(war_env*));
-            else if (strcmp(type, "war_text_vertex") == 0)
-                type_size = sizeof(war_text_vertex);
-            else if (strcmp(type, "war_status_context") == 0)
-                type_size = sizeof(war_status_context);
             else if (strcmp(type, "war_capture_context") == 0)
                 type_size = sizeof(war_capture_context);
             else if (strcmp(type, "VkMappedMemoryRange") == 0)
@@ -401,14 +490,34 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(VkBufferMemoryBarrier);
             else if (strcmp(type, "VkImageMemoryBarrier") == 0)
                 type_size = sizeof(VkImageMemoryBarrier);
+            else if (strcmp(type, "VkSampler") == 0)
+                type_size = sizeof(VkSampler);
             else if (strcmp(type, "war_command_context") == 0)
                 type_size = sizeof(war_command_context);
             else if (strcmp(type, "war_play_context") == 0)
                 type_size = sizeof(war_play_context);
-            else if (strcmp(type, "war_audio_context") == 0)
-                type_size = sizeof(war_audio_context);
             else if (strcmp(type, "war_nsgt_context") == 0)
                 type_size = sizeof(war_nsgt_context);
+            else if (strcmp(type, "war_new_vulkan_context") == 0)
+                type_size = sizeof(war_new_vulkan_context);
+            else if (strcmp(type, "VkViewport") == 0)
+                type_size = sizeof(VkViewport);
+            else if (strcmp(type, "VkRect2D") == 0)
+                type_size = sizeof(VkRect2D);
+            else if (strcmp(type, "VkVertexInputBindingDescription") == 0)
+                type_size = sizeof(VkVertexInputBindingDescription);
+            else if (strcmp(type, "VkVertexInputAttributeDescription") == 0)
+                type_size = sizeof(VkVertexInputAttributeDescription);
+            else if (strcmp(type, "VkVertexInputAttributeDescription*") == 0)
+                type_size = sizeof(VkVertexInputAttributeDescription*);
+            else if (strcmp(type, "VkVertexInputRate") == 0)
+                type_size = sizeof(VkVertexInputRate);
+            else if (strcmp(type, "uint32_t*") == 0)
+                type_size = sizeof(uint32_t*);
+            else if (strcmp(type, "VkFormat*") == 0)
+                type_size = sizeof(VkFormat*);
+            else if (strcmp(type, "VkFormat") == 0)
+                type_size = sizeof(VkFormat);
             else if (strcmp(type, "VkMemoryPropertyFlags") == 0)
                 type_size = sizeof(VkMemoryPropertyFlags);
             else if (strcmp(type, "VkDescriptorBufferInfo") == 0)
@@ -469,10 +578,20 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(VkWriteDescriptorSet);
             else if (strcmp(type, "VkShaderStageFlags") == 0)
                 type_size = sizeof(VkShaderStageFlags);
-            else if (strcmp(type, "war_cache_file") == 0)
-                type_size = sizeof(war_cache_file);
-            else if (strcmp(type, "war_map_wav") == 0)
-                type_size = sizeof(war_map_wav);
+            else if (strcmp(type, "war_new_vulkan_hud_instance*") == 0)
+                type_size = sizeof(war_new_vulkan_hud_instance*);
+            else if (strcmp(type, "war_new_vulkan_cursor_instance*") == 0)
+                type_size = sizeof(war_new_vulkan_cursor_instance*);
+            else if (strcmp(type, "war_sequence_context") == 0)
+                type_size = sizeof(war_sequence_context);
+            else if (strcmp(type, "war_sequence_entry") == 0)
+                type_size = sizeof(war_sequence_entry);
+            else if (strcmp(type, "war_hud_line_context") == 0)
+                type_size = sizeof(war_hud_line_context);
+            else if (strcmp(type, "war_hud_text_context") == 0)
+                type_size = sizeof(war_hud_text_context);
+            else if (strcmp(type, "war_hud_cursor_context") == 0)
+                type_size = sizeof(war_hud_cursor_context);
             else if (strcmp(type, "ino_t") == 0)
                 type_size = sizeof(ino_t);
             else if (strcmp(type, "dev_t") == 0)
@@ -483,12 +602,6 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(war_env);
             else if (strcmp(type, "war_color_context") == 0)
                 type_size = sizeof(war_color_context);
-            else if (strcmp(type, "war_undo_tree") == 0)
-                type_size = sizeof(war_undo_tree);
-            else if (strcmp(type, "war_payload_union") == 0)
-                type_size = sizeof(war_payload_union);
-            else if (strcmp(type, "war_vulkan_context") == 0)
-                type_size = sizeof(war_vulkan_context);
             else if (strcmp(type, "uint8_t*") == 0)
                 type_size = sizeof(uint8_t*);
             else if (strcmp(type, "uint16_t*") == 0)
@@ -525,127 +638,6 @@ static inline void* war_pool_alloc(war_pool* pool, size_t size) {
     void* ptr = pool->pool_ptr;
     pool->pool_ptr += size;
     return ptr;
-}
-
-static inline void war_layer_flux(war_window_render_context* ctx_wr,
-                                  war_atomics* atomics,
-                                  war_play_context* ctx_play,
-                                  war_color_context* ctx_color) {
-    uint64_t layer = ctx_play->key_layers[(int)ctx_wr->cursor_pos_y];
-    atomic_store(&atomics->layer, layer);
-    ctx_wr->layers_active_count = __builtin_popcountll(layer);
-    switch (ctx_wr->layers_active_count) {
-    case 0: {
-        ctx_wr->color_cursor = ctx_color->white_hex;
-        ctx_wr->color_cursor_transparent = ctx_color->white_hex;
-        ctx_wr->color_note_outline_default = ctx_color->full_white_hex;
-        break;
-    }
-    case 1: {
-        int active = __builtin_ctzll(layer);
-        ctx_wr->color_cursor = ctx_color->colors[active];
-        ctx_wr->color_cursor_transparent = ctx_color->colors[active];
-        ctx_wr->color_note_outline_default = ctx_color->white_hex;
-        ctx_wr->layers_active[0] = (active + 1) + '0';
-        break;
-    }
-    default: {
-        int count = 0;
-        while (layer) {
-            int active = __builtin_ctzll(layer);
-            ctx_wr->layers_active[count++] = (active + 1) + '0';
-            layer &= layer - 1;
-        }
-        ctx_wr->color_cursor = ctx_color->full_white_hex;
-        ctx_wr->color_cursor_transparent = ctx_color->white_hex;
-        ctx_wr->color_note_outline_default = ctx_color->white_hex;
-        break;
-    }
-    }
-}
-
-static inline void war_get_warpoon_text(war_views* views) {
-    for (uint32_t i = 0; i < views->views_count; i++) {
-        strncpy(views->warpoon_text[i], "", MAX_WARPOON_TEXT_COLS);
-        snprintf(views->warpoon_text[i],
-                 MAX_WARPOON_TEXT_COLS,
-                 "%d,%d [%d,%d]",
-                 views->row[i],
-                 views->col[i],
-                 views->bottom_row[i],
-                 views->left_col[i]);
-    }
-}
-
-static inline void war_warpoon_delete_at_i(war_views* views,
-                                           uint32_t i_delete) {
-    if (i_delete >= views->views_count) return;
-    uint32_t last = views->views_count - 1;
-    // Shift all SoA arrays to the left to fill the gap
-    for (uint32_t j = i_delete; j < last; j++) {
-        views->col[j] = views->col[j + 1];
-        views->row[j] = views->row[j + 1];
-        views->left_col[j] = views->left_col[j + 1];
-        views->right_col[j] = views->right_col[j + 1];
-        views->bottom_row[j] = views->bottom_row[j + 1];
-        views->top_row[j] = views->top_row[j + 1];
-    }
-    views->views_count--;
-}
-
-static inline void war_warpoon_shift_up(war_views* views) {
-    if (views->warpoon_row + 1 > views->warpoon_max_row) { return; }
-
-    uint32_t i_views = views->warpoon_max_row - views->warpoon_row;
-    if ((int)i_views - 1 < 0 || i_views > views->views_count - 1) { return; }
-
-    uint32_t tmp_col = views->col[i_views - 1];
-    uint32_t tmp_row = views->row[i_views - 1];
-    uint32_t tmp_left_col = views->left_col[i_views - 1];
-    uint32_t tmp_bottom_row = views->bottom_row[i_views - 1];
-    uint32_t tmp_right_col = views->right_col[i_views - 1];
-    uint32_t tmp_top_row = views->top_row[i_views - 1];
-    views->col[i_views - 1] = views->col[i_views];
-    views->row[i_views - 1] = views->row[i_views];
-    views->left_col[i_views - 1] = views->left_col[i_views];
-    views->bottom_row[i_views - 1] = views->bottom_row[i_views];
-    views->right_col[i_views - 1] = views->right_col[i_views];
-    views->top_row[i_views - 1] = views->top_row[i_views];
-    views->col[i_views] = tmp_col;
-    views->row[i_views] = tmp_row;
-    views->left_col[i_views] = tmp_left_col;
-    views->bottom_row[i_views] = tmp_bottom_row;
-    views->right_col[i_views] = tmp_right_col;
-    views->top_row[i_views] = tmp_top_row;
-}
-
-static inline void war_warpoon_shift_down(war_views* views) {
-    if (views->warpoon_row == 0)
-        return; // already at bottom in your indexing logic
-
-    uint32_t i_views = views->warpoon_max_row - views->warpoon_row;
-    if (i_views + 1 >= views->views_count) return;
-
-    uint32_t tmp_col = views->col[i_views + 1];
-    uint32_t tmp_row = views->row[i_views + 1];
-    uint32_t tmp_left_col = views->left_col[i_views + 1];
-    uint32_t tmp_bottom_row = views->bottom_row[i_views + 1];
-    uint32_t tmp_right_col = views->right_col[i_views + 1];
-    uint32_t tmp_top_row = views->top_row[i_views + 1];
-
-    views->col[i_views + 1] = views->col[i_views];
-    views->row[i_views + 1] = views->row[i_views];
-    views->left_col[i_views + 1] = views->left_col[i_views];
-    views->bottom_row[i_views + 1] = views->bottom_row[i_views];
-    views->right_col[i_views + 1] = views->right_col[i_views];
-    views->top_row[i_views + 1] = views->top_row[i_views];
-
-    views->col[i_views] = tmp_col;
-    views->row[i_views] = tmp_row;
-    views->left_col[i_views] = tmp_left_col;
-    views->bottom_row[i_views] = tmp_bottom_row;
-    views->right_col[i_views] = tmp_right_col;
-    views->top_row[i_views] = tmp_top_row;
 }
 
 // --------------------------
@@ -839,15 +831,6 @@ static inline uint64_t war_get_monotonic_time_us(void) {
     return (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }
 
-static inline war_rgba_t war_unpack_abgr(uint32_t hex_color) {
-    war_rgba_t color;
-    color.r = ((hex_color >> 0) & 0xFF) / 255.0f;  // Red
-    color.g = ((hex_color >> 8) & 0xFF) / 255.0f;  // Green
-    color.b = ((hex_color >> 16) & 0xFF) / 255.0f; // Blue
-    color.a = ((hex_color >> 24) & 0xFF) / 255.0f; // Alpha
-    return color;
-}
-
 static inline int32_t war_to_fixed(float f) { return (int32_t)(f * 256.0f); }
 
 static inline uint32_t war_pad_to_scale(float value, uint32_t scale) {
@@ -925,42 +908,6 @@ war_clamp_uint32(uint32_t a, uint32_t min_value, uint32_t max_value) {
     return a;
 }
 
-static inline void war_command_reset(war_command_context* ctx_command,
-                                     war_status_context* ctx_status) {
-    memset(ctx_status->middle, 0, ctx_status->capacity);
-    ctx_status->middle_size = 0;
-    memset(ctx_command->text, 0, ctx_command->capacity);
-    ctx_command->text_size = 0;
-    ctx_command->text_write_index = 0;
-    memset(ctx_command->input, 0, ctx_command->capacity);
-    ctx_command->input_write_index = 0;
-    ctx_command->input_read_index = 0;
-    memset(ctx_command->prompt_text, 0, ctx_command->capacity);
-    ctx_command->prompt_text_size = 0;
-    ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
-}
-
-static inline void war_command_status(war_command_context* ctx_command,
-                                      war_status_context* ctx_status) {
-    if (ctx_command->prompt_text_size > 0) {
-        snprintf(ctx_status->middle,
-                 ctx_command->prompt_text_size + 3 + ctx_command->text_size,
-                 "%s: %s",
-                 ctx_command->prompt_text,
-                 ctx_command->text);
-        ctx_status->middle_size =
-            ctx_command->prompt_text_size + 3 + ctx_command->text_size;
-        return;
-    }
-    snprintf(ctx_status->middle,
-             ctx_command->prompt_text_size + 2 + ctx_command->text_size,
-             "%s:%s",
-             ctx_command->prompt_text,
-             ctx_command->text);
-    ctx_status->middle_size =
-        ctx_command->prompt_text_size + 2 + ctx_command->text_size;
-}
-
 static inline int war_num_digits(uint32_t n) {
     int digits = 0;
     do {
@@ -993,340 +940,6 @@ static inline void war_wl_surface_set_opaque_region(int fd,
     assert(set_opaque_region_written == 12);
 }
 
-static inline void war_make_text_quad(war_text_vertex* text_vertices,
-                                      uint32_t* text_indices,
-                                      uint32_t* text_vertices_count,
-                                      uint32_t* text_indices_count,
-                                      float bottom_left_pos[3],
-                                      float span[2],
-                                      uint32_t color,
-                                      war_glyph_info* glyph_info,
-                                      float thickness,
-                                      float feather,
-                                      uint32_t flags) {
-    text_vertices[*text_vertices_count] = (war_text_vertex){
-        .corner = {0, 0},
-        .pos = {bottom_left_pos[0], bottom_left_pos[1], bottom_left_pos[2]},
-        .uv = {glyph_info->uv_x0, glyph_info->uv_y1},
-        .glyph_size = {glyph_info->width, glyph_info->height},
-        .glyph_bearing = {glyph_info->bearing_x, glyph_info->bearing_y},
-        .ascent = glyph_info->ascent,
-        .descent = glyph_info->descent,
-        .thickness = thickness,
-        .feather = feather,
-        .color = color,
-        .flags = flags,
-    };
-    text_vertices[*text_vertices_count + 1] = (war_text_vertex){
-        .corner = {1, 0},
-        .pos = {bottom_left_pos[0] + span[0],
-                bottom_left_pos[1],
-                bottom_left_pos[2]},
-        .uv = {glyph_info->uv_x1, glyph_info->uv_y1},
-        .glyph_size = {glyph_info->width, glyph_info->height},
-        .glyph_bearing = {glyph_info->bearing_x, glyph_info->bearing_y},
-        .ascent = glyph_info->ascent,
-        .descent = glyph_info->descent,
-        .thickness = thickness,
-        .feather = feather,
-        .color = color,
-        .flags = flags,
-    };
-    text_vertices[*text_vertices_count + 2] = (war_text_vertex){
-        .corner = {1, 1},
-        .pos = {bottom_left_pos[0] + span[0],
-                bottom_left_pos[1] + span[1],
-                bottom_left_pos[2]},
-        .uv = {glyph_info->uv_x1, glyph_info->uv_y0},
-        .glyph_size = {glyph_info->width, glyph_info->height},
-        .glyph_bearing = {glyph_info->bearing_x, glyph_info->bearing_y},
-        .ascent = glyph_info->ascent,
-        .descent = glyph_info->descent,
-        .thickness = thickness,
-        .feather = feather,
-        .color = color,
-        .flags = flags,
-    };
-    text_vertices[*text_vertices_count + 3] = (war_text_vertex){
-        .corner = {0, 1},
-        .pos = {bottom_left_pos[0],
-                bottom_left_pos[1] + span[1],
-                bottom_left_pos[2]},
-        .uv = {glyph_info->uv_x0, glyph_info->uv_y0},
-        .color = color,
-        .glyph_size = {glyph_info->width, glyph_info->height},
-        .glyph_bearing = {glyph_info->bearing_x, glyph_info->bearing_y},
-        .ascent = glyph_info->ascent,
-        .descent = glyph_info->descent,
-        .thickness = thickness,
-        .feather = feather,
-        .flags = flags,
-    };
-    text_indices[*text_indices_count] = *text_vertices_count;
-    text_indices[*text_indices_count + 1] = *text_vertices_count + 1;
-    text_indices[*text_indices_count + 2] = *text_vertices_count + 2;
-    text_indices[*text_indices_count + 3] = *text_vertices_count + 2;
-    text_indices[*text_indices_count + 4] = *text_vertices_count + 3;
-    text_indices[*text_indices_count + 5] = *text_vertices_count;
-    (*text_vertices_count) += 4;
-    (*text_indices_count) += 6;
-}
-
-static inline void war_make_blank_text_quad(war_text_vertex* text_vertices,
-                                            uint32_t* text_indices,
-                                            uint32_t* text_vertices_count,
-                                            uint32_t* text_indices_count) {
-    text_vertices[*text_vertices_count] = (war_text_vertex){
-        .corner = {0, 0},
-        .pos = {0, 0, 0},
-        .uv = {0, 0},
-        .glyph_size = {0, 0},
-        .glyph_bearing = {0, 0},
-        .ascent = 0,
-        .descent = 0,
-        .thickness = 0,
-        .feather = 0,
-        .color = 0,
-        .flags = 0,
-    };
-    text_vertices[*text_vertices_count + 1] = (war_text_vertex){
-        .corner = {0, 0},
-        .pos = {0, 0, 0},
-        .uv = {0, 0},
-        .glyph_size = {0, 0},
-        .glyph_bearing = {0, 0},
-        .ascent = 0,
-        .descent = 0,
-        .thickness = 0,
-        .feather = 0,
-        .color = 0,
-        .flags = 0,
-    };
-    text_vertices[*text_vertices_count + 2] = (war_text_vertex){
-        .corner = {0, 0},
-        .pos = {0, 0, 0},
-        .uv = {0, 0},
-        .glyph_size = {0, 0},
-        .glyph_bearing = {0, 0},
-        .ascent = 0,
-        .descent = 0,
-        .thickness = 0,
-        .feather = 0,
-        .color = 0,
-        .flags = 0,
-    };
-    text_vertices[*text_vertices_count + 3] = (war_text_vertex){
-        .corner = {0, 0},
-        .pos = {0, 0, 0},
-        .uv = {0, 0},
-        .glyph_size = {0, 0},
-        .glyph_bearing = {0, 0},
-        .ascent = 0,
-        .descent = 0,
-        .thickness = 0,
-        .feather = 0,
-        .color = 0,
-        .flags = 0,
-    };
-    text_indices[*text_indices_count] = *text_vertices_count;
-    text_indices[*text_indices_count + 1] = *text_vertices_count + 1;
-    text_indices[*text_indices_count + 2] = *text_vertices_count + 2;
-    text_indices[*text_indices_count + 3] = *text_vertices_count + 2;
-    text_indices[*text_indices_count + 4] = *text_vertices_count + 3;
-    text_indices[*text_indices_count + 5] = *text_vertices_count;
-    (*text_vertices_count) += 4;
-    (*text_indices_count) += 6;
-}
-
-static inline void war_make_quad(war_quad_vertex* quad_vertices,
-                                 uint32_t* quad_indices,
-                                 uint32_t* vertices_count,
-                                 uint32_t* indices_count,
-                                 float bottom_left_pos[3],
-                                 float span[2],
-                                 uint32_t color,
-                                 float outline_thickness,
-                                 uint32_t outline_color,
-                                 float line_thickness[2],
-                                 uint32_t flags) {
-    quad_vertices[*vertices_count] = (war_quad_vertex){
-        .corner = {0, 0},
-        .pos = {bottom_left_pos[0], bottom_left_pos[1], bottom_left_pos[2]},
-        .span = {span[0], span[1]},
-        .color = color,
-        .outline_thickness = outline_thickness,
-        .outline_color = outline_color,
-        .line_thickness = {line_thickness[0], line_thickness[1]},
-        .flags = flags,
-    };
-    quad_vertices[*vertices_count + 1] = (war_quad_vertex){
-        .corner = {1, 0},
-        .pos = {bottom_left_pos[0] + span[0],
-                bottom_left_pos[1],
-                bottom_left_pos[2]},
-        .span = {span[0], span[1]},
-        .color = color,
-        .outline_thickness = outline_thickness,
-        .outline_color = outline_color,
-        .line_thickness = {line_thickness[0], line_thickness[1]},
-        .flags = flags,
-    };
-    quad_vertices[*vertices_count + 2] = (war_quad_vertex){
-        .corner = {1, 1},
-        .pos = {bottom_left_pos[0] + span[0],
-                bottom_left_pos[1] + span[1],
-                bottom_left_pos[2]},
-        .span = {span[0], span[1]},
-        .color = color,
-        .outline_thickness = outline_thickness,
-        .outline_color = outline_color,
-        .line_thickness = {line_thickness[0], line_thickness[1]},
-        .flags = flags,
-    };
-    quad_vertices[*vertices_count + 3] = (war_quad_vertex){
-        .corner = {0, 1},
-        .pos = {bottom_left_pos[0],
-                bottom_left_pos[1] + span[1],
-                bottom_left_pos[2]},
-        .span = {span[0], span[1]},
-        .color = color,
-        .outline_thickness = outline_thickness,
-        .outline_color = outline_color,
-        .line_thickness = {line_thickness[0], line_thickness[1]},
-        .flags = flags,
-    };
-    quad_indices[*indices_count] = *vertices_count;
-    quad_indices[*indices_count + 1] = *vertices_count + 1;
-    quad_indices[*indices_count + 2] = *vertices_count + 2;
-    quad_indices[*indices_count + 3] = *vertices_count + 2;
-    quad_indices[*indices_count + 4] = *vertices_count + 3;
-    quad_indices[*indices_count + 5] = *vertices_count;
-    (*vertices_count) += 4;
-    (*indices_count) += 6;
-}
-
-static inline void
-war_make_transparent_quad(war_quad_vertex* transparent_quad_vertices,
-                          uint32_t* transparent_quad_indices,
-                          uint32_t* vertices_count,
-                          uint32_t* indices_count,
-                          float bottom_left_pos[3],
-                          float span[2],
-                          uint32_t color,
-                          float outline_thickness,
-                          uint32_t outline_color,
-                          float line_thickness[2],
-                          uint32_t flags) {
-    transparent_quad_vertices[*vertices_count] = (war_quad_vertex){
-        .corner = {0, 0},
-        .pos = {bottom_left_pos[0], bottom_left_pos[1], bottom_left_pos[2]},
-        .span = {span[0], span[1]},
-        .color = color,
-        .outline_thickness = outline_thickness,
-        .outline_color = outline_color,
-        .line_thickness = {line_thickness[0], line_thickness[1]},
-        .flags = flags,
-    };
-    transparent_quad_vertices[*vertices_count + 1] = (war_quad_vertex){
-        .corner = {1, 0},
-        .pos = {bottom_left_pos[0] + span[0],
-                bottom_left_pos[1],
-                bottom_left_pos[2]},
-        .span = {span[0], span[1]},
-        .color = color,
-        .outline_thickness = outline_thickness,
-        .outline_color = outline_color,
-        .line_thickness = {line_thickness[0], line_thickness[1]},
-        .flags = flags,
-    };
-    transparent_quad_vertices[*vertices_count + 2] = (war_quad_vertex){
-        .corner = {1, 1},
-        .pos = {bottom_left_pos[0] + span[0],
-                bottom_left_pos[1] + span[1],
-                bottom_left_pos[2]},
-        .span = {span[0], span[1]},
-        .color = color,
-        .outline_thickness = outline_thickness,
-        .outline_color = outline_color,
-        .line_thickness = {line_thickness[0], line_thickness[1]},
-        .flags = flags,
-    };
-    transparent_quad_vertices[*vertices_count + 3] = (war_quad_vertex){
-        .corner = {0, 1},
-        .pos = {bottom_left_pos[0],
-                bottom_left_pos[1] + span[1],
-                bottom_left_pos[2]},
-        .span = {span[0], span[1]},
-        .color = color,
-        .outline_thickness = outline_thickness,
-        .outline_color = outline_color,
-        .line_thickness = {line_thickness[0], line_thickness[1]},
-        .flags = flags,
-    };
-    transparent_quad_indices[*indices_count] = *vertices_count;
-    transparent_quad_indices[*indices_count + 1] = *vertices_count + 1;
-    transparent_quad_indices[*indices_count + 2] = *vertices_count + 2;
-    transparent_quad_indices[*indices_count + 3] = *vertices_count + 2;
-    transparent_quad_indices[*indices_count + 4] = *vertices_count + 3;
-    transparent_quad_indices[*indices_count + 5] = *vertices_count;
-    (*vertices_count) += 4;
-    (*indices_count) += 6;
-}
-
-static inline void war_make_blank_quad(war_quad_vertex* quad_vertices,
-                                       uint32_t* quad_indices,
-                                       uint32_t* vertices_count,
-                                       uint32_t* indices_count) {
-    quad_vertices[*vertices_count] = (war_quad_vertex){
-        .corner = {0, 0},
-        .pos = {0, 0, 0},
-        .span = {0, 0},
-        .color = 0,
-        .outline_thickness = 0,
-        .outline_color = 0,
-        .line_thickness = {0, 0},
-        .flags = 0,
-    };
-    quad_vertices[*vertices_count + 1] = (war_quad_vertex){
-        .corner = {0, 0},
-        .pos = {0, 0, 0},
-        .span = {0, 0},
-        .color = 0,
-        .outline_thickness = 0,
-        .outline_color = 0,
-        .line_thickness = {0, 0},
-        .flags = 0,
-    };
-    quad_vertices[*vertices_count + 2] = (war_quad_vertex){
-        .corner = {0, 0},
-        .pos = {0, 0, 0},
-        .span = {0, 0},
-        .color = 0,
-        .outline_thickness = 0,
-        .outline_color = 0,
-        .line_thickness = {0, 0},
-        .flags = 0,
-    };
-    quad_vertices[*vertices_count + 3] = (war_quad_vertex){
-        .corner = {0, 0},
-        .pos = {0, 0, 0},
-        .span = {0, 0},
-        .color = 0,
-        .outline_thickness = 0,
-        .outline_color = 0,
-        .line_thickness = {0, 0},
-        .flags = 0,
-    };
-    quad_indices[*indices_count] = *vertices_count;
-    quad_indices[*indices_count + 1] = *vertices_count + 1;
-    quad_indices[*indices_count + 2] = *vertices_count + 2;
-    quad_indices[*indices_count + 3] = *vertices_count + 2;
-    quad_indices[*indices_count + 4] = *vertices_count + 3;
-    quad_indices[*indices_count + 5] = *vertices_count;
-    (*vertices_count) += 4;
-    (*indices_count) += 6;
-}
-
 static inline uint32_t war_gcd(uint32_t a, uint32_t b) {
     while (b != 0) {
         uint32_t t = b;
@@ -1342,11 +955,6 @@ static inline uint32_t war_lcm(uint32_t a, uint32_t b) {
 
 static inline float war_midi_to_frequency(float midi_note) {
     return 440.0f * pow(2.0f, (midi_note - 69) / 12.0f);
-}
-
-static inline float war_sine_phase_increment(war_audio_context* ctx_a,
-                                             float frequency) {
-    return (2.0f * M_PI * frequency) / (float)ctx_a->sample_rate;
 }
 
 static inline uint32_t war_to_ascii(uint32_t keysym, uint32_t mod) {
@@ -1802,17 +1410,6 @@ war_get_ext(const char* file_name, char* ext, uint32_t name_limit) {
     memcpy(ext, ext_start, copy_len);
     ext[copy_len] = '\0';
     return copy_len;
-}
-
-static inline void war_wav_reset(war_window_render_context* ctx_wr,
-                                 war_file* file) {
-    file->memfd_size = 44;
-    memset(file->file, 0, file->memfd_capacity);
-    *(war_riff_header*)file->file = ctx_wr->init_riff_header;
-    *(war_fmt_chunk*)(file->file + sizeof(war_riff_header)) =
-        ctx_wr->init_fmt_chunk;
-    *(war_data_chunk*)(file->file + sizeof(war_riff_header) +
-                       sizeof(war_fmt_chunk)) = ctx_wr->init_data_chunk;
 }
 
 #endif // WAR_FUNCTIONS_H

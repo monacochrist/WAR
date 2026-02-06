@@ -17,3 +17,7 @@
 # WAR jumplist 0
 0 string WARJ JUMPLIST
 >4 long 0 VERSION %u
+
+# WAR color 0
+0 string WARC COLOR
+>4 long 0 VERSION %u

@@ -14,8 +14,8 @@
 #include "h/war_debug_macros.h"
 #include "h/war_functions.h"
 #include "h/war_keymap_functions.h"
+#include "h/war_new_vulkan.h"
 #include "h/war_nsgt.h"
-#include "h/war_vulkan.h"
 #include "h/war_wayland.h"
 
 #include <errno.h>
@@ -232,127 +232,34 @@ void* war_window_render(void* args) {
     memset(pool_wr->pool, 0, pool_wr->pool_size);
     pool_wr->pool_ptr = (uint8_t*)pool_wr->pool;
     //-------------------------------------------------------------------------
-    // VULKAN CONTEXT
+    // NEW VULKAN CONTEXT
     //-------------------------------------------------------------------------
-    // const uint32_t internal_width = 1920;
-    // const uint32_t internal_height = 1080;
-    double physical_width = 2560;
-    double physical_height = 1600;
-    const uint32_t stride = physical_width * 4;
-    war_vulkan_context* ctx_vk =
-        war_pool_alloc(pool_wr, sizeof(war_vulkan_context));
-    war_vulkan_init(ctx_vk, ctx_lua, pool_wr, physical_width, physical_height);
-    assert(ctx_vk->dmabuf_fd >= 0);
-    war_nsgt_context* ctx_nsgt =
-        war_pool_alloc(pool_wr, sizeof(war_nsgt_context));
-    war_nsgt_init(ctx_nsgt,
-                  pool_wr,
-                  ctx_lua,
-                  ctx_vk->device,
-                  ctx_vk->physical_device,
-                  ctx_vk->render_pass,
-                  ctx_vk->cmd_buffer,
-                  ctx_vk->queue,
-                  ctx_vk->in_flight_fences[ctx_vk->current_frame],
-                  physical_width,
-                  physical_height);
-    ctx_nsgt->graphics_fps = atomic_load(&ctx_lua->NSGT_GRAPHICS_FPS);
-    ctx_nsgt->rate_us =
-        (uint64_t)round((1.0 / (double)ctx_nsgt->graphics_fps) * 1000000.0);
-    ctx_nsgt->last_frame_time = war_get_monotonic_time_us();
-    ctx_nsgt->last_write_time = 0;
-    ctx_nsgt->write_count = 0;
+    war_new_vulkan_context* ctx_new_vulkan =
+        war_pool_alloc(pool_wr, sizeof(war_new_vulkan_context));
+    war_new_vulkan_init(ctx_new_vulkan, pool_wr, ctx_lua);
+    assert(ctx_new_vulkan->dmabuf_fd >= 0);
     //-------------------------------------------------------------------------
-    // COLOR CONTEXT
+    // MISC CONTEXT
     //-------------------------------------------------------------------------
-    // constants
-    const uint32_t light_gray_hex = 0xFF454950;
-    const uint32_t darker_light_gray_hex = 0xFF36383C; // gutter / line numbers
-    const uint32_t dark_gray_hex = 0xFF282828;
-    // rainbow
-    war_color_context* ctx_color =
-        war_pool_alloc(pool_wr, sizeof(war_color_context));
-    ctx_color->colors_count = atomic_load(&ctx_lua->A_LAYER_COUNT);
-    ctx_color->colors =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_color->colors_count);
-    const uint32_t red_hex = 0xFF0000DE;
-    const uint32_t orange_hex = 0xFF0080FF;
-    const uint32_t yellow_hex = 0xFF00FFFF;
-    const uint32_t green_hex = 0xFF00FF00;
-    const uint32_t cyan_hex = 0xFFFFFF00;
-    const uint32_t blue_hex = 0xFFFF0000;
-    const uint32_t magenta_hex = 0xFFFF00FF;
-    const uint32_t purple_hex = 0xFF8000FF;
-    const uint32_t gray_hex = 0xFF808080;
-    const uint32_t white_hex = 0xFFB1D9E9;
-    const uint32_t black_hex = 0xFF000000;
-    const uint32_t full_white_hex = 0xFFFFFFFF;
-    const uint32_t super_light_gray_hex = 0xFFD0D0D0;
-    ctx_color->colors[0] = red_hex;
-    ctx_color->colors[1] = orange_hex;
-    ctx_color->colors[2] = yellow_hex;
-    ctx_color->colors[3] = green_hex;
-    ctx_color->colors[4] = cyan_hex;
-    ctx_color->colors[5] = blue_hex;
-    ctx_color->colors[6] = magenta_hex;
-    ctx_color->colors[7] = purple_hex;
-    ctx_color->colors[8] = gray_hex;
-    ctx_color->full_white_hex = full_white_hex;
-    ctx_color->white_hex = white_hex;
-    //-------------------------------------------------------------------------
-    // DEFAULTS
-    //-------------------------------------------------------------------------
-    const float default_horizontal_line_thickness = 0.018;
-    const float piano_horizontal_line_thickness = 0.018;
-    const float default_vertical_line_thickness = 0.018; // default: 0.018
-    const float default_outline_thickness =
-        0.04; // 0.027 is minimum for preventing 1/4, 1/7, 1/9, max = 0.075f
-              // sub_cursor right outline from disappearing
-              // defualt outline = 0.04f
-    float default_alpha_scale = atomic_load(&ctx_lua->DEFAULT_ALPHA_SCALE);
-    float default_cursor_alpha_scale =
-        atomic_load(&ctx_lua->DEFAULT_CURSOR_ALPHA_SCALE);
-    float default_playback_bar_thickness =
-        atomic_load(&ctx_lua->DEFAULT_PLAYBACK_BAR_THICKNESS);
-    float default_text_feather = atomic_load(&ctx_lua->DEFAULT_TEXT_FEATHER);
-    float default_text_thickness =
-        atomic_load(&ctx_lua->DEFAULT_TEXT_THICKNESS);
-    float windowed_text_feather = atomic_load(&ctx_lua->WINDOWED_TEXT_FEATHER);
-    float windowed_text_thickness =
-        atomic_load(&ctx_lua->WINDOWED_TEXT_THICKNESS);
-    float default_windowed_alpha_scale =
-        atomic_load(&ctx_lua->DEFAULT_WINDOWED_ALPHA_SCALE);
-    float default_windowed_cursor_alpha_scale =
-        atomic_load(&ctx_lua->DEFAULT_WINDOWED_CURSOR_ALPHA_SCALE);
-    //-------------------------------------------------------------------------
-    // VIEWPORT
-    //-------------------------------------------------------------------------
-    double scale_factor = 1.483333; // 1.483333
-    const uint32_t logical_width =
-        (uint32_t)floor(physical_width / scale_factor);
-    const uint32_t logical_height =
-        (uint32_t)floor(physical_height / scale_factor);
-    uint32_t num_rows_for_status_bars = 3;
-    uint32_t num_cols_for_line_numbers = 3;
-    uint32_t default_viewport_cols =
-        (uint32_t)(physical_width / ctx_vk->cell_width);
-    uint32_t default_viewport_rows =
-        (uint32_t)(physical_height / ctx_vk->cell_height);
-    double viewport_bound_x = physical_width / ctx_vk->cell_width;
-    double viewport_bound_y = physical_height / ctx_vk->cell_height;
-    uint32_t visible_rows =
-        (uint32_t)((physical_height -
-                    ((float)num_rows_for_status_bars * ctx_vk->cell_height)) /
-                   ctx_vk->cell_height);
-    //-------------------------------------------------------------------------
-    // UNDO TREE
-    //-------------------------------------------------------------------------
-    war_undo_tree* undo_tree = war_pool_alloc(pool_wr, sizeof(war_undo_tree));
-    undo_tree->root = NULL;
-    undo_tree->current = NULL;
-    undo_tree->next_id = 1;
-    undo_tree->next_seq_num = 1;
-    undo_tree->next_branch_id = 1;
+    war_misc_context* ctx_misc =
+        war_pool_alloc(pool_wr, sizeof(war_misc_context));
+    ctx_misc->stride = ctx_new_vulkan->physical_width * 4;
+    ctx_misc->bpm = atomic_load(&ctx_lua->A_BPM);
+    ctx_misc->fps = atomic_load(&ctx_lua->WR_FPS);
+    ctx_misc->bpm_seconds_per_cell =
+        atomic_load(&ctx_lua->BPM_SECONDS_PER_CELL);
+    ctx_misc->subdivision_seconds_per_cell =
+        atomic_load(&ctx_lua->SUBDIVISION_SECONDS_PER_CELL);
+    ctx_misc->seconds_per_beat = 60.0 / ctx_misc->bpm_seconds_per_cell;
+    ctx_misc->seconds_per_cell =
+        ctx_misc->seconds_per_beat / ctx_misc->subdivision_seconds_per_cell;
+    ctx_misc->epsilon = 1e-6;
+    ctx_misc->scale_factor = 1.483333; // 1.483333
+    ctx_misc->logical_width = (uint32_t)floor(ctx_new_vulkan->physical_width /
+                                              ctx_misc->scale_factor);
+    ctx_misc->logical_height = (uint32_t)floor(ctx_new_vulkan->physical_height /
+                                               ctx_misc->scale_factor);
+    ctx_misc->frame_duration_us = 1e6 / ctx_misc->fps;
     //-------------------------------------------------------------------------
     // COMMAND CONTEXT
     //-------------------------------------------------------------------------
@@ -371,202 +278,6 @@ void* war_window_render(void* args) {
     ctx_command->input_read_index = 0;
     ctx_command->text_size = 0;
     //-------------------------------------------------------------------------
-    // WINDOW RENDER CONTEXT
-    //-------------------------------------------------------------------------
-    war_window_render_context ctx_wr_stack = {
-        .prompt = 0,
-        .default_viewport_cols = default_viewport_cols,
-        .default_viewport_rows = default_viewport_rows,
-        .layer_flux = 0,
-        .layers_active_count = 0,
-        .skip_release = 0,
-        .midi_toggle = 0,
-        .midi_octave = 4,
-        .capture_octave = 4,
-        .gain_increment = 0.05f,
-        .trinity = 0,
-        .fullscreen = 0,
-        .end_window_render = 0,
-        .FPS = atomic_load(&ctx_lua->WR_FPS),
-        .now = 0,
-        .mode = 0,
-        .hud_state = HUD_PIANO,
-        .cursor_blink_state = 0,
-        .cursor_blink_duration_us =
-            atomic_load(&ctx_lua->WR_CURSOR_BLINK_DURATION_US),
-        .cursor_pos_x = 0,
-        .cursor_pos_y = 60,
-        .cursor_size_x = 1.0,
-        .cursor_navigation_x = 1.0,
-        .sub_col = 0,
-        .sub_row = 0,
-        .navigation_whole_number_col = 1,
-        .navigation_whole_number_row = 1,
-        .navigation_sub_cells_col = 1,
-        .navigation_sub_cells_row = 1,
-        .previous_navigation_whole_number_col = 1,
-        .previous_navigation_whole_number_row = 1,
-        .previous_navigation_sub_cells_col = 1,
-        .previous_navigation_sub_cells_row = 1,
-        .f_navigation_whole_number = 1,
-        .t_navigation_sub_cells = 1,
-        .t_navigation_whole_number = 1,
-        .f_navigation_sub_cells = 1,
-        .cursor_width_whole_number = 1,
-        .cursor_width_sub_col = 1,
-        .cursor_width_sub_cells = 1,
-        .f_cursor_width_whole_number = 1,
-        .f_cursor_width_sub_cells = 1,
-        .t_cursor_width_whole_number = 1,
-        .t_cursor_width_sub_cells = 1,
-        .gridline_splits = {4, 1, 0, 0},
-        .bottom_row = 60 - visible_rows / 2 + 1,
-        .top_row = 60 + visible_rows / 2,
-        .left_col = 0,
-        .right_col =
-            (uint32_t)((physical_width - ((float)num_cols_for_line_numbers *
-                                          ctx_vk->cell_width)) /
-                       ctx_vk->cell_width) -
-            1,
-        .col_increment = 1,
-        .row_increment = 1,
-        .col_leap_increment = 13,
-        .row_leap_increment = 7,
-        .cursor_x = 0,
-        .cursor_y = 0,
-        .numeric_prefix = 0,
-        .zoom_scale = 1.0f, // 1.0 = normal, <1 = zoom out, >1 = zoom in
-        .max_zoom_scale = 5.0f,
-        .min_zoom_scale = 0.1f,
-        .num_rows_for_status_bars = num_rows_for_status_bars,
-        .num_cols_for_line_numbers = num_cols_for_line_numbers,
-        .panning_x = 0.0f,
-        .panning_y = 0.0f,
-        .zoom_increment = 0.1f,
-        .zoom_leap_increment = 0.5f,
-        .anchor_x = 0.0f,
-        .anchor_y = 0.0f,
-        .alpha_scale_cursor = default_cursor_alpha_scale,
-        .anchor_ndc_x = 0.0f,
-        .anchor_ndc_y = 0.0f,
-        .viewport_cols = default_viewport_cols,
-        .viewport_rows = default_viewport_rows,
-        .scroll_margin_cols = 0, // cols from visible min/max col
-        .scroll_margin_rows = 0, // rows from visible min/max row
-        .cell_width = ctx_vk->cell_width,
-        .cell_height = ctx_vk->cell_height,
-        .physical_width = physical_width,
-        .physical_height = physical_height,
-        .logical_width = logical_width,
-        .logical_height = logical_height,
-        .max_col = 144635, // shaking start happening after 289290,
-                           // line numbers thinning happens after 144635
-        .max_row = atomic_load(&ctx_lua->A_NOTE_COUNT) - 1,
-        .min_col = 0,
-        .min_row = 0,
-        .layer_count = (float)LAYER_COUNT,
-        .sleep = 0,
-        .playback_bar_pos_x = 0.0f,
-        .light_gray_hex = light_gray_hex,
-        .darker_light_gray_hex = darker_light_gray_hex,
-        .dark_gray_hex = dark_gray_hex,
-        .red_hex = red_hex,
-        .white_hex = white_hex,
-        .black_hex = black_hex,
-        .full_white_hex = full_white_hex,
-        .horizontal_line_thickness = default_horizontal_line_thickness,
-        .vertical_line_thickness = default_vertical_line_thickness,
-        .outline_thickness = default_outline_thickness,
-        .alpha_scale = default_alpha_scale,
-        .playback_bar_thickness = default_playback_bar_thickness,
-        .text_feather = default_text_feather,
-        .text_thickness = default_text_thickness,
-        .text_feather_bold = atomic_load(&ctx_lua->DEFAULT_BOLD_TEXT_FEATHER),
-        .text_thickness_bold =
-            atomic_load(&ctx_lua->DEFAULT_BOLD_TEXT_THICKNESS),
-        .color_note_default = white_hex,
-        .color_note_outline_default = full_white_hex,
-        .color_cursor = white_hex,
-        .color_cursor_transparent = white_hex,
-    };
-    war_window_render_context* ctx_wr = &ctx_wr_stack;
-    // TODO: add transparent centers (cut out), chopped cursor,....
-    // cursor flags
-    ctx_wr->layers_active = war_pool_alloc(
-        pool_wr, sizeof(char) * atomic_load(&ctx_lua->A_LAYER_COUNT));
-    for (int i = 0; i < LAYER_COUNT; i++) {
-        ctx_wr->z_layers[i] = i / ctx_wr->layer_count;
-    }
-    uint32_t max_viewport_cols =
-        (uint32_t)(physical_width /
-                   (ctx_vk->cell_width * ctx_wr->min_zoom_scale));
-    uint32_t max_viewport_rows =
-        (uint32_t)(physical_height /
-                   (ctx_vk->cell_height * ctx_wr->min_zoom_scale));
-    uint32_t max_gridlines_per_split = max_viewport_cols + max_viewport_rows;
-    war_views views_stack;
-    {
-        views_stack.views_saved_max = atomic_load(&ctx_lua->WR_VIEWS_SAVED);
-        views_stack.text_size = atomic_load(&ctx_lua->WR_WARPOON_TEXT_COLS);
-        uint32_t* views_col = war_pool_alloc(
-            pool_wr, sizeof(uint32_t) * views_stack.views_saved_max);
-        uint32_t* views_row = war_pool_alloc(
-            pool_wr, sizeof(uint32_t) * views_stack.views_saved_max);
-        uint32_t* views_left_col = war_pool_alloc(
-            pool_wr, sizeof(uint32_t) * views_stack.views_saved_max);
-        uint32_t* views_right_col = war_pool_alloc(
-            pool_wr, sizeof(uint32_t) * views_stack.views_saved_max);
-        uint32_t* views_bottom_row = war_pool_alloc(
-            pool_wr, sizeof(uint32_t) * views_stack.views_saved_max);
-        uint32_t* views_top_row = war_pool_alloc(
-            pool_wr, sizeof(uint32_t) * views_stack.views_saved_max);
-        char** warpoon_text = war_pool_alloc(
-            pool_wr, sizeof(char*) * views_stack.views_saved_max);
-        for (uint32_t i = 0; i < views_stack.views_saved_max; i++) {
-            warpoon_text[i] =
-                war_pool_alloc(pool_wr, sizeof(char) * views_stack.text_size);
-        }
-        uint32_t warpoon_viewport_cols = 25;
-        uint32_t warpoon_viewport_rows = 8;
-        uint32_t warpoon_hud_cols = 2;
-        uint32_t warpoon_hud_rows = 0;
-        uint32_t warpoon_max_col = views_stack.text_size - 1 - warpoon_hud_cols;
-        uint32_t warpoon_max_row =
-            views_stack.views_saved_max - 1 - warpoon_hud_rows;
-        views_stack = (war_views){
-            .col = views_col,
-            .row = views_row,
-            .left_col = views_left_col,
-            .right_col = views_right_col,
-            .bottom_row = views_bottom_row,
-            .top_row = views_top_row,
-            .views_count = 0,
-            .warpoon_text = warpoon_text,
-            .warpoon_state = WARPOON_STATE_NORMAL,
-            .warpoon_max_col = warpoon_max_col,
-            .warpoon_max_row = warpoon_max_row,
-            .warpoon_viewport_cols = warpoon_viewport_cols,
-            .warpoon_viewport_rows = warpoon_viewport_rows,
-            .warpoon_hud_cols = warpoon_hud_cols,
-            .warpoon_hud_rows = warpoon_hud_rows,
-            .warpoon_left_col = 0,
-            .warpoon_right_col = warpoon_viewport_cols - warpoon_hud_cols - 1,
-            .warpoon_bottom_row = warpoon_max_row - warpoon_viewport_rows + 1,
-            .warpoon_top_row = warpoon_max_row,
-            .warpoon_min_col = 0,
-            .warpoon_min_row = 0,
-            .warpoon_col = 0,
-            .warpoon_row = warpoon_max_row,
-            .warpoon_color_bg = ctx_wr->darker_light_gray_hex,
-            .warpoon_color_outline = ctx_wr->white_hex,
-            .warpoon_color_hud = ctx_wr->red_hex,
-            .warpoon_color_hud_text = ctx_wr->full_white_hex,
-            .warpoon_color_text = ctx_wr->white_hex,
-            .warpoon_color_cursor = ctx_wr->white_hex,
-        };
-    }
-    war_views* views = &views_stack;
-    //-------------------------------------------------------------------------
     // FSM CONTEXT + REPEATS + TIMEOUTS
     //-------------------------------------------------------------------------
     // Watch for overflow
@@ -579,7 +290,6 @@ void* war_window_render(void* args) {
     ctx_fsm->name_limit = atomic_load(&ctx_lua->WR_FN_NAME_LIMIT);
     // paths
     ctx_fsm->current_file_path = war_pool_alloc(pool_wr, ctx_fsm->name_limit);
-    ctx_fsm->current_file_type = WAR_FILE_TYPE_WAR;
     ctx_fsm->current_file_path_size = 0;
     ctx_fsm->cwd = war_pool_alloc(pool_wr, ctx_fsm->name_limit);
     getcwd(ctx_fsm->cwd, ctx_fsm->name_limit);
@@ -653,48 +363,6 @@ void* war_window_render(void* args) {
     ctx_fsm->MODE_MIDI = 3;
     ctx_fsm->MODE_COMMAND = 4;
     ctx_fsm->MODE_WAV = 5;
-    //-------------------------------------------------------------------------
-    // STATUS CONTEXT
-    //-------------------------------------------------------------------------
-    war_status_context* ctx_status =
-        war_pool_alloc(pool_wr, sizeof(war_status_context));
-    ctx_status->capacity = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
-    ctx_status->top =
-        war_pool_alloc(pool_wr, sizeof(char) * ctx_status->capacity);
-    memcpy(ctx_status->top,
-           ctx_fsm->current_file_path,
-           ctx_fsm->current_file_path_size);
-    ctx_status->roll_position =
-        war_pool_alloc(pool_wr, sizeof(char) * ctx_status->capacity);
-    ctx_status->top_size = 0;
-    // roll position
-    ctx_status->roll_position_size = 0;
-    ctx_status->roll_position_factor = (float)3 / 5;
-    ctx_status->roll_position_index =
-        ctx_wr->viewport_cols * ctx_status->roll_position_factor;
-    ctx_status->roll_position_x_y = atomic_load(&ctx_lua->ROLL_POSITION_X_Y);
-    ctx_status->middle =
-        war_pool_alloc(pool_wr, sizeof(char) * ctx_status->capacity);
-    ctx_status->middle_size = 0;
-    ctx_status->bottom =
-        war_pool_alloc(pool_wr, sizeof(char) * ctx_status->capacity);
-    ctx_status->bottom_size = 0;
-    ctx_status->layers_active_size = atomic_load(&ctx_lua->A_LAYER_COUNT);
-    ctx_status->layers_active =
-        war_pool_alloc(pool_wr, sizeof(char) * ctx_status->layers_active_size);
-    // middle mode strings
-    ctx_status->MODE_ROLL = "";
-    ctx_status->MODE_ROLL_size = 0;
-    ctx_status->MODE_VIEWS = "-- VIEWS --";
-    ctx_status->MODE_VIEWS_size = strlen(ctx_status->MODE_VIEWS);
-    ctx_status->MODE_CAPTURE = "-- CAPTURE --";
-    ctx_status->MODE_CAPTURE_size = strlen(ctx_status->MODE_CAPTURE);
-    ctx_status->MODE_MIDI = "-- MIDI --";
-    ctx_status->MODE_MIDI_size = strlen(ctx_status->MODE_MIDI);
-    ctx_status->MODE_COMMAND = "-- COMMAND --";
-    ctx_status->MODE_COMMAND_size = strlen(ctx_status->MODE_COMMAND);
-    ctx_status->MODE_WAV = "-- WAV --";
-    ctx_status->MODE_WAV_size = strlen(ctx_status->MODE_WAV);
     //-----------------------------------------------------------------------------
     // WAYLAND
     //-----------------------------------------------------------------------------
@@ -774,83 +442,6 @@ void* war_window_render(void* args) {
     obj_op[wl_registry_id * max_wayland_opcodes + 1] =
         &&war_label_wl_registry_global_remove;
     //-------------------------------------------------------------------------
-    // NOTE QUADS
-    //-------------------------------------------------------------------------
-    war_note_quads* note_quads =
-        war_pool_alloc(pool_wr, sizeof(war_note_quads));
-    note_quads->note_quads_max = atomic_load(&ctx_lua->WR_NOTE_QUADS_MAX);
-    note_quads->alive =
-        war_pool_alloc(pool_wr, sizeof(uint8_t) * note_quads->note_quads_max);
-    note_quads->id =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * note_quads->note_quads_max);
-    note_quads->pos_x =
-        war_pool_alloc(pool_wr, sizeof(double) * note_quads->note_quads_max);
-    note_quads->pos_y =
-        war_pool_alloc(pool_wr, sizeof(double) * note_quads->note_quads_max);
-    note_quads->layer =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * note_quads->note_quads_max);
-    note_quads->size_x =
-        war_pool_alloc(pool_wr, sizeof(double) * note_quads->note_quads_max);
-    note_quads->navigation_x =
-        war_pool_alloc(pool_wr, sizeof(double) * note_quads->note_quads_max);
-    note_quads->navigation_x_numerator =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->navigation_x_denominator =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->size_x_numerator =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->size_x_denominator =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->color =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->outline_color =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->gain =
-        war_pool_alloc(pool_wr, sizeof(float) * note_quads->note_quads_max);
-    note_quads->voice =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->hidden =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->mute =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * note_quads->note_quads_max);
-    note_quads->count = 0;
-    // quads
-    uint32_t quads_max = atomic_load(&ctx_lua->WR_QUADS_MAX);
-    uint32_t quads_vertices_max = quads_max * 4;
-    uint32_t quads_indices_max = quads_max * 6;
-    war_quad_vertex* quad_vertices =
-        war_pool_alloc(pool_wr, sizeof(war_quad_vertex) * quads_vertices_max);
-    uint32_t quad_vertices_count = 0;
-    uint32_t* quad_indices =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * quads_indices_max);
-    uint32_t quad_indices_count = 0;
-    war_quad_vertex* transparent_quad_vertices =
-        war_pool_alloc(pool_wr, sizeof(war_quad_vertex) * quads_vertices_max);
-    uint32_t transparent_quad_vertices_count = 0;
-    uint32_t* transparent_quad_indices =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * quads_indices_max);
-    uint32_t transparent_quad_indices_count = 0;
-    // text quads
-    uint32_t text_quads_max = atomic_load(&ctx_lua->WR_TEXT_QUADS_MAX);
-    uint32_t text_quads_vertices_max = text_quads_max * 4;
-    uint32_t text_quads_indices_max = text_quads_max * 6;
-    war_text_vertex* text_vertices = war_pool_alloc(
-        pool_wr, sizeof(war_text_vertex) * text_quads_vertices_max);
-    uint32_t text_vertices_count = 0;
-    uint32_t* text_indices =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * text_quads_indices_max);
-    uint32_t text_indices_count = 0;
-    //-------------------------------------------------------------------------
-    // RENDERING FPS
-    //-------------------------------------------------------------------------
-    const double microsecond_conversion = 1000000.0;
-    ctx_wr->sleep_duration_us = 50000;
-    ctx_wr->frame_duration_us =
-        (uint64_t)round((1.0 / (double)ctx_wr->FPS) * microsecond_conversion);
-    uint64_t last_frame_time = war_get_monotonic_time_us();
-    ctx_wr->cursor_blink_previous_us = last_frame_time;
-    ctx_wr->cursor_blinking = 0;
-    //-------------------------------------------------------------------------
     // PC CONTROL
     //-------------------------------------------------------------------------
     uint32_t header;
@@ -863,6 +454,1093 @@ void* war_window_render(void* args) {
     void** pc_control_cmd =
         war_pool_alloc(pool_wr, sizeof(void*) * control_cmd_count);
     pc_control_cmd[0] = &&war_label_end_wr;
+    //-------------------------------------------------------------------------
+    // CAPTURE CONTEXT
+    //-------------------------------------------------------------------------
+    war_capture_context* ctx_capture =
+        war_pool_alloc(pool_wr, sizeof(war_capture_context));
+    ctx_capture->name_limit = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
+    ctx_capture->fps = atomic_load(&ctx_lua->WR_CAPTURE_CALLBACK_FPS);
+    // rate
+    ctx_capture->last_frame_time = war_get_monotonic_time_us();
+    ctx_capture->last_read_time = 0;
+    ctx_capture->read_count = 0;
+    // misc
+    ctx_capture->capture_wait = 1;
+    ctx_capture->capture_delay = 0;
+    ctx_capture->state = CAPTURE_WAITING;
+    ctx_capture->threshold = atomic_load(&ctx_lua->WR_CAPTURE_THRESHOLD);
+    ctx_capture->monitor = 0;
+    ctx_capture->prompt = 1;
+    ctx_capture->prompt_fname_text =
+        war_pool_alloc(pool_wr, ctx_capture->name_limit);
+    ctx_capture->prompt_fname_text = "filename";
+    ctx_capture->prompt_fname_text_size =
+        strlen(ctx_capture->prompt_fname_text);
+    ctx_capture->prompt_note_text =
+        war_pool_alloc(pool_wr, ctx_capture->name_limit);
+    ctx_capture->prompt_note_text = "note";
+    ctx_capture->prompt_note_text_size = strlen(ctx_capture->prompt_note_text);
+    ctx_capture->prompt_layer_text =
+        war_pool_alloc(pool_wr, ctx_capture->name_limit);
+    ctx_capture->prompt_layer_text = "layer";
+    ctx_capture->prompt_layer_text_size =
+        strlen(ctx_capture->prompt_layer_text);
+    ctx_capture->fname = war_pool_alloc(pool_wr, ctx_capture->name_limit);
+    ctx_capture->fname_size = 0;
+    ctx_capture->note = 0;
+    ctx_capture->layer = 0;
+    //-------------------------------------------------------------------------
+    // PLAY CONTEXT
+    //-------------------------------------------------------------------------
+    war_play_context* ctx_play =
+        war_pool_alloc(pool_wr, sizeof(war_capture_context));
+    ctx_play->fps = atomic_load(&ctx_lua->WR_PLAY_CALLBACK_FPS);
+    // rate
+    ctx_play->last_frame_time = war_get_monotonic_time_us();
+    ctx_play->last_write_time = 0;
+    ctx_play->write_count = 0;
+    // misc
+    ctx_play->play = 0;
+    ctx_play->octave = 4;
+    //-------------------------------------------------------------------------
+    // HUD CONTEXT
+    //-------------------------------------------------------------------------
+    war_hud_context* ctx_hud = war_pool_alloc(pool_wr, sizeof(war_hud_context));
+    ctx_hud->dirty =
+        &ctx_new_vulkan->dirty_buffer[ctx_new_vulkan->pipeline_idx_hud *
+                                      ctx_new_vulkan->buffer_max];
+    ctx_hud->draw =
+        &ctx_new_vulkan->draw_buffer[ctx_new_vulkan->pipeline_idx_hud *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud->idx_status_bottom = 0;
+    ctx_hud->idx_status_middle = 1;
+    ctx_hud->idx_status_top = 2;
+    ctx_hud->idx_line_numbers = 3;
+    ctx_hud->idx_piano = 4;
+    ctx_hud->idx_explore = 5;
+    ctx_hud->buffer_count = atomic_load(&ctx_lua->HUD_COUNT);
+    ctx_hud->capacity =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_hud->buffer_count);
+    ctx_hud->stage = war_pool_alloc(
+        pool_wr, sizeof(war_new_vulkan_hud_instance*) * ctx_hud->buffer_count);
+    ctx_hud->first =
+        &ctx_new_vulkan
+             ->buffer_first_instance[ctx_new_vulkan->pipeline_idx_hud *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud->count =
+        &ctx_new_vulkan
+             ->buffer_instance_count[ctx_new_vulkan->pipeline_idx_hud *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud->capacity[ctx_hud->idx_status_bottom] =
+        atomic_load(&ctx_lua->HUD_STATUS_BOTTOM_INSTANCE_MAX);
+    ctx_hud->capacity[ctx_hud->idx_status_middle] =
+        atomic_load(&ctx_lua->HUD_STATUS_MIDDLE_INSTANCE_MAX);
+    ctx_hud->capacity[ctx_hud->idx_status_top] =
+        atomic_load(&ctx_lua->HUD_STATUS_TOP_INSTANCE_MAX);
+    ctx_hud->capacity[ctx_hud->idx_line_numbers] =
+        atomic_load(&ctx_lua->HUD_LINE_NUMBERS_INSTANCE_MAX);
+    ctx_hud->capacity[ctx_hud->idx_piano] =
+        atomic_load(&ctx_lua->HUD_PIANO_INSTANCE_MAX);
+    ctx_hud->capacity[ctx_hud->idx_explore] =
+        atomic_load(&ctx_lua->HUD_EXPLORE_INSTANCE_MAX);
+    ctx_hud->x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud->buffer_count);
+    ctx_hud->y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud->buffer_count);
+    ctx_hud->width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud->buffer_count);
+    ctx_hud->height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud->buffer_count);
+    for (uint32_t i = 0; i < ctx_hud->buffer_count; i++) {
+        ctx_hud->x_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud->capacity[i]);
+        ctx_hud->y_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud->capacity[i]);
+        ctx_hud->width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud->capacity[i]);
+        ctx_hud->height_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud->capacity[i]);
+    }
+    uint32_t tmp_first_instance = 0;
+    for (uint32_t i = 0; i < ctx_hud->buffer_count; i++) {
+        ctx_hud->stage[i] =
+            &((war_new_vulkan_hud_instance*)ctx_new_vulkan
+                  ->map[ctx_new_vulkan->idx_hud_stage])[tmp_first_instance];
+        tmp_first_instance += ctx_hud->capacity[i];
+        if (i + 1 < ctx_hud->buffer_count) {
+            ctx_hud->first[i + 1] = tmp_first_instance;
+        }
+    }
+    ctx_hud->rect_2d =
+        ctx_new_vulkan->buffer_rect_2d[ctx_new_vulkan->pipeline_idx_hud];
+    ctx_hud->viewport =
+        ctx_new_vulkan->buffer_viewport[ctx_new_vulkan->pipeline_idx_hud];
+    ctx_hud->push_constant =
+        (war_new_vulkan_hud_push_constant*)ctx_new_vulkan
+            ->buffer_push_constant[ctx_new_vulkan->pipeline_idx_hud];
+    for (uint32_t i = 0; i < ctx_hud->buffer_count; i++) {
+        ctx_hud->push_constant[i] = (war_new_vulkan_hud_push_constant){
+            .screen_size = {ctx_new_vulkan->physical_width,
+                            ctx_new_vulkan->physical_height},
+            .cell_size = {ctx_new_vulkan->cell_width,
+                          ctx_new_vulkan->cell_height},
+            .panning = {0.0f, 0.0f},
+            .zoom = 1.0f,
+            .cell_offset = {0.0f, 0.0f},
+        };
+        ctx_hud->viewport[i] = (VkViewport){
+            .width = ctx_new_vulkan->physical_width,
+            .height = ctx_new_vulkan->physical_height,
+            .maxDepth = 1.0f,
+            .minDepth = 0.0f,
+            .x = 0.0f,
+            .y = 0.0f,
+        };
+        ctx_hud->rect_2d[i] = (VkRect2D){
+            .extent = {(uint32_t)ctx_new_vulkan->physical_width,
+                       (uint32_t)ctx_new_vulkan->physical_height},
+            .offset = {0, 0},
+        };
+    }
+    // hud status bottom
+    ctx_hud->x_seconds[ctx_hud->idx_status_bottom][0] = 0;
+    ctx_hud->y_cells[ctx_hud->idx_status_bottom][0] = 0;
+    ctx_hud->width_seconds[ctx_hud->idx_status_bottom][0] =
+        (ctx_new_vulkan->physical_width / ctx_new_vulkan->cell_width) *
+        ctx_misc->seconds_per_cell;
+    ctx_hud->height_cells[ctx_hud->idx_status_bottom][0] = 1.0;
+    ctx_hud->stage[ctx_hud->idx_status_bottom][0] =
+        (war_new_vulkan_hud_instance){
+            .pos = {0.0f,
+                    0.0f,
+                    ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_hud]},
+            .size = {ctx_hud->width_seconds[ctx_hud->idx_status_bottom][0] /
+                         ctx_misc->seconds_per_cell,
+                     1.0f},
+            .color = {0.87f, 0.0f, 0.0f, 1.0f},
+            .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .flags = 0,
+        };
+    ctx_hud->count[ctx_hud->idx_status_bottom] = 1;
+    ctx_hud->dirty[ctx_hud->idx_status_bottom] = 1;
+    // hud status middle
+    ctx_hud->x_seconds[ctx_hud->idx_status_middle][0] = 0;
+    ctx_hud->y_cells[ctx_hud->idx_status_middle][0] = 1;
+    ctx_hud->width_seconds[ctx_hud->idx_status_middle][0] =
+        (ctx_new_vulkan->physical_width / ctx_new_vulkan->cell_width) *
+        ctx_misc->seconds_per_cell;
+    ctx_hud->height_cells[ctx_hud->idx_status_middle][0] = 1.0;
+    ctx_hud->stage[ctx_hud->idx_status_middle][0] =
+        (war_new_vulkan_hud_instance){
+            .pos = {0.0f,
+                    1.0f,
+                    ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_hud]},
+            .size = {ctx_hud->width_seconds[ctx_hud->idx_status_middle][0] /
+                         ctx_misc->seconds_per_cell,
+                     1.0f},
+            .color = {0.1569, 0.1569, 0.1569, 1.0f},
+            .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .flags = 0,
+        };
+    ctx_hud->count[ctx_hud->idx_status_middle] = 1;
+    ctx_hud->dirty[ctx_hud->idx_status_middle] = 1;
+    // hud status top
+    ctx_hud->x_seconds[ctx_hud->idx_status_top][0] = 0;
+    ctx_hud->y_cells[ctx_hud->idx_status_top][0] = 2;
+    ctx_hud->width_seconds[ctx_hud->idx_status_top][0] =
+        (ctx_new_vulkan->physical_width / ctx_new_vulkan->cell_width) *
+        ctx_misc->seconds_per_cell;
+    ctx_hud->height_cells[ctx_hud->idx_status_top][0] = 1.0;
+    ctx_hud->stage[ctx_hud->idx_status_top][0] = (war_new_vulkan_hud_instance){
+        .pos = {0.0f, 2.0f, ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_hud]},
+        .size = {ctx_hud->width_seconds[ctx_hud->idx_status_top][0] /
+                     ctx_misc->seconds_per_cell,
+                 1.0f},
+        .color = {0.3137, 0.2863, 0.2706, 1.0},
+        .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+        .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+        .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+        .flags = 0,
+    };
+    ctx_hud->count[ctx_hud->idx_status_top] = 1;
+    ctx_hud->dirty[ctx_hud->idx_status_top] = 1;
+    //-------------------------------------------------------------------------
+    // HUD LINE CONTEXT
+    //-------------------------------------------------------------------------
+    war_hud_line_context* ctx_hud_line =
+        war_pool_alloc(pool_wr, sizeof(war_hud_line_context));
+    ctx_hud_line->buffer_count = atomic_load(&ctx_lua->HUD_LINE_COUNT);
+    ctx_hud_line->capacity =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_hud_line->buffer_count);
+    ctx_hud_line->stage =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_line->buffer_count);
+    ctx_hud_line->idx_piano = 0;
+    ctx_hud_line->capacity[ctx_hud_line->idx_piano] =
+        atomic_load(&ctx_lua->HUD_LINE_PIANO_INSTANCE_MAX);
+    ctx_hud_line->dirty =
+        &ctx_new_vulkan->dirty_buffer[ctx_new_vulkan->pipeline_idx_hud_line *
+                                      ctx_new_vulkan->buffer_max];
+    ctx_hud_line->draw =
+        &ctx_new_vulkan->draw_buffer[ctx_new_vulkan->pipeline_idx_hud_line *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_line->stage = war_pool_alloc(pool_wr,
+                                         sizeof(war_new_vulkan_line_instance*) *
+                                             ctx_hud_line->buffer_count);
+    ctx_hud_line->first =
+        &ctx_new_vulkan
+             ->buffer_first_instance[ctx_new_vulkan->pipeline_idx_hud_line *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_line->count =
+        &ctx_new_vulkan
+             ->buffer_instance_count[ctx_new_vulkan->pipeline_idx_hud_line *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_line->x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_line->buffer_count);
+    ctx_hud_line->y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_line->buffer_count);
+    ctx_hud_line->width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_line->buffer_count);
+    ctx_hud_line->height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_line->buffer_count);
+    ctx_hud_line->line_width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_line->buffer_count);
+    for (uint32_t i = 0; i < ctx_hud_line->buffer_count; i++) {
+        ctx_hud_line->x_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_line->capacity[i]);
+        ctx_hud_line->y_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_line->capacity[i]);
+        ctx_hud_line->width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_line->capacity[i]);
+        ctx_hud_line->height_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_line->capacity[i]);
+        ctx_hud_line->line_width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_line->capacity[i]);
+    }
+    tmp_first_instance = 0;
+    for (uint32_t i = 0; i < ctx_hud_line->buffer_count; i++) {
+        ctx_hud_line->stage[i] = &(
+            (war_new_vulkan_hud_line_instance*)ctx_new_vulkan
+                ->map[ctx_new_vulkan->idx_hud_line_stage])[tmp_first_instance];
+        tmp_first_instance += ctx_hud_line->capacity[i];
+        if (i + 1 < ctx_hud_line->buffer_count) {
+            ctx_hud_line->first[i + 1] = tmp_first_instance;
+        }
+    }
+    ctx_hud_line->rect_2d =
+        ctx_new_vulkan->buffer_rect_2d[ctx_new_vulkan->pipeline_idx_hud_line];
+    ctx_hud_line->viewport =
+        ctx_new_vulkan->buffer_viewport[ctx_new_vulkan->pipeline_idx_hud_line];
+    ctx_hud_line->push_constant =
+        ctx_new_vulkan
+            ->buffer_push_constant[ctx_new_vulkan->pipeline_idx_hud_line];
+    for (uint32_t i = 0; i < ctx_hud_line->buffer_count; i++) {
+        ctx_hud_line->push_constant[i] =
+            (war_new_vulkan_hud_line_push_constant){
+                .screen_size = {ctx_new_vulkan->physical_width,
+                                ctx_new_vulkan->physical_height},
+                .cell_size = {ctx_new_vulkan->cell_width,
+                              ctx_new_vulkan->cell_height},
+                .panning = {0.0f, 0.0f},
+                .zoom = 1.0f,
+                .cell_offset = {3.0f, 3.0f},
+            };
+        ctx_hud_line->viewport[i] = (VkViewport){
+            .width = ctx_new_vulkan->physical_width,
+            .height = ctx_new_vulkan->physical_height,
+            .maxDepth = 1.0f,
+            .minDepth = 0.0f,
+            .x = 0.0f,
+            .y = 0.0f,
+        };
+        ctx_hud_line->rect_2d[i] = (VkRect2D){
+            .extent = {(uint32_t)ctx_new_vulkan->physical_width,
+                       (uint32_t)ctx_new_vulkan->physical_height},
+            .offset = {0, 0},
+        };
+    }
+    // cell grid
+    ctx_hud_line->x_seconds[ctx_hud_line->idx_piano][0] = 0;
+    ctx_hud_line->y_cells[ctx_hud_line->idx_piano][0] = 5;
+    ctx_hud_line->width_seconds[ctx_hud_line->idx_piano][0] =
+        (ctx_new_vulkan->physical_width / ctx_new_vulkan->cell_width) *
+        ctx_misc->seconds_per_cell;
+    ctx_hud_line->height_cells[ctx_hud_line->idx_piano][0] = 0;
+    ctx_hud_line->line_width_seconds[ctx_hud_line->idx_piano][0] =
+        0.025 * ctx_misc->seconds_per_cell;
+    ctx_hud_line->stage[ctx_hud_line->idx_piano][0] =
+        (war_new_vulkan_hud_line_instance){
+            .pos = {ctx_hud_line->x_seconds[ctx_hud_line->idx_piano][0] /
+                        ctx_misc->seconds_per_cell,
+                    ctx_hud_line->y_cells[ctx_hud_line->idx_piano][0],
+                    ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_line]},
+            .size = {ctx_hud_line->width_seconds[ctx_hud_line->idx_piano][0] /
+                         ctx_misc->seconds_per_cell,
+                     ctx_hud_line->height_cells[ctx_hud_line->idx_piano][0]},
+            .width =
+                ctx_hud_line->line_width_seconds[ctx_hud_line->idx_piano][0] /
+                ctx_misc->seconds_per_cell,
+            .color = {0.3137, 0.2863, 0.2706, 1.0},
+            .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .flags = 0,
+        };
+    ctx_hud_line->count[ctx_hud_line->idx_piano] = 1;
+    ctx_hud_line->dirty[ctx_hud_line->idx_piano] = 1;
+    ctx_hud_line->draw[ctx_hud_line->idx_piano] = 0;
+    //-------------------------------------------------------------------------
+    // HUD TEXT
+    //-------------------------------------------------------------------------
+    war_hud_text_context* ctx_hud_text =
+        war_pool_alloc(pool_wr, sizeof(war_hud_text_context));
+    ctx_hud_text->buffer_count = atomic_load(&ctx_lua->HUD_TEXT_COUNT);
+    ctx_hud_text->capacity =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_hud_text->buffer_count);
+    ctx_hud_text->stage =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_text->buffer_count);
+    // indices / capacities
+    ctx_hud_text->idx_status_bottom = 0;
+    ctx_hud_text->capacity[ctx_hud_text->idx_status_bottom] =
+        atomic_load(&ctx_lua->HUD_TEXT_STATUS_BOTTOM_INSTANCE_MAX);
+    ctx_hud_text->dirty =
+        &ctx_new_vulkan->dirty_buffer[ctx_new_vulkan->pipeline_idx_hud_text *
+                                      ctx_new_vulkan->buffer_max];
+    ctx_hud_text->draw =
+        &ctx_new_vulkan->draw_buffer[ctx_new_vulkan->pipeline_idx_hud_text *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_text->stage = war_pool_alloc(
+        pool_wr,
+        sizeof(war_new_vulkan_hud_text_instance*) * ctx_hud_text->buffer_count);
+    ctx_hud_text->first =
+        &ctx_new_vulkan
+             ->buffer_first_instance[ctx_new_vulkan->pipeline_idx_hud_text *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_text->count =
+        &ctx_new_vulkan
+             ->buffer_instance_count[ctx_new_vulkan->pipeline_idx_hud_text *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_text->x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_text->buffer_count);
+    ctx_hud_text->y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_text->buffer_count);
+    ctx_hud_text->width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_text->buffer_count);
+    ctx_hud_text->height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_text->buffer_count);
+    for (uint32_t i = 0; i < ctx_hud_text->buffer_count; i++) {
+        ctx_hud_text->x_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_text->capacity[i]);
+        ctx_hud_text->y_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_text->capacity[i]);
+        ctx_hud_text->width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_text->capacity[i]);
+        ctx_hud_text->height_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_hud_text->capacity[i]);
+    }
+    tmp_first_instance = 0;
+    for (uint32_t i = 0; i < ctx_hud_text->buffer_count; i++) {
+        ctx_hud_text->stage[i] = &(
+            (war_new_vulkan_hud_text_instance*)ctx_new_vulkan
+                ->map[ctx_new_vulkan->idx_hud_text_stage])[tmp_first_instance];
+        tmp_first_instance += ctx_hud_text->capacity[i];
+        if (i + 1 < ctx_hud_text->buffer_count) {
+            ctx_hud_text->first[i + 1] = tmp_first_instance;
+        }
+    }
+    ctx_hud_text->rect_2d =
+        ctx_new_vulkan->buffer_rect_2d[ctx_new_vulkan->pipeline_idx_hud_text];
+    ctx_hud_text->viewport =
+        ctx_new_vulkan->buffer_viewport[ctx_new_vulkan->pipeline_idx_hud_text];
+    ctx_hud_text->push_constant =
+        ctx_new_vulkan
+            ->buffer_push_constant[ctx_new_vulkan->pipeline_idx_hud_text];
+    for (uint32_t i = 0; i < ctx_hud_text->buffer_count; i++) {
+        ctx_hud_text->push_constant[i] =
+            (war_new_vulkan_hud_text_push_constant){
+                .screen_size = {ctx_new_vulkan->physical_width,
+                                ctx_new_vulkan->physical_height},
+                .cell_size = {ctx_new_vulkan->cell_width,
+                              ctx_new_vulkan->cell_height},
+                .panning = {0.0f, 0.0f},
+                .zoom = 1.0f,
+                .cell_offset = {3.0f, 3.0f},
+            };
+        ctx_hud_text->viewport[i] = (VkViewport){
+            .width = ctx_new_vulkan->physical_width,
+            .height = ctx_new_vulkan->physical_height,
+            .maxDepth = 1.0f,
+            .minDepth = 0.0f,
+            .x = 0.0f,
+            .y = 0.0f,
+        };
+        ctx_hud_text->rect_2d[i] = (VkRect2D){
+            .extent = {(uint32_t)ctx_new_vulkan->physical_width,
+                       (uint32_t)ctx_new_vulkan->physical_height},
+            .offset = {0, 0},
+        };
+    }
+    // status bottom
+    ctx_hud_text->x_seconds[ctx_hud_text->idx_status_bottom][0] =
+        3 * ctx_misc->seconds_per_cell;
+    ctx_hud_text->y_cells[ctx_hud_text->idx_status_bottom][0] = 6;
+    ctx_hud_text->width_seconds[ctx_hud_text->idx_status_bottom][0] =
+        1 * ctx_misc->seconds_per_cell;
+    ctx_hud_text->height_cells[ctx_hud_text->idx_status_bottom][0] = 1;
+    ctx_hud_text->stage[ctx_hud_text->idx_status_bottom]
+                       [0] = (war_new_vulkan_hud_text_instance){
+        .pos = {ctx_hud_text->x_seconds[ctx_hud_text->idx_status_bottom][0] /
+                    ctx_misc->seconds_per_cell,
+                ctx_hud_text->y_cells[ctx_hud_text->idx_status_bottom][0],
+                ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_line]},
+        .size =
+            {ctx_hud_text->width_seconds[ctx_hud_text->idx_status_bottom][0] /
+                 ctx_misc->seconds_per_cell,
+             ctx_hud_text->height_cells[ctx_hud_text->idx_status_bottom][0]},
+        .uv = {ctx_new_vulkan->glyph_info['M'].uv_x0,
+               ctx_new_vulkan->glyph_info['M'].uv_y0,
+               ctx_new_vulkan->glyph_info['M'].uv_x1,
+               ctx_new_vulkan->glyph_info['M'].uv_y1},
+        .glyph_scale = {ctx_new_vulkan->glyph_info['M'].norm_width,
+                        ctx_new_vulkan->glyph_info['M'].norm_height},
+        .baseline = ctx_new_vulkan->glyph_info['M'].norm_baseline,
+        .ascent = ctx_new_vulkan->glyph_info['M'].norm_ascent,
+        .descent = ctx_new_vulkan->glyph_info['M'].norm_descent,
+        .color = {0.9216, 0.8549, 0.6902, 1.0},
+        .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+        .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+        .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+        .flags = 0,
+    };
+    ctx_hud_text->count[ctx_hud_text->idx_status_bottom] = 1;
+    ctx_hud_text->dirty[ctx_hud_text->idx_status_bottom] = 1;
+    ctx_hud_text->draw[ctx_hud_text->idx_status_bottom] = 0;
+    //-------------------------------------------------------------------------
+    // HUD CURSOR
+    //-------------------------------------------------------------------------
+    war_hud_cursor_context* ctx_hud_cursor =
+        war_pool_alloc(pool_wr, sizeof(war_hud_cursor_context));
+    ctx_hud_cursor->dirty =
+        &ctx_new_vulkan->dirty_buffer[ctx_new_vulkan->pipeline_idx_hud_cursor *
+                                      ctx_new_vulkan->buffer_max];
+    ctx_hud_cursor->draw =
+        &ctx_new_vulkan->draw_buffer[ctx_new_vulkan->pipeline_idx_hud_cursor *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_cursor->idx_cursor_default = 0;
+    ctx_hud_cursor->buffer_count = atomic_load(&ctx_lua->HUD_CURSOR_COUNT);
+    ctx_hud_cursor->capacity = war_pool_alloc(
+        pool_wr, sizeof(uint32_t) * ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->stage =
+        war_pool_alloc(pool_wr,
+                       sizeof(war_new_vulkan_hud_cursor_instance*) *
+                           ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->first =
+        &ctx_new_vulkan
+             ->buffer_first_instance[ctx_new_vulkan->pipeline_idx_hud_cursor *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_cursor->count =
+        &ctx_new_vulkan
+             ->buffer_instance_count[ctx_new_vulkan->pipeline_idx_hud_cursor *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_hud_cursor->capacity[ctx_hud_cursor->idx_cursor_default] =
+        atomic_load(&ctx_lua->HUD_CURSOR_DEFAULT_INSTANCE_MAX);
+    ctx_hud_cursor->x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->visual_x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->visual_y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->visual_width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_cursor->buffer_count);
+    ctx_hud_cursor->visual_height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_hud_cursor->buffer_count);
+    for (uint32_t i = 0; i < ctx_hud_cursor->buffer_count; i++) {
+        ctx_hud_cursor->x_seconds[i] = war_pool_alloc(
+            pool_wr, sizeof(double) * ctx_hud_cursor->capacity[i]);
+        ctx_hud_cursor->y_cells[i] = war_pool_alloc(
+            pool_wr, sizeof(double) * ctx_hud_cursor->capacity[i]);
+        ctx_hud_cursor->width_seconds[i] = war_pool_alloc(
+            pool_wr, sizeof(double) * ctx_hud_cursor->capacity[i]);
+        ctx_hud_cursor->height_cells[i] = war_pool_alloc(
+            pool_wr, sizeof(double) * ctx_hud_cursor->capacity[i]);
+        ctx_hud_cursor->visual_x_seconds[i] = war_pool_alloc(
+            pool_wr, sizeof(double) * ctx_hud_cursor->capacity[i]);
+        ctx_hud_cursor->visual_y_cells[i] = war_pool_alloc(
+            pool_wr, sizeof(double) * ctx_hud_cursor->capacity[i]);
+        ctx_hud_cursor->visual_width_seconds[i] = war_pool_alloc(
+            pool_wr, sizeof(double) * ctx_hud_cursor->capacity[i]);
+        ctx_hud_cursor->visual_height_cells[i] = war_pool_alloc(
+            pool_wr, sizeof(double) * ctx_hud_cursor->capacity[i]);
+    }
+    tmp_first_instance = 0;
+    for (uint32_t i = 0; i < ctx_hud_cursor->buffer_count; i++) {
+        ctx_hud_cursor->stage[i] =
+            &((war_new_vulkan_hud_cursor_instance*)ctx_new_vulkan->map
+                  [ctx_new_vulkan->idx_hud_cursor_stage])[tmp_first_instance];
+        tmp_first_instance += ctx_hud_cursor->capacity[i];
+        if (i + 1 < ctx_hud_cursor->buffer_count) {
+            ctx_hud_cursor->first[i + 1] = tmp_first_instance;
+        }
+    }
+    ctx_hud_cursor->rect_2d =
+        ctx_new_vulkan->buffer_rect_2d[ctx_new_vulkan->pipeline_idx_hud_cursor];
+    ctx_hud_cursor->viewport =
+        ctx_new_vulkan
+            ->buffer_viewport[ctx_new_vulkan->pipeline_idx_hud_cursor];
+    ctx_hud_cursor->push_constant =
+        ctx_new_vulkan
+            ->buffer_push_constant[ctx_new_vulkan->pipeline_idx_hud_cursor];
+    for (uint32_t i = 0; i < ctx_hud_cursor->buffer_count; i++) {
+        ctx_hud_cursor->push_constant[i] =
+            (war_new_vulkan_hud_cursor_push_constant){
+                .screen_size = {ctx_new_vulkan->physical_width,
+                                ctx_new_vulkan->physical_height},
+                .cell_size = {ctx_new_vulkan->cell_width,
+                              ctx_new_vulkan->cell_height},
+                .panning = {0.0f, 0.0f},
+                .zoom = 1.0f,
+                .cell_offset = {0.0f, 0.0f},
+            };
+        ctx_hud_cursor->viewport[i] = (VkViewport){
+            .width = ctx_new_vulkan->physical_width,
+            .height = ctx_new_vulkan->physical_height,
+            .maxDepth = 1.0f,
+            .minDepth = 0.0f,
+            .x = 0.0f,
+            .y = 0.0f,
+        };
+        ctx_hud_cursor->rect_2d[i] = (VkRect2D){
+            .extent = {(uint32_t)ctx_new_vulkan->physical_width,
+                       (uint32_t)ctx_new_vulkan->physical_height},
+            .offset = {0, 0},
+        };
+    }
+    // cursor default
+    ctx_hud_cursor->x_seconds[ctx_hud_cursor->idx_cursor_default][0] = 0.0;
+    ctx_hud_cursor->y_cells[ctx_hud_cursor->idx_cursor_default][0] = 0.0;
+    ctx_hud_cursor->width_seconds[ctx_hud_cursor->idx_cursor_default][0] =
+        1.0 * ctx_misc->seconds_per_cell;
+    ctx_hud_cursor->height_cells[ctx_hud_cursor->idx_cursor_default][0] = 1.0;
+    ctx_hud_cursor->top_bound_cells =
+        ctx_new_vulkan->physical_height / ctx_new_vulkan->cell_height;
+    ctx_hud_cursor->bottom_bound_cells = 0.0;
+    ctx_hud_cursor->left_bound_seconds = 0.0;
+    ctx_hud_cursor->right_bound_seconds =
+        (ctx_new_vulkan->physical_width / ctx_new_vulkan->cell_width) *
+        ctx_misc->seconds_per_cell;
+    ctx_hud_cursor->max_cells_y = 30; // atomic_load(&ctx_lua->A_NOTE_COUNT);
+    ctx_hud_cursor->max_seconds_x = 40;
+    ctx_hud_cursor->move_factor = 1;
+    ctx_hud_cursor->leap_cells = 13;
+    ctx_hud_cursor->stage[ctx_hud_cursor->idx_cursor_default][0] =
+        (war_new_vulkan_hud_cursor_instance){
+            .pos = {0.0f,
+                    0.0f,
+                    ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_cursor]},
+            .size = {1.0f, 1.0f},
+            .color = {0.9216, 0.8549, 0.6902, 1.0},
+            .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .flags = 0,
+        };
+    ctx_hud_cursor->push_constant[ctx_hud_cursor->idx_cursor_default]
+        .cell_offset[0] = 3.0f;
+    ctx_hud_cursor->push_constant[ctx_hud_cursor->idx_cursor_default]
+        .cell_offset[1] = 3.0f;
+    ctx_hud_cursor->count[ctx_hud_cursor->idx_cursor_default] = 1;
+    ctx_hud_cursor->dirty[ctx_hud_cursor->idx_cursor_default] = 1;
+    ctx_hud_cursor->draw[ctx_hud_cursor->idx_cursor_default] = 0;
+    //-------------------------------------------------------------------------
+    // CURSOR CONTEXT
+    //-------------------------------------------------------------------------
+    war_cursor_context* ctx_cursor =
+        war_pool_alloc(pool_wr, sizeof(war_cursor_context));
+    ctx_cursor->dirty =
+        &ctx_new_vulkan->dirty_buffer[ctx_new_vulkan->pipeline_idx_cursor *
+                                      ctx_new_vulkan->buffer_max];
+    ctx_cursor->draw =
+        &ctx_new_vulkan->draw_buffer[ctx_new_vulkan->pipeline_idx_cursor *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_cursor->idx_cursor_default = 0;
+    ctx_cursor->buffer_count = atomic_load(&ctx_lua->CURSOR_COUNT);
+    ctx_cursor->capacity =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_cursor->buffer_count);
+    ctx_cursor->stage = war_pool_alloc(pool_wr,
+                                       sizeof(war_new_vulkan_cursor_instance*) *
+                                           ctx_cursor->buffer_count);
+    ctx_cursor->first =
+        &ctx_new_vulkan
+             ->buffer_first_instance[ctx_new_vulkan->pipeline_idx_cursor *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_cursor->count =
+        &ctx_new_vulkan
+             ->buffer_instance_count[ctx_new_vulkan->pipeline_idx_cursor *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_cursor->capacity[ctx_cursor->idx_cursor_default] =
+        atomic_load(&ctx_lua->CURSOR_DEFAULT_INSTANCE_MAX);
+    ctx_cursor->x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_cursor->buffer_count);
+    ctx_cursor->y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_cursor->buffer_count);
+    ctx_cursor->width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_cursor->buffer_count);
+    ctx_cursor->height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_cursor->buffer_count);
+    ctx_cursor->visual_x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_cursor->buffer_count);
+    ctx_cursor->visual_y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_cursor->buffer_count);
+    ctx_cursor->visual_width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_cursor->buffer_count);
+    ctx_cursor->visual_height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_cursor->buffer_count);
+    for (uint32_t i = 0; i < ctx_cursor->buffer_count; i++) {
+        ctx_cursor->x_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_cursor->capacity[i]);
+        ctx_cursor->y_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_cursor->capacity[i]);
+        ctx_cursor->width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_cursor->capacity[i]);
+        ctx_cursor->height_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_cursor->capacity[i]);
+        ctx_cursor->visual_x_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_cursor->capacity[i]);
+        ctx_cursor->visual_y_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_cursor->capacity[i]);
+        ctx_cursor->visual_width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_cursor->capacity[i]);
+        ctx_cursor->visual_height_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_cursor->capacity[i]);
+    }
+    tmp_first_instance = 0;
+    for (uint32_t i = 0; i < ctx_cursor->buffer_count; i++) {
+        ctx_cursor->stage[i] =
+            &((war_new_vulkan_cursor_instance*)ctx_new_vulkan
+                  ->map[ctx_new_vulkan->idx_cursor_stage])[tmp_first_instance];
+        tmp_first_instance += ctx_cursor->capacity[i];
+        if (i + 1 < ctx_cursor->buffer_count) {
+            ctx_cursor->first[i + 1] = tmp_first_instance;
+        }
+    }
+    ctx_cursor->rect_2d =
+        ctx_new_vulkan->buffer_rect_2d[ctx_new_vulkan->pipeline_idx_cursor];
+    ctx_cursor->viewport =
+        ctx_new_vulkan->buffer_viewport[ctx_new_vulkan->pipeline_idx_cursor];
+    ctx_cursor->push_constant =
+        ctx_new_vulkan
+            ->buffer_push_constant[ctx_new_vulkan->pipeline_idx_cursor];
+    for (uint32_t i = 0; i < ctx_cursor->buffer_count; i++) {
+        ctx_cursor->push_constant[i] = (war_new_vulkan_cursor_push_constant){
+            .screen_size = {ctx_new_vulkan->physical_width,
+                            ctx_new_vulkan->physical_height},
+            .cell_size = {ctx_new_vulkan->cell_width,
+                          ctx_new_vulkan->cell_height},
+            .panning = {0.0f, 0.0f},
+            .zoom = 1.0f,
+            .cell_offset = {0.0f, 0.0f},
+        };
+        ctx_cursor->viewport[i] = (VkViewport){
+            .width = ctx_new_vulkan->physical_width,
+            .height = ctx_new_vulkan->physical_height,
+            .maxDepth = 1.0f,
+            .minDepth = 0.0f,
+            .x = 0.0f,
+            .y = 0.0f,
+        };
+        ctx_cursor->rect_2d[i] = (VkRect2D){
+            .extent = {(uint32_t)ctx_new_vulkan->physical_width,
+                       (uint32_t)ctx_new_vulkan->physical_height},
+            .offset = {0, 0},
+        };
+    }
+    // cursor default
+    ctx_cursor->x_seconds[ctx_cursor->idx_cursor_default][0] = 0.0;
+    ctx_cursor->y_cells[ctx_cursor->idx_cursor_default][0] = 0.0;
+    ctx_cursor->width_seconds[ctx_cursor->idx_cursor_default][0] =
+        1.0 * ctx_misc->seconds_per_cell;
+    ctx_cursor->height_cells[ctx_cursor->idx_cursor_default][0] = 1.0;
+    ctx_cursor->top_bound_cells =
+        ctx_new_vulkan->physical_height / ctx_new_vulkan->cell_height;
+    ctx_cursor->bottom_bound_cells = 0.0;
+    ctx_cursor->left_bound_seconds = 0.0;
+    ctx_cursor->right_bound_seconds =
+        (ctx_new_vulkan->physical_width / ctx_new_vulkan->cell_width) *
+        ctx_misc->seconds_per_cell;
+    ctx_cursor->max_cells_y = 30; // atomic_load(&ctx_lua->A_NOTE_COUNT);
+    ctx_cursor->max_seconds_x = 40;
+    ctx_cursor->move_factor = 1;
+    ctx_cursor->leap_cells = 13;
+    ((war_new_vulkan_cursor_instance*)
+         ctx_new_vulkan->map[ctx_new_vulkan->idx_cursor_stage])[0] =
+        (war_new_vulkan_cursor_instance){
+            .pos = {0.0f,
+                    0.0f,
+                    ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_cursor]},
+            .size = {1.0f, 1.0f},
+            .color = {0.9216, 0.8549, 0.6902, 1.0},
+            .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .flags = 0,
+        };
+    ctx_cursor->push_constant[ctx_cursor->idx_cursor_default].cell_offset[0] =
+        3.0f;
+    ctx_cursor->push_constant[ctx_cursor->idx_cursor_default].cell_offset[1] =
+        3.0f;
+    ctx_cursor->count[ctx_cursor->idx_cursor_default] = 1;
+    ctx_cursor->dirty[ctx_cursor->idx_cursor_default] = 1;
+    //-------------------------------------------------------------------------
+    // LINE CONTEXT
+    //-------------------------------------------------------------------------
+    war_line_context* ctx_line =
+        war_pool_alloc(pool_wr, sizeof(war_line_context));
+    ctx_line->buffer_count = atomic_load(&ctx_lua->LINE_COUNT);
+    ctx_line->capacity =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_line->buffer_count);
+    ctx_line->stage =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_line->buffer_count);
+    ctx_line->idx_cell_grid = 0;
+    ctx_line->idx_bpm_grid = 1;
+    ctx_line->capacity[ctx_line->idx_cell_grid] =
+        atomic_load(&ctx_lua->LINE_CELL_INSTANCE_MAX);
+    ctx_line->capacity[ctx_line->idx_bpm_grid] =
+        atomic_load(&ctx_lua->LINE_BPM_INSTANCE_MAX);
+    ctx_line->dirty =
+        &ctx_new_vulkan->dirty_buffer[ctx_new_vulkan->pipeline_idx_line *
+                                      ctx_new_vulkan->buffer_max];
+    ctx_line->draw =
+        &ctx_new_vulkan->draw_buffer[ctx_new_vulkan->pipeline_idx_line *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_line->stage = war_pool_alloc(pool_wr,
+                                     sizeof(war_new_vulkan_line_instance*) *
+                                         ctx_line->buffer_count);
+    ctx_line->first =
+        &ctx_new_vulkan
+             ->buffer_first_instance[ctx_new_vulkan->pipeline_idx_line *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_line->count =
+        &ctx_new_vulkan
+             ->buffer_instance_count[ctx_new_vulkan->pipeline_idx_line *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_line->x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_line->buffer_count);
+    ctx_line->y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_line->buffer_count);
+    ctx_line->width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_line->buffer_count);
+    ctx_line->height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_line->buffer_count);
+    ctx_line->line_width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_line->buffer_count);
+    for (uint32_t i = 0; i < ctx_line->buffer_count; i++) {
+        ctx_line->x_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_line->capacity[i]);
+        ctx_line->y_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_line->capacity[i]);
+        ctx_line->width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_line->capacity[i]);
+        ctx_line->height_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_line->capacity[i]);
+        ctx_line->line_width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_line->capacity[i]);
+    }
+    tmp_first_instance = 0;
+    for (uint32_t i = 0; i < ctx_line->buffer_count; i++) {
+        ctx_line->stage[i] =
+            &((war_new_vulkan_line_instance*)ctx_new_vulkan
+                  ->map[ctx_new_vulkan->idx_line_stage])[tmp_first_instance];
+        tmp_first_instance += ctx_line->capacity[i];
+        if (i + 1 < ctx_line->buffer_count) {
+            ctx_line->first[i + 1] = tmp_first_instance;
+        }
+    }
+    ctx_line->rect_2d =
+        ctx_new_vulkan->buffer_rect_2d[ctx_new_vulkan->pipeline_idx_line];
+    ctx_line->viewport =
+        ctx_new_vulkan->buffer_viewport[ctx_new_vulkan->pipeline_idx_line];
+    ctx_line->push_constant =
+        ctx_new_vulkan->buffer_push_constant[ctx_new_vulkan->pipeline_idx_line];
+    for (uint32_t i = 0; i < ctx_line->buffer_count; i++) {
+        ctx_line->push_constant[i] = (war_new_vulkan_line_push_constant){
+            .screen_size = {ctx_new_vulkan->physical_width,
+                            ctx_new_vulkan->physical_height},
+            .cell_size = {ctx_new_vulkan->cell_width,
+                          ctx_new_vulkan->cell_height},
+            .panning = {0.0f, 0.0f},
+            .zoom = 1.0f,
+            .cell_offset = {3.0f, 3.0f},
+        };
+        ctx_line->viewport[i] = (VkViewport){
+            .width = ctx_new_vulkan->physical_width,
+            .height = ctx_new_vulkan->physical_height,
+            .maxDepth = 1.0f,
+            .minDepth = 0.0f,
+            .x = 0.0f,
+            .y = 0.0f,
+        };
+        ctx_line->rect_2d[i] = (VkRect2D){
+            .extent = {(uint32_t)ctx_new_vulkan->physical_width,
+                       (uint32_t)ctx_new_vulkan->physical_height},
+            .offset = {0, 0},
+        };
+    }
+    // cell grid
+    ctx_line->x_seconds[ctx_line->idx_cell_grid][0] = 0;
+    ctx_line->y_cells[ctx_line->idx_cell_grid][0] = 10;
+    ctx_line->width_seconds[ctx_line->idx_cell_grid][0] =
+        (ctx_new_vulkan->physical_width / ctx_new_vulkan->cell_width) *
+        ctx_misc->seconds_per_cell;
+    ctx_line->height_cells[ctx_line->idx_cell_grid][0] = 0;
+    ctx_line->line_width_seconds[ctx_line->idx_cell_grid][0] =
+        0.025 * ctx_misc->seconds_per_cell;
+    ctx_line->stage[ctx_line->idx_cell_grid][0] =
+        (war_new_vulkan_line_instance){
+            .pos = {ctx_line->x_seconds[ctx_line->idx_cell_grid][0] /
+                        ctx_misc->seconds_per_cell,
+                    ctx_line->y_cells[ctx_line->idx_cell_grid][0],
+                    ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_line]},
+            .size = {ctx_line->width_seconds[ctx_line->idx_cell_grid][0] /
+                         ctx_misc->seconds_per_cell,
+                     ctx_line->height_cells[ctx_line->idx_cell_grid][0]},
+            .width = ctx_line->line_width_seconds[ctx_line->idx_cell_grid][0] /
+                     ctx_misc->seconds_per_cell,
+            .color = {0.3137, 0.2863, 0.2706, 1.0},
+            .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .flags = 0,
+        };
+    ctx_line->count[ctx_line->idx_cell_grid] = 1;
+    ctx_line->dirty[ctx_line->idx_cell_grid] = 1;
+    //-------------------------------------------------------------------------
+    // TEXT CONTEXT
+    //-------------------------------------------------------------------------
+    war_text_context* ctx_text =
+        war_pool_alloc(pool_wr, sizeof(war_text_context));
+    ctx_text->buffer_count = atomic_load(&ctx_lua->TEXT_COUNT);
+    ctx_text->capacity =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_text->buffer_count);
+    ctx_text->stage =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_text->buffer_count);
+    // indices / capacities
+    ctx_text->idx_status_bottom = 0;
+    ctx_text->capacity[ctx_text->idx_status_bottom] =
+        atomic_load(&ctx_lua->TEXT_STATUS_BOTTOM_INSTANCE_MAX);
+    ctx_text->dirty =
+        &ctx_new_vulkan->dirty_buffer[ctx_new_vulkan->pipeline_idx_text *
+                                      ctx_new_vulkan->buffer_max];
+    ctx_text->draw =
+        &ctx_new_vulkan->draw_buffer[ctx_new_vulkan->pipeline_idx_text *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_text->stage = war_pool_alloc(pool_wr,
+                                     sizeof(war_new_vulkan_text_instance*) *
+                                         ctx_cursor->buffer_count);
+    ctx_text->first =
+        &ctx_new_vulkan
+             ->buffer_first_instance[ctx_new_vulkan->pipeline_idx_text *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_text->count =
+        &ctx_new_vulkan
+             ->buffer_instance_count[ctx_new_vulkan->pipeline_idx_text *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_text->x_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_text->buffer_count);
+    ctx_text->y_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_text->buffer_count);
+    ctx_text->width_seconds =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_text->buffer_count);
+    ctx_text->height_cells =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_text->buffer_count);
+    for (uint32_t i = 0; i < ctx_text->buffer_count; i++) {
+        ctx_text->x_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_text->capacity[i]);
+        ctx_text->y_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_text->capacity[i]);
+        ctx_text->width_seconds[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_text->capacity[i]);
+        ctx_text->height_cells[i] =
+            war_pool_alloc(pool_wr, sizeof(double) * ctx_text->capacity[i]);
+    }
+    tmp_first_instance = 0;
+    for (uint32_t i = 0; i < ctx_text->buffer_count; i++) {
+        ctx_text->stage[i] =
+            &((war_new_vulkan_text_instance*)ctx_new_vulkan
+                  ->map[ctx_new_vulkan->idx_text_stage])[tmp_first_instance];
+        tmp_first_instance += ctx_text->capacity[i];
+        if (i + 1 < ctx_text->buffer_count) {
+            ctx_text->first[i + 1] = tmp_first_instance;
+        }
+    }
+    ctx_text->rect_2d =
+        ctx_new_vulkan->buffer_rect_2d[ctx_new_vulkan->pipeline_idx_text];
+    ctx_text->viewport =
+        ctx_new_vulkan->buffer_viewport[ctx_new_vulkan->pipeline_idx_text];
+    ctx_text->push_constant =
+        ctx_new_vulkan->buffer_push_constant[ctx_new_vulkan->pipeline_idx_text];
+    for (uint32_t i = 0; i < ctx_text->buffer_count; i++) {
+        ctx_text->push_constant[i] = (war_new_vulkan_text_push_constant){
+            .screen_size = {ctx_new_vulkan->physical_width,
+                            ctx_new_vulkan->physical_height},
+            .cell_size = {ctx_new_vulkan->cell_width,
+                          ctx_new_vulkan->cell_height},
+            .panning = {0.0f, 0.0f},
+            .zoom = 1.0f,
+            .cell_offset = {3.0f, 3.0f},
+        };
+        ctx_text->viewport[i] = (VkViewport){
+            .width = ctx_new_vulkan->physical_width,
+            .height = ctx_new_vulkan->physical_height,
+            .maxDepth = 1.0f,
+            .minDepth = 0.0f,
+            .x = 0.0f,
+            .y = 0.0f,
+        };
+        ctx_text->rect_2d[i] = (VkRect2D){
+            .extent = {(uint32_t)ctx_new_vulkan->physical_width,
+                       (uint32_t)ctx_new_vulkan->physical_height},
+            .offset = {0, 0},
+        };
+    }
+    // status bottom
+    ctx_text->x_seconds[ctx_text->idx_status_bottom][0] =
+        3 * ctx_misc->seconds_per_cell;
+    ctx_text->y_cells[ctx_text->idx_status_bottom][0] = 3;
+    ctx_text->width_seconds[ctx_text->idx_status_bottom][0] =
+        1 * ctx_misc->seconds_per_cell;
+    ctx_text->height_cells[ctx_text->idx_status_bottom][0] = 1;
+    ctx_text->stage[ctx_text->idx_status_bottom][0] =
+        (war_new_vulkan_text_instance){
+            .pos = {ctx_text->x_seconds[ctx_text->idx_status_bottom][0] /
+                        ctx_misc->seconds_per_cell,
+                    ctx_text->y_cells[ctx_text->idx_status_bottom][0],
+                    ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_line]},
+            .size = {ctx_text->width_seconds[ctx_text->idx_status_bottom][0] /
+                         ctx_misc->seconds_per_cell,
+                     ctx_text->height_cells[ctx_text->idx_status_bottom][0]},
+            .uv = {ctx_new_vulkan->glyph_info['M'].uv_x0,
+                   ctx_new_vulkan->glyph_info['M'].uv_y0,
+                   ctx_new_vulkan->glyph_info['M'].uv_x1,
+                   ctx_new_vulkan->glyph_info['M'].uv_y1},
+            .glyph_scale = {ctx_new_vulkan->glyph_info['M'].norm_width,
+                            ctx_new_vulkan->glyph_info['M'].norm_height},
+            .baseline = ctx_new_vulkan->glyph_info['M'].norm_baseline,
+            .ascent = ctx_new_vulkan->glyph_info['M'].norm_ascent,
+            .descent = ctx_new_vulkan->glyph_info['M'].norm_descent,
+            .color = {0.9216, 0.8549, 0.6902, 1.0},
+            .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .flags = 0,
+        };
+    ctx_text->count[ctx_text->idx_status_bottom] = 1;
+    ctx_text->dirty[ctx_text->idx_status_bottom] = 1;
+    //-------------------------------------------------------------------------
+    // SEQUENCE CONTEXT
+    //-------------------------------------------------------------------------
+    war_sequence_context* ctx_sequence =
+        war_pool_alloc(pool_wr, sizeof(war_sequence_context));
+    ctx_sequence->buffer_count = atomic_load(&ctx_lua->NOTE_COUNT);
+    ctx_sequence->dirty =
+        &ctx_new_vulkan->dirty_buffer[ctx_new_vulkan->pipeline_idx_note *
+                                      ctx_new_vulkan->buffer_max];
+    ctx_sequence->draw =
+        &ctx_new_vulkan->draw_buffer[ctx_new_vulkan->pipeline_idx_note *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_sequence->idx_grid = 0;
+    ctx_sequence->buffer_capacity =
+        war_pool_alloc(pool_wr, sizeof(uint32_t) * ctx_sequence->buffer_count);
+    ctx_sequence->stage = war_pool_alloc(
+        pool_wr,
+        sizeof(war_new_vulkan_cursor_instance*) * ctx_sequence->buffer_count);
+    ctx_sequence->first =
+        &ctx_new_vulkan
+             ->buffer_first_instance[ctx_new_vulkan->pipeline_idx_note *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_sequence->instance_count =
+        &ctx_new_vulkan
+             ->buffer_instance_count[ctx_new_vulkan->pipeline_idx_note *
+                                     ctx_new_vulkan->buffer_max];
+    ctx_sequence->buffer_capacity[ctx_sequence->idx_grid] =
+        atomic_load(&ctx_lua->NOTE_GRID_INSTANCE_MAX);
+    ctx_sequence->sequence =
+        war_pool_alloc(pool_wr, sizeof(void*) * ctx_sequence->buffer_count);
+    for (uint32_t i = 0; i < ctx_sequence->buffer_count; i++) {
+        ctx_sequence->sequence[i] = war_pool_alloc(
+            pool_wr,
+            sizeof(war_sequence_entry) * ctx_sequence->buffer_capacity[i]);
+    }
+    tmp_first_instance = 0;
+    for (uint32_t i = 0; i < ctx_sequence->buffer_count; i++) {
+        ctx_sequence->stage[i] =
+            &((war_new_vulkan_note_instance*)ctx_new_vulkan
+                  ->map[ctx_new_vulkan->idx_cursor_stage])[tmp_first_instance];
+        tmp_first_instance += ctx_sequence->buffer_capacity[i];
+        if (i + 1 < ctx_sequence->buffer_count) {
+            ctx_sequence->first[i + 1] = tmp_first_instance;
+        }
+    }
+    ctx_sequence->rect_2d =
+        ctx_new_vulkan->buffer_rect_2d[ctx_new_vulkan->pipeline_idx_note];
+    ctx_sequence->viewport =
+        ctx_new_vulkan->buffer_viewport[ctx_new_vulkan->pipeline_idx_note];
+    ctx_sequence->push_constant =
+        ctx_new_vulkan->buffer_push_constant[ctx_new_vulkan->pipeline_idx_note];
+    for (uint32_t i = 0; i < ctx_sequence->buffer_count; i++) {
+        ctx_sequence->push_constant[i] = (war_new_vulkan_note_push_constant){
+            .screen_size = {ctx_new_vulkan->physical_width,
+                            ctx_new_vulkan->physical_height},
+            .cell_size = {ctx_new_vulkan->cell_width,
+                          ctx_new_vulkan->cell_height},
+            .panning = {0.0f, 0.0f},
+            .zoom = 1.0f,
+            .cell_offset = {0.0f, 0.0f},
+        };
+        ctx_sequence->viewport[i] = (VkViewport){
+            .width = ctx_new_vulkan->physical_width,
+            .height = ctx_new_vulkan->physical_height,
+            .maxDepth = 1.0f,
+            .minDepth = 0.0f,
+            .x = 0.0f,
+            .y = 0.0f,
+        };
+        ctx_sequence->rect_2d[i] = (VkRect2D){
+            .extent = {(uint32_t)ctx_new_vulkan->physical_width,
+                       (uint32_t)ctx_new_vulkan->physical_height},
+            .offset = {0, 0},
+        };
+    }
+    // sequence grid
+    ctx_sequence->sequence[ctx_sequence->idx_grid][0].duration_seconds = 13;
+    ((war_new_vulkan_note_instance*)
+         ctx_new_vulkan->map[ctx_new_vulkan->idx_note_stage])[0] =
+        (war_new_vulkan_note_instance){
+            .pos = {1.0f,
+                    0.0f,
+                    ctx_new_vulkan->z_layer[ctx_new_vulkan->idx_cursor]},
+            .size = {1.0f, 1.0f},
+            .color = {0.9216, 0.8549, 0.6902, 1.0},
+            .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
+            .flags = 0,
+        };
+    ctx_sequence->push_constant[ctx_sequence->idx_grid].cell_offset[0] = 3.0f;
+    ctx_sequence->push_constant[ctx_sequence->idx_grid].cell_offset[1] = 3.0f;
+    ctx_sequence->instance_count[ctx_sequence->idx_grid] = 1;
+    ctx_sequence->dirty[ctx_sequence->idx_grid] = 1;
+    //
+
     //-------------------------------------------------------------------------
     // CAPTURE WAV
     //-------------------------------------------------------------------------
@@ -903,7 +1581,7 @@ void* war_window_render(void* args) {
         .chunk_size = init_capacity - 8,
         .format = "WAVE",
     };
-    ctx_wr->init_riff_header = init_riff_header;
+    ctx_misc->init_riff_header = init_riff_header;
     war_fmt_chunk init_fmt_chunk = (war_fmt_chunk){
         .subchunk1_id = "fmt ",
         .subchunk1_size = 16,
@@ -915,164 +1593,48 @@ void* war_window_render(void* args) {
         .block_align = atomic_load(&ctx_lua->A_CHANNEL_COUNT) * sizeof(float),
         .bits_per_sample = 32,
     };
-    ctx_wr->init_fmt_chunk = init_fmt_chunk;
+    ctx_misc->init_fmt_chunk = init_fmt_chunk;
     war_data_chunk init_data_chunk = (war_data_chunk){
         .subchunk2_id = "data",
         .subchunk2_size = init_capacity - 44,
     };
-    ctx_wr->init_data_chunk = init_data_chunk;
+    ctx_misc->init_data_chunk = init_data_chunk;
     *(war_riff_header*)capture_wav->file = init_riff_header;
     *(war_fmt_chunk*)(capture_wav->file + sizeof(war_riff_header)) =
         init_fmt_chunk;
     *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
                        sizeof(war_fmt_chunk)) = init_data_chunk;
     //-------------------------------------------------------------------------
-    //  CACHE
-    //-------------------------------------------------------------------------
-    war_cache_file* cache_file =
-        war_pool_alloc(pool_wr, sizeof(war_cache_file));
-    cache_file->capacity = atomic_load(&ctx_lua->CACHE_FILE_CAPACITY);
-    cache_file->id =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
-    cache_file->timestamp =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
-    cache_file->file =
-        war_pool_alloc(pool_wr, sizeof(uint8_t*) * cache_file->capacity);
-    cache_file->type =
-        war_pool_alloc(pool_wr, sizeof(uint8_t) * cache_file->capacity);
-    cache_file->device =
-        war_pool_alloc(pool_wr, sizeof(dev_t) * cache_file->capacity);
-    cache_file->inode =
-        war_pool_alloc(pool_wr, sizeof(ino_t) * cache_file->capacity);
-    cache_file->memfd =
-        war_pool_alloc(pool_wr, sizeof(int) * cache_file->capacity);
-    cache_file->memfd_size =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
-    cache_file->memfd_capacity =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
-    cache_file->fd =
-        war_pool_alloc(pool_wr, sizeof(int) * cache_file->capacity);
-    cache_file->fd_size =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * cache_file->capacity);
-    cache_file->free =
-        war_pool_alloc(pool_wr, sizeof(uint32_t) * cache_file->capacity);
-    cache_file->count = 0;
-    cache_file->free_count = 0;
-    cache_file->next_id = 1;
-    cache_file->next_timestamp = 1;
-    //-------------------------------------------------------------------------
-    // MAP WAV
-    //-------------------------------------------------------------------------
-    war_map_wav* map_wav = war_pool_alloc(pool_wr, sizeof(war_map_wav));
-    map_wav->note_count = atomic_load(&ctx_lua->A_NOTE_COUNT);
-    map_wav->layer_count = atomic_load(&ctx_lua->A_LAYER_COUNT);
-    map_wav->name_limit = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
-    map_wav->capacity = map_wav->note_count * map_wav->layer_count;
-    map_wav->id = war_pool_alloc(
-        pool_wr, sizeof(uint64_t) * map_wav->note_count * map_wav->layer_count);
-    map_wav->fname =
-        war_pool_alloc(pool_wr,
-                       sizeof(char) * map_wav->note_count *
-                           map_wav->layer_count * map_wav->name_limit);
-    map_wav->fname_size = war_pool_alloc(
-        pool_wr, sizeof(uint32_t) * map_wav->note_count * map_wav->layer_count);
-    //-------------------------------------------------------------------------
-    // CAPTURE CONTEXT
-    //-------------------------------------------------------------------------
-    war_capture_context* ctx_capture =
-        war_pool_alloc(pool_wr, sizeof(war_capture_context));
-    ctx_capture->name_limit = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
-    ctx_capture->fps = atomic_load(&ctx_lua->WR_CAPTURE_CALLBACK_FPS);
-    // rate
-    ctx_capture->rate_us = (uint64_t)round((1.0 / (double)ctx_capture->fps) *
-                                           microsecond_conversion);
-    ctx_capture->last_frame_time = war_get_monotonic_time_us();
-    ctx_capture->last_read_time = 0;
-    ctx_capture->read_count = 0;
-    // misc
-    ctx_capture->capture_wait = 1;
-    ctx_capture->capture_delay = 0;
-    ctx_capture->state = CAPTURE_WAITING;
-    ctx_capture->threshold = atomic_load(&ctx_lua->WR_CAPTURE_THRESHOLD);
-    ctx_capture->monitor = 0;
-    ctx_capture->prompt = 1;
-    ctx_capture->prompt_fname_text =
-        war_pool_alloc(pool_wr, ctx_capture->name_limit);
-    ctx_capture->prompt_fname_text = "filename";
-    ctx_capture->prompt_fname_text_size =
-        strlen(ctx_capture->prompt_fname_text);
-    ctx_capture->prompt_note_text =
-        war_pool_alloc(pool_wr, ctx_capture->name_limit);
-    ctx_capture->prompt_note_text = "note";
-    ctx_capture->prompt_note_text_size = strlen(ctx_capture->prompt_note_text);
-    ctx_capture->prompt_layer_text =
-        war_pool_alloc(pool_wr, ctx_capture->name_limit);
-    ctx_capture->prompt_layer_text = "layer";
-    ctx_capture->prompt_layer_text_size =
-        strlen(ctx_capture->prompt_layer_text);
-    ctx_capture->fname = war_pool_alloc(pool_wr, ctx_capture->name_limit);
-    ctx_capture->fname_size = 0;
-    ctx_capture->note = 0;
-    ctx_capture->layer = 0;
-    //-------------------------------------------------------------------------
-    // PLAY CONTEXT
-    //-------------------------------------------------------------------------
-    war_play_context* ctx_play =
-        war_pool_alloc(pool_wr, sizeof(war_capture_context));
-    ctx_play->fps = atomic_load(&ctx_lua->WR_PLAY_CALLBACK_FPS);
-    // rate
-    ctx_play->rate_us =
-        (uint64_t)round((1.0 / (double)ctx_play->fps) * microsecond_conversion);
-    ctx_play->last_frame_time = war_get_monotonic_time_us();
-    ctx_play->last_write_time = 0;
-    ctx_play->write_count = 0;
-    // misc
-    ctx_play->play = 0;
-    ctx_play->octave = 4;
-    ctx_play->key_layers =
-        war_pool_alloc(pool_wr, sizeof(uint64_t) * map_wav->note_count);
-    ctx_play->keys =
-        war_pool_alloc(pool_wr, sizeof(uint8_t) * map_wav->note_count);
-    ctx_play->note_count = map_wav->note_count;
-    ctx_play->layer_count = map_wav->layer_count;
-    //-------------------------------------------------------------------------
     //  ENV
     //-------------------------------------------------------------------------
     war_env* env = war_pool_alloc(pool_wr, sizeof(war_env));
-    env->ctx_wr = ctx_wr;
     env->atomics = atomics;
-    env->ctx_color = ctx_color;
     env->ctx_lua = ctx_lua;
-    env->views = views;
     env->ctx_play = ctx_play;
     env->ctx_capture = ctx_capture;
     env->ctx_command = ctx_command;
-    env->ctx_status = ctx_status;
-    env->undo_tree = undo_tree;
-    env->note_quads = note_quads;
     env->pool_wr = pool_wr;
-    env->ctx_vk = ctx_vk;
-    env->capture_wav = capture_wav;
     env->ctx_fsm = ctx_fsm;
-    env->cache_file = cache_file;
     env->pc_capture = pc_capture;
-    env->ctx_nsgt = ctx_nsgt;
+    env->ctx_new_vulkan = ctx_new_vulkan;
+    env->ctx_cursor = ctx_cursor;
+    env->ctx_misc = ctx_misc;
 war_label_wr: {
     if (war_pc_from_a(pc_control, &header, &size, control_payload)) {
         goto* pc_control_cmd[header];
     }
-    ctx_wr->now = war_get_monotonic_time_us();
+    ctx_misc->now = war_get_monotonic_time_us();
     //-------------------------------------------------------------------------
     // PLAY WRITER
     //-------------------------------------------------------------------------
-    if (ctx_wr->now - ctx_play->last_frame_time >= ctx_play->rate_us) {
+    if (ctx_misc->now - ctx_play->last_frame_time >= ctx_play->rate_us) {
         ctx_play->last_frame_time += ctx_play->rate_us;
         if (!ctx_play->play) { goto war_label_skip_play; }
-        if (ctx_wr->now - ctx_play->last_write_time >= 1000000) {
+        if (ctx_misc->now - ctx_play->last_write_time >= 1000000) {
             atomic_store(&atomics->play_writer_rate,
                          (double)ctx_play->write_count);
             ctx_play->write_count = 0;
-            ctx_play->last_write_time = ctx_wr->now;
+            ctx_play->last_write_time = ctx_misc->now;
         }
         ctx_play->write_count++;
         uint64_t write_pos = pc_play->i_to_a;
@@ -1095,20 +1657,20 @@ war_label_skip_play:
     //-------------------------------------------------------------------------
     // CAPTURE READER
     //-------------------------------------------------------------------------
-    if (ctx_wr->now - ctx_capture->last_frame_time >= ctx_capture->rate_us) {
+    if (ctx_misc->now - ctx_capture->last_frame_time >= ctx_capture->rate_us) {
         ctx_capture->last_frame_time += ctx_capture->rate_us;
         if (ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE) {
             pc_capture->i_from_a = pc_capture->i_to_a;
             ctx_capture->state = CAPTURE_WAITING;
             goto war_label_skip_capture;
         }
-        if (ctx_wr->now - ctx_capture->last_read_time >= 1000000) {
+        if (ctx_misc->now - ctx_capture->last_read_time >= 1000000) {
             atomic_store(&atomics->capture_reader_rate,
                          (double)ctx_capture->read_count);
             // call_king_terry("capture_reader_rate: %.2f Hz",
             //              atomic_load(&atomics->capture_reader_rate));
             ctx_capture->read_count = 0;
-            ctx_capture->last_read_time = ctx_wr->now;
+            ctx_capture->last_read_time = ctx_misc->now;
         }
         ctx_capture->read_count++;
         uint64_t write_pos = pc_capture->i_to_a;
@@ -1139,18 +1701,6 @@ war_label_skip_play:
                     init_fmt_chunk;
                 *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
                                    sizeof(war_fmt_chunk)) = init_data_chunk;
-
-                // Reset NSGT append cursor to left edge
-                ctx_nsgt->frame_filled = 0;
-                ctx_nsgt->frame_cursor = 0;
-                ctx_nsgt->size[ctx_nsgt->idx_image] = 0;
-                ctx_nsgt->size[ctx_nsgt->idx_nsgt] = 0;
-                ctx_nsgt->size[ctx_nsgt->idx_magnitude] = 0;
-                ctx_nsgt->size[ctx_nsgt->idx_transient] = 0;
-                ctx_nsgt->size[ctx_nsgt->idx_wav] = 0;
-                ctx_nsgt->size[ctx_nsgt->idx_wav_temp] = 0;
-                ctx_nsgt->size[ctx_nsgt->idx_wav_stage] = 0;
-                ctx_nsgt->dirty_compute = 1;
             }
         } else if (!ctx_capture->capture_wait &&
                    ctx_capture->state == CAPTURE_WAITING) {
@@ -1188,9 +1738,10 @@ war_label_skip_capture:
     //-------------------------------------------------------------------------
     // FPS
     //-------------------------------------------------------------------------
-    if (ctx_wr->now - last_frame_time >= ctx_wr->frame_duration_us) {
-        last_frame_time += ctx_wr->frame_duration_us;
-        if (ctx_wr->trinity) {
+    if (ctx_misc->now - ctx_misc->last_frame_time >=
+        ctx_misc->frame_duration_us) {
+        ctx_misc->last_frame_time += ctx_misc->frame_duration_us;
+        if (ctx_misc->trinity) {
             war_holy_trinity(fd,
                              wl_surface_id,
                              wl_buffer_id,
@@ -1198,72 +1749,14 @@ war_label_skip_capture:
                              0,
                              0,
                              0,
-                             physical_width,
-                             physical_height);
-        }
-        // update roll position status text
-        ctx_status->roll_position_index =
-            ctx_wr->viewport_cols * ctx_status->roll_position_factor;
-        int roll_position_length = 0;
-        if (ctx_status->roll_position_x_y == 1) {
-            roll_position_length = snprintf(ctx_status->roll_position,
-                                            ctx_status->capacity,
-                                            "%.2f,%.0f",
-                                            ctx_wr->cursor_pos_x,
-                                            ctx_wr->cursor_pos_y);
-        } else if (ctx_status->roll_position_x_y == 0) {
-            roll_position_length = snprintf(ctx_status->roll_position,
-                                            ctx_status->capacity,
-                                            "%.0f,%.2f",
-                                            ctx_wr->cursor_pos_y,
-                                            ctx_wr->cursor_pos_x);
-        }
-        if (roll_position_length >=
-            (int64_t)ctx_status->capacity -
-                (int64_t)ctx_status->roll_position_index) {
-            roll_position_length =
-                roll_position_length -
-                (roll_position_length - ctx_status->capacity);
-        }
-        memset(ctx_status->top, 0, ctx_status->capacity);
-        memcpy(ctx_status->top + ctx_status->roll_position_index,
-               ctx_status->roll_position,
-               roll_position_length);
-        // path
-        if (ctx_fsm->current_file_path_size > 0) {
-            // Calculate relative path inline without helper function
-            char* display_path = ctx_status->top;
-            int cwd_len = ctx_fsm->cwd_size;
-
-            // Check if file path starts with current working directory
-            if (strncmp(ctx_fsm->current_file_path, ctx_fsm->cwd, cwd_len) ==
-                0) {
-                // File is within current directory - show relative path
-                int file_start = cwd_len;
-                if (ctx_fsm->current_file_path[file_start] == '/') {
-                    file_start++; // Skip the '/' separator
-                }
-                snprintf(display_path,
-                         ctx_status->capacity,
-                         "%s",
-                         ctx_fsm->current_file_path + file_start);
-            } else {
-                // File is outside current directory - show absolute path
-                snprintf(display_path,
-                         ctx_status->capacity,
-                         "%s",
-                         ctx_fsm->current_file_path);
-            }
-        } else {
-            // Show [No Name] when no file open
-            snprintf(ctx_status->top, ctx_status->capacity, "[No Name]");
+                             ctx_new_vulkan->physical_width,
+                             ctx_new_vulkan->physical_height);
         }
     }
     //-------------------------------------------------------------------------
     // COMMAND MODE HANDLING
     //-------------------------------------------------------------------------
     if (ctx_fsm->current_mode == ctx_fsm->MODE_COMMAND) {
-        war_command_status(ctx_command, ctx_status);
         if (ctx_command->input_write_index == 0 ||
             ctx_command->input_read_index >= ctx_command->input_write_index) {
             goto war_label_skip_command;
@@ -1281,10 +1774,7 @@ war_label_skip_capture:
                 ctx_command->text[ctx_command->text_size] = '\0';
             } else if (ctx_command->text_write_index == 0 &&
                        ctx_command->text_size == 0) {
-                if (!ctx_command->prompt_type) {
-                    war_command_reset(ctx_command, ctx_status);
-                    war_previous_mode(env);
-                }
+                if (!ctx_command->prompt_type) {}
             }
         } else if (input == '\n') { // ASCII newline
             uint32_t len = war_trim_whitespace(ctx_command->text);
@@ -1307,7 +1797,6 @@ war_label_skip_capture:
                        len);
                 ctx_capture->fname_size = len + ctx_fsm->cwd_size + 1;
                 // done
-                war_command_reset(ctx_command, ctx_status);
                 ctx_command->prompt_type = WAR_COMMAND_PROMPT_CAPTURE_NOTE;
                 memset(ctx_command->prompt_text, 0, ctx_command->capacity);
                 memcpy(ctx_command->prompt_text,
@@ -1333,7 +1822,6 @@ war_label_skip_capture:
                 }
                 ctx_capture->note = note;
                 // done
-                war_command_reset(ctx_command, ctx_status);
                 ctx_command->prompt_type = WAR_COMMAND_PROMPT_CAPTURE_LAYER;
                 memset(ctx_command->prompt_text, 0, ctx_command->capacity);
                 memcpy(ctx_command->prompt_text,
@@ -1359,186 +1847,176 @@ war_label_skip_capture:
                     goto war_label_command_processed;
                 }
                 ctx_capture->layer = __builtin_ctzll(layer);
-                uint64_t idx = ctx_capture->note * map_wav->layer_count +
-                               ctx_capture->layer;
-                uint64_t id = cache_file->next_id++;
-                uint64_t old_id = map_wav->id[idx];
-                map_wav->id[idx] = id;
-                memset(map_wav->fname + idx * map_wav->name_limit,
-                       0,
-                       map_wav->name_limit);
-                memcpy(map_wav->fname + idx * map_wav->name_limit,
-                       ctx_capture->fname,
-                       ctx_capture->fname_size);
-                map_wav->fname_size[idx] = ctx_capture->fname_size;
-                uint32_t cache_idx = 0;
-                if (old_id > 0) {
-                    for (uint32_t i = 0; i < cache_file->count; i++) {
-                        if (cache_file->id[i] != old_id) { continue; }
-                        cache_idx = i;
-                        break;
-                    }
-                } else if (old_id == 0 && cache_file->free_count > 0) {
-                    cache_idx = cache_file->free[--cache_file->free_count];
-                } else if (old_id == 0 &&
-                           cache_file->count < cache_file->capacity) {
-                    cache_idx = cache_file->count++;
-                } else {
-                    uint32_t oldest_idx = 0;
-                    for (uint32_t i = 1; i < cache_file->count; i++) {
-                        if (cache_file->timestamp[i] <=
-                            cache_file->timestamp[oldest_idx]) {
-                            oldest_idx = i;
-                        }
-                    }
-                    cache_idx = oldest_idx;
-                }
-                if (cache_file->id[cache_idx] != 0) {
-                    if (cache_file->fd[cache_idx] >= 0) {
-                        close(cache_file->fd[cache_idx]);
-                        cache_file->fd[cache_idx] = -1;
-                    }
-                    if (cache_file->file[cache_idx] != MAP_FAILED) {
-                        munmap(cache_file->file[cache_idx],
-                               cache_file->memfd_capacity[cache_idx]);
-                        cache_file->file[cache_idx] = MAP_FAILED;
-                    }
-                    if (cache_file->memfd[cache_idx] >= 0) {
-                        close(cache_file->memfd[cache_idx]);
-                        cache_file->memfd[cache_idx] = -1;
-                    }
-                }
-                cache_file->id[cache_idx] = id;
-                cache_file->type[cache_idx] = WAR_FILE_TYPE_WAV;
-                cache_file->timestamp[cache_idx] = cache_file->next_timestamp++;
-                cache_file->memfd_capacity[cache_idx] =
-                    capture_wav->memfd_capacity;
-                cache_file->memfd_size[cache_idx] = capture_wav->memfd_size;
-                cache_file->memfd[cache_idx] = memfd_create(
-                    map_wav->fname + idx * map_wav->name_limit, MFD_CLOEXEC);
-                if (cache_file->memfd[cache_idx] < 0) {
-                    // call_king_terry("memfd_create failed: %s",
-                    //                 map_wav->fname + idx *
-                    //                 map_wav->name_limit);
-                    cache_file->id[cache_idx] = 0;
-                    map_wav->id[idx] = 0;
-                    goto war_label_command_processed;
-                }
-                cache_file->file[cache_idx] =
-                    mmap(NULL,
-                         cache_file->memfd_capacity[cache_idx],
-                         PROT_READ | PROT_WRITE,
-                         MAP_SHARED,
-                         cache_file->memfd[cache_idx],
-                         0);
-                if (cache_file->file[cache_idx] == MAP_FAILED) {
-                    // call_king_terry("mmap failed: %s",
-                    //                 map_wav->fname + idx *
-                    //                 map_wav->name_limit);
-                    cache_file->id[cache_idx] = 0;
-                    map_wav->id[idx] = 0;
-                    close(cache_file->memfd[cache_idx]);
-                    cache_file->memfd[cache_idx] = -1;
-                }
-                cache_file->fd[cache_idx] =
-                    open(map_wav->fname + idx * map_wav->name_limit,
-                         O_RDWR | O_CREAT | O_TRUNC,
-                         0644);
-                if (cache_file->fd[cache_idx] == -1) {
-                    // call_king_terry("fd failed to open: %s",
-                    //                 map_wav->fname + idx *
-                    //                 map_wav->name_limit);
-                    cache_file->id[cache_idx] = 0;
-                    map_wav->id[idx] = 0;
-                    close(cache_file->memfd[cache_idx]);
-                    cache_file->memfd[cache_idx] = -1;
-                    munmap(cache_file->file[cache_idx],
-                           cache_file->memfd_capacity[cache_idx]);
-                    cache_file->file[cache_idx] = MAP_FAILED;
-                    goto war_label_command_processed;
-                }
-                cache_file->fd_size[cache_idx] = capture_wav->memfd_size;
-                if (ftruncate(cache_file->fd[cache_idx],
-                              cache_file->fd_size[cache_idx]) == -1) {
-                    // call_king_terry("ftruncate failed: %s",
-                    //                 map_wav->fname + idx *
-                    //                 map_wav->name_limit);
-                    cache_file->id[cache_idx] = 0;
-                    map_wav->id[idx] = 0;
-                    close(cache_file->memfd[cache_idx]);
-                    cache_file->memfd[cache_idx] = -1;
-                    munmap(cache_file->file[cache_idx],
-                           cache_file->memfd_capacity[cache_idx]);
-                    cache_file->file[cache_idx] = MAP_FAILED;
-                    close(cache_file->fd[cache_idx]);
-                    cache_file->fd[cache_idx] = -1;
-                    goto war_label_command_processed;
-                }
-                off_t offset_1 = 0;
-                ssize_t bytes_copied =
-                    sendfile(cache_file->memfd[cache_idx],
-                             capture_wav->memfd,
-                             &offset_1,
-                             cache_file->memfd_size[cache_idx]);
-                if (bytes_copied !=
-                    (ssize_t)cache_file->memfd_size[cache_idx]) {
-                    // call_king_terry("sendfile failed: %s",
-                    //                 map_wav->fname + idx *
-                    //                 map_wav->name_limit);
-                    cache_file->id[cache_idx] = 0;
-                    map_wav->id[idx] = 0;
-                    close(cache_file->memfd[cache_idx]);
-                    cache_file->memfd[cache_idx] = -1;
-                    munmap(cache_file->file[cache_idx],
-                           cache_file->memfd_capacity[cache_idx]);
-                    cache_file->file[cache_idx] = MAP_FAILED;
-                    close(cache_file->fd[cache_idx]);
-                    cache_file->fd[cache_idx] = -1;
-                    goto war_label_command_processed;
-                }
-                off_t offset_2 = 0;
-                bytes_copied = sendfile(cache_file->fd[cache_idx],
-                                        cache_file->memfd[cache_idx],
-                                        &offset_2,
-                                        cache_file->memfd_size[cache_idx]);
-                if (bytes_copied !=
-                    (ssize_t)cache_file->memfd_size[cache_idx]) {
-                    // call_king_terry("sendfile failed: %s",
-                    //                 map_wav->fname + idx *
-                    //                 map_wav->name_limit);
-                    cache_file->id[cache_idx] = 0;
-                    map_wav->id[idx] = 0;
-                    close(cache_file->memfd[cache_idx]);
-                    cache_file->memfd[cache_idx] = -1;
-                    munmap(cache_file->file[cache_idx],
-                           cache_file->memfd_capacity[cache_idx]);
-                    cache_file->file[cache_idx] = MAP_FAILED;
-                    close(cache_file->fd[cache_idx]);
-                    cache_file->fd[cache_idx] = -1;
-                    goto war_label_command_processed;
-                }
-                war_command_reset(ctx_command, ctx_status);
+                // uint64_t idx = ctx_capture->note * map_wav->layer_count +
+                //                ctx_capture->layer;
+                // uint64_t id = cache_file->next_id++;
+                // uint64_t old_id = map_wav->id[idx];
+                // map_wav->id[idx] = id;
+                // memset(map_wav->fname + idx * map_wav->name_limit,
+                //        0,
+                //        map_wav->name_limit);
+                // memcpy(map_wav->fname + idx * map_wav->name_limit,
+                //        ctx_capture->fname,
+                //        ctx_capture->fname_size);
+                // map_wav->fname_size[idx] = ctx_capture->fname_size;
+                // uint32_t cache_idx = 0;
+                // if (old_id > 0) {
+                //     for (uint32_t i = 0; i < cache_file->count; i++) {
+                //         if (cache_file->id[i] != old_id) { continue; }
+                //         cache_idx = i;
+                //         break;
+                //     }
+                // } else if (old_id == 0 && cache_file->free_count > 0) {
+                //     cache_idx = cache_file->free[--cache_file->free_count];
+                // } else if (old_id == 0 &&
+                //            cache_file->count < cache_file->capacity) {
+                //     cache_idx = cache_file->count++;
+                // } else {
+                //     uint32_t oldest_idx = 0;
+                //     for (uint32_t i = 1; i < cache_file->count; i++) {
+                //         if (cache_file->timestamp[i] <=
+                //             cache_file->timestamp[oldest_idx]) {
+                //             oldest_idx = i;
+                //         }
+                //     }
+                //     cache_idx = oldest_idx;
+                // }
+                // if (cache_file->id[cache_idx] != 0) {
+                //     if (cache_file->fd[cache_idx] >= 0) {
+                //         close(cache_file->fd[cache_idx]);
+                //         cache_file->fd[cache_idx] = -1;
+                //     }
+                //     if (cache_file->file[cache_idx] != MAP_FAILED) {
+                //         munmap(cache_file->file[cache_idx],
+                //                cache_file->memfd_capacity[cache_idx]);
+                //         cache_file->file[cache_idx] = MAP_FAILED;
+                //     }
+                //     if (cache_file->memfd[cache_idx] >= 0) {
+                //         close(cache_file->memfd[cache_idx]);
+                //         cache_file->memfd[cache_idx] = -1;
+                //     }
+                // }
+                // cache_file->id[cache_idx] = id;
+                // cache_file->type[cache_idx] = WAR_FILE_TYPE_WAV;
+                // cache_file->timestamp[cache_idx] =
+                // cache_file->next_timestamp++;
+                // cache_file->memfd_capacity[cache_idx] =
+                //     capture_wav->memfd_capacity;
+                // cache_file->memfd_size[cache_idx] = capture_wav->memfd_size;
+                // cache_file->memfd[cache_idx] = memfd_create(
+                //     map_wav->fname + idx * map_wav->name_limit, MFD_CLOEXEC);
+                // if (cache_file->memfd[cache_idx] < 0) {
+                //     // call_king_terry("memfd_create failed: %s",
+                //     //                 map_wav->fname + idx *
+                //     //                 map_wav->name_limit);
+                //     cache_file->id[cache_idx] = 0;
+                //     map_wav->id[idx] = 0;
+                //     goto war_label_command_processed;
+                // }
+                // cache_file->file[cache_idx] =
+                //     mmap(NULL,
+                //          cache_file->memfd_capacity[cache_idx],
+                //          PROT_READ | PROT_WRITE,
+                //          MAP_SHARED,
+                //          cache_file->memfd[cache_idx],
+                //          0);
+                // if (cache_file->file[cache_idx] == MAP_FAILED) {
+                //     // call_king_terry("mmap failed: %s",
+                //     //                 map_wav->fname + idx *
+                //     //                 map_wav->name_limit);
+                //     cache_file->id[cache_idx] = 0;
+                //     map_wav->id[idx] = 0;
+                //     close(cache_file->memfd[cache_idx]);
+                //     cache_file->memfd[cache_idx] = -1;
+                // }
+                // cache_file->fd[cache_idx] =
+                //     open(map_wav->fname + idx * map_wav->name_limit,
+                //          O_RDWR | O_CREAT | O_TRUNC,
+                //          0644);
+                // if (cache_file->fd[cache_idx] == -1) {
+                //     // call_king_terry("fd failed to open: %s",
+                //     //                 map_wav->fname + idx *
+                //     //                 map_wav->name_limit);
+                //     cache_file->id[cache_idx] = 0;
+                //     map_wav->id[idx] = 0;
+                //     close(cache_file->memfd[cache_idx]);
+                //     cache_file->memfd[cache_idx] = -1;
+                //     munmap(cache_file->file[cache_idx],
+                //            cache_file->memfd_capacity[cache_idx]);
+                //     cache_file->file[cache_idx] = MAP_FAILED;
+                //     goto war_label_command_processed;
+                // }
+                // cache_file->fd_size[cache_idx] = capture_wav->memfd_size;
+                // if (ftruncate(cache_file->fd[cache_idx],
+                //               cache_file->fd_size[cache_idx]) == -1) {
+                //     // call_king_terry("ftruncate failed: %s",
+                //     //                 map_wav->fname + idx *
+                //     //                 map_wav->name_limit);
+                //     cache_file->id[cache_idx] = 0;
+                //     map_wav->id[idx] = 0;
+                //     close(cache_file->memfd[cache_idx]);
+                //     cache_file->memfd[cache_idx] = -1;
+                //     munmap(cache_file->file[cache_idx],
+                //            cache_file->memfd_capacity[cache_idx]);
+                //     cache_file->file[cache_idx] = MAP_FAILED;
+                //     close(cache_file->fd[cache_idx]);
+                //     cache_file->fd[cache_idx] = -1;
+                //     goto war_label_command_processed;
+                // }
+                // off_t offset_1 = 0;
+                // ssize_t bytes_copied =
+                //     sendfile(cache_file->memfd[cache_idx],
+                //              capture_wav->memfd,
+                //              &offset_1,
+                //              cache_file->memfd_size[cache_idx]);
+                // if (bytes_copied !=
+                //     (ssize_t)cache_file->memfd_size[cache_idx]) {
+                //     // call_king_terry("sendfile failed: %s",
+                //     //                 map_wav->fname + idx *
+                //     //                 map_wav->name_limit);
+                //     cache_file->id[cache_idx] = 0;
+                //     map_wav->id[idx] = 0;
+                //     close(cache_file->memfd[cache_idx]);
+                //     cache_file->memfd[cache_idx] = -1;
+                //     munmap(cache_file->file[cache_idx],
+                //            cache_file->memfd_capacity[cache_idx]);
+                //     cache_file->file[cache_idx] = MAP_FAILED;
+                //     close(cache_file->fd[cache_idx]);
+                //     cache_file->fd[cache_idx] = -1;
+                //     goto war_label_command_processed;
+                // }
+                // off_t offset_2 = 0;
+                // bytes_copied = sendfile(cache_file->fd[cache_idx],
+                //                         cache_file->memfd[cache_idx],
+                //                         &offset_2,
+                //                         cache_file->memfd_size[cache_idx]);
+                // if (bytes_copied !=
+                //     (ssize_t)cache_file->memfd_size[cache_idx]) {
+                //     // call_king_terry("sendfile failed: %s",
+                //     //                 map_wav->fname + idx *
+                //     //                 map_wav->name_limit);
+                //     cache_file->id[cache_idx] = 0;
+                //     map_wav->id[idx] = 0;
+                //     close(cache_file->memfd[cache_idx]);
+                //     cache_file->memfd[cache_idx] = -1;
+                //     munmap(cache_file->file[cache_idx],
+                //            cache_file->memfd_capacity[cache_idx]);
+                //     cache_file->file[cache_idx] = MAP_FAILED;
+                //     close(cache_file->fd[cache_idx]);
+                //     cache_file->fd[cache_idx] = -1;
+                //     goto war_label_command_processed;
+                // }
                 ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
                 memset(ctx_command->prompt_text, 0, ctx_command->capacity);
                 ctx_command->prompt_text_size = 0;
-                switch (ctx_fsm->current_file_type) {
-                case WAR_FILE_TYPE_WAR:
-                    war_roll_mode(env);
-                    break;
-                case WAR_FILE_TYPE_WAV:
-                    war_wav_mode(env);
-                    break;
-                }
                 goto war_label_skip_command_processed;
             }
             }
         war_label_command_mode_no_prompt:
             if (strcmp(ctx_command->text, "roll") == 0) {
-                war_roll_mode(env);
                 memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
                 ctx_fsm->current_file_path_size = 0;
             } else if (strcmp(ctx_command->text, "wav") == 0) {
-                war_wav_mode(env);
                 memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
                 ctx_fsm->current_file_path_size = 0;
             } else if (strncmp(ctx_command->text, "cd", 2) == 0) {
@@ -1576,34 +2054,35 @@ war_label_skip_capture:
                     // reload project?
                     goto war_label_command_processed;
                 }
-                ctx_command->text[0] = ' ';
-                len = war_trim_whitespace(ctx_command->text);
-                memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
-                ctx_fsm->current_file_path_size =
-                    snprintf(ctx_fsm->current_file_path,
-                             len + ctx_fsm->cwd_size + 2,
-                             "%s/%s",
-                             ctx_fsm->cwd,
-                             ctx_command->text);
-                ctx_fsm->ext_size = war_get_ext(
-                    ctx_command->text, ctx_fsm->ext, ctx_fsm->name_limit);
-                if (strcmp(ctx_fsm->ext, "wav") == 0) {
-                    ctx_fsm->current_file_type = WAR_FILE_TYPE_WAV;
-                    war_wav_mode(env);
-                } else if (strcmp(ctx_fsm->ext, "war") == 0) {
-                    ctx_fsm->current_file_type = WAR_FILE_TYPE_WAR;
-                    war_roll_mode(env);
-                } else {
-                    switch (ctx_fsm->current_file_type) {
-                    case WAR_FILE_TYPE_WAR:
-                        war_roll_mode(env);
-                        break;
-                    case WAR_FILE_TYPE_WAV:
-                        war_wav_mode(env);
-                        break;
-                    }
-                }
-                // call_king_terry("file_path: %s", ctx_fsm->current_file_path);
+                // ctx_command->text[0] = ' ';
+                // len = war_trim_whitespace(ctx_command->text);
+                // memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
+                // ctx_fsm->current_file_path_size =
+                //     snprintf(ctx_fsm->current_file_path,
+                //              len + ctx_fsm->cwd_size + 2,
+                //              "%s/%s",
+                //              ctx_fsm->cwd,
+                //              ctx_command->text);
+                // ctx_fsm->ext_size = war_get_ext(
+                //     ctx_command->text, ctx_fsm->ext, ctx_fsm->name_limit);
+                // if (strcmp(ctx_fsm->ext, "wav") == 0) {
+                //     ctx_fsm->current_file_type = WAR_FILE_TYPE_WAV;
+                //     war_wav_mode(env);
+                // } else if (strcmp(ctx_fsm->ext, "war") == 0) {
+                //     ctx_fsm->current_file_type = WAR_FILE_TYPE_WAR;
+                //     war_roll_mode(env);
+                // } else {
+                //     switch (ctx_fsm->current_file_type) {
+                //     case WAR_FILE_TYPE_WAR:
+                //         war_roll_mode(env);
+                //         break;
+                //     case WAR_FILE_TYPE_WAV:
+                //         war_wav_mode(env);
+                //         break;
+                //     }
+                // }
+                //  call_king_terry("file_path: %s",
+                //  ctx_fsm->current_file_path);
             } else if (strcmp(ctx_command->text, "pwd") == 0) {
                 // call_king_terry("pwd");
                 //  reset without resettign status bar
@@ -1616,12 +2095,9 @@ war_label_skip_capture:
                 memset(ctx_command->prompt_text, 0, ctx_command->capacity);
                 ctx_command->prompt_text_size = 0;
                 ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
-                war_previous_mode(env);
                 ctx_command->text_write_index = 0;
                 ctx_command->text_size = 0;
                 ctx_command->text[0] = '\0';
-                memset(ctx_status->middle, 0, ctx_status->capacity);
-                memcpy(ctx_status->middle, ctx_fsm->cwd, ctx_fsm->cwd_size);
                 goto war_label_skip_command_processed;
             } else if (strcmp(ctx_command->text, "q!") == 0) {
                 // call_king_terry("q!");
@@ -1631,15 +2107,11 @@ war_label_skip_capture:
                 goto war_label_xdg_toplevel_close;
             }
         war_label_command_processed:
-            war_command_reset(ctx_command, ctx_status);
-            war_previous_mode(env);
             ctx_command->text_write_index = 0;
             ctx_command->text_size = 0;
             ctx_command->text[0] = '\0';
         war_label_skip_command_processed:
         } else if (input == '\e') { // ASCII escape
-            war_command_reset(ctx_command, ctx_status);
-            war_previous_mode(env);
             ctx_command->text_write_index = 0;
         } else if (input == 3) { // Arrow left
             if (ctx_command->text_write_index > 0) {
@@ -1670,21 +2142,6 @@ war_label_skip_capture:
         ctx_command->input_read_index++;
     }
 war_label_skip_command:
-    // cursor blink
-    if (ctx_wr->cursor_blink_state &&
-        ctx_wr->now - ctx_wr->cursor_blink_previous_us >=
-            ctx_wr->cursor_blink_duration_us &&
-        ctx_fsm->current_mode == ctx_fsm->MODE_ROLL) {
-        ctx_wr->cursor_blink_duration_us =
-            (ctx_wr->cursor_blink_state == CURSOR_BLINK) ?
-                atomic_load(&ctx_lua->WR_CURSOR_BLINK_DURATION_US) :
-                (uint64_t)round(
-                    (60.0 / ((double)atomic_load(&ctx_lua->A_BPM))) *
-                    microsecond_conversion);
-        ;
-        ctx_wr->cursor_blink_previous_us += ctx_wr->cursor_blink_duration_us;
-        ctx_wr->cursor_blinking = !ctx_wr->cursor_blinking;
-    }
     //---------------------------------------------------------------------
     // KEY REPEATS
     //---------------------------------------------------------------------
@@ -1693,21 +2150,24 @@ war_label_skip_command:
         uint8_t m = ctx_fsm->repeat_mod;
         if (ctx_fsm->key_down[k * atomic_load(&ctx_lua->WR_MOD_COUNT) + m]) {
             uint64_t elapsed =
-                ctx_wr->now - ctx_fsm->key_last_event_us
-                                  [k * atomic_load(&ctx_lua->WR_MOD_COUNT) + m];
+                ctx_misc->now -
+                ctx_fsm->key_last_event_us[k * atomic_load(
+                                                   &ctx_lua->WR_MOD_COUNT) +
+                                           m];
             if (!ctx_fsm->repeating) {
                 // still waiting for initial delay
                 if (elapsed >= ctx_fsm->repeat_delay_us) {
                     ctx_fsm->repeating = 1;
                     ctx_fsm->key_last_event_us[k * atomic_load(
                                                        &ctx_lua->WR_MOD_COUNT) +
-                                               m] = ctx_wr->now; // reset timer
+                                               m] =
+                        ctx_misc->now; // reset timer
                 }
             } else {
                 if (elapsed >= ctx_fsm->repeat_rate_us) {
                     ctx_fsm->key_last_event_us[k * atomic_load(
                                                        &ctx_lua->WR_MOD_COUNT) +
-                                               m] = ctx_wr->now;
+                                               m] = ctx_misc->now;
                     //---------------------------------------------------------
                     // COMMAND INPUT REPEATS
                     //---------------------------------------------------------
@@ -1727,7 +2187,7 @@ war_label_skip_command:
                             ctx_fsm->current_state, k, m)];
                     if (next_state_index != 0) {
                         ctx_fsm->current_state = next_state_index;
-                        ctx_fsm->state_last_event_us = ctx_wr->now;
+                        ctx_fsm->state_last_event_us = ctx_misc->now;
                         if (ctx_fsm->is_terminal[FSM_2D_MODE(
                                 ctx_fsm->current_state,
                                 ctx_fsm->current_mode)] &&
@@ -1770,8 +2230,8 @@ war_label_cmd_repeat_done:
     //--------------------------------------------------------------------
     // KEY TIMEOUTS
     //--------------------------------------------------------------------
-    if (ctx_fsm->timeout && ctx_wr->now >= ctx_fsm->timeout_start_us +
-                                               ctx_fsm->timeout_duration_us) {
+    if (ctx_fsm->timeout && ctx_misc->now >= ctx_fsm->timeout_start_us +
+                                                 ctx_fsm->timeout_duration_us) {
         uint32_t temp = ctx_fsm->timeout_state_index;
         ctx_fsm->timeout = 0;
         ctx_fsm->timeout_state_index = 0;
@@ -1779,7 +2239,7 @@ war_label_cmd_repeat_done:
         ctx_fsm->goto_cmd_timeout_done = 1;
         // clear current
         ctx_fsm->current_state = 0;
-        ctx_fsm->state_last_event_us = ctx_wr->now;
+        ctx_fsm->state_last_event_us = ctx_misc->now;
         if (ctx_fsm->function_type[FSM_2D_MODE(temp, ctx_fsm->current_mode)] ==
             ctx_fsm->FUNCTION_NONE) {
             goto war_label_cmd_timeout_done;
@@ -2086,8 +2546,9 @@ war_label_cmd_timeout_done:
                 war_write_le16(region_add + 6, 24);
                 war_write_le32(region_add + 8, 0);
                 war_write_le32(region_add + 12, 0);
-                war_write_le32(region_add + 16, physical_width);
-                war_write_le32(region_add + 20, physical_height);
+                war_write_le32(region_add + 16, ctx_new_vulkan->physical_width);
+                war_write_le32(region_add + 20,
+                               ctx_new_vulkan->physical_height);
                 // dump_bytes("wl_region::add request", region_add, 24);
                 ssize_t region_add_written = write(fd, region_add, 24);
                 assert(region_add_written == 24);
@@ -2214,998 +2675,117 @@ war_label_cmd_timeout_done:
             // size);
             goto war_label_wayland_done;
         war_label_wl_callback_done: {
-            VkResult result = vkWaitForFences(
-                ctx_vk->device,
-                1,
-                &ctx_vk->in_flight_fences[ctx_vk->current_frame],
-                VK_TRUE,
-                UINT64_MAX);
+            VkResult result = vkWaitForFences(ctx_new_vulkan->device,
+                                              1,
+                                              &ctx_new_vulkan->fence,
+                                              VK_TRUE,
+                                              UINT64_MAX);
             assert(result == VK_SUCCESS);
-            result =
-                vkResetFences(ctx_vk->device,
-                              1,
-                              &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+            result = vkResetFences(
+                ctx_new_vulkan->device, 1, &ctx_new_vulkan->fence);
             assert(result == VK_SUCCESS);
-            result = vkResetCommandBuffer(ctx_vk->cmd_buffer, 0);
+            result = vkResetCommandBuffer(ctx_new_vulkan->cmd_buffer, 0);
             assert(result == VK_SUCCESS);
             VkCommandBufferBeginInfo cmd_buffer_begin_info = {
                 .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
                 .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
             };
-            result = vkBeginCommandBuffer(ctx_vk->cmd_buffer,
+            result = vkBeginCommandBuffer(ctx_new_vulkan->cmd_buffer,
                                           &cmd_buffer_begin_info);
 
             assert(result == VK_SUCCESS);
-            if (ctx_nsgt->image_layout[ctx_nsgt->idx_image] !=
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-                ctx_nsgt->fn_dst_idx[0] = ctx_nsgt->idx_image;
-                ctx_nsgt->fn_image_layout[0] =
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                ctx_nsgt->fn_access_flags[0] = VK_ACCESS_SHADER_READ_BIT;
-                ctx_nsgt->fn_pipeline_stage_flags[0] =
-                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-                ctx_nsgt->fn_idx_count = 1;
-                war_nsgt_barrier(ctx_nsgt->fn_idx_count,
-                                 ctx_nsgt->fn_dst_idx,
-                                 0,
-                                 0,
-                                 ctx_nsgt->fn_pipeline_stage_flags,
-                                 ctx_nsgt->fn_access_flags,
-                                 ctx_nsgt->fn_image_layout,
-                                 ctx_vk->cmd_buffer,
-                                 ctx_nsgt);
+            //----------------------------------------------------------------
+            // NEW VULKAN BUFFER FLUSH COPY
+            //----------------------------------------------------------------
+            ctx_new_vulkan->fn_buffer_idx_count = 0;
+            for (uint32_t i = 0; i < ctx_new_vulkan->pipeline_count; i++) {
+                for (uint32_t k = 0; k < ctx_new_vulkan->buffer_max; k++) {
+                    if (!ctx_new_vulkan
+                             ->dirty_buffer[i * ctx_new_vulkan->buffer_max +
+                                            k] ||
+                        !ctx_new_vulkan->buffer_instance_count
+                             [i * ctx_new_vulkan->buffer_max + k]) {
+                        continue;
+                    }
+                    ctx_new_vulkan->fn_buffer_pipeline_idx
+                        [ctx_new_vulkan->fn_buffer_idx_count] = i;
+                    ctx_new_vulkan
+                        ->fn_buffer_idx[ctx_new_vulkan->fn_buffer_idx_count] =
+                        k;
+                    ctx_new_vulkan->fn_buffer_idx_count++;
+                }
             }
+            war_new_vulkan_buffer_flush_copy(
+                ctx_new_vulkan->fn_buffer_idx_count,
+                ctx_new_vulkan->fn_buffer_pipeline_idx,
+                ctx_new_vulkan->fn_buffer_idx,
+                ctx_new_vulkan,
+                ctx_new_vulkan->device,
+                ctx_new_vulkan->cmd_buffer);
+            memset(ctx_new_vulkan->dirty_buffer,
+                   0,
+                   sizeof(uint8_t) * ctx_new_vulkan->pipeline_count *
+                       ctx_new_vulkan->buffer_max);
             //-------------------------------------------------------------
             //  RENDER PASS
             //-------------------------------------------------------------
             VkClearValue clear_values[2];
             clear_values[0].color =
                 (VkClearColorValue){{0.1569f, 0.1569f, 0.1569f, 1.0f}};
-            clear_values[1].depthStencil = (VkClearDepthStencilValue){
-                ctx_wr->z_layers[LAYER_OPAQUE_REGION], 0.0f};
+            clear_values[1].depthStencil =
+                (VkClearDepthStencilValue){1.0f, 0.0f};
             VkRenderPassBeginInfo render_pass_info = {
                 .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-                .renderPass = ctx_vk->render_pass,
-                .framebuffer = ctx_vk->frame_buffer,
+                .renderPass = ctx_new_vulkan->render_pass,
+                .framebuffer = ctx_new_vulkan->frame_buffer,
                 .renderArea =
                     {
                         .offset = {0, 0},
-                        .extent = {physical_width, physical_height},
+                        .extent = {ctx_new_vulkan->physical_width,
+                                   ctx_new_vulkan->physical_height},
                     },
                 .clearValueCount = 2,
                 .pClearValues = clear_values,
             };
-            vkCmdBeginRenderPass(ctx_vk->cmd_buffer,
+            vkCmdBeginRenderPass(ctx_new_vulkan->cmd_buffer,
                                  &render_pass_info,
                                  VK_SUBPASS_CONTENTS_INLINE);
-            quad_vertices_count = 0;
-            quad_indices_count = 0;
-            transparent_quad_vertices_count = 0;
-            transparent_quad_indices_count = 0;
-            text_vertices_count = 0;
-            text_indices_count = 0;
-            //---------------------------------------------------------
-            // QUAD PIPELINE
-            //---------------------------------------------------------
-            vkCmdBindPipeline(ctx_vk->cmd_buffer,
-                              VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              ctx_vk->quad_pipeline);
-            // background
-            war_make_quad(quad_vertices,
-                          quad_indices,
-                          &quad_vertices_count,
-                          &quad_indices_count,
-                          (float[3]){ctx_wr->left_col,
-                                     ctx_wr->bottom_row,
-                                     ctx_wr->z_layers[LAYER_BACKGROUND]},
-                          (float[2]){(float)ctx_wr->viewport_cols + 1,
-                                     (float)ctx_wr->viewport_rows + 1},
-                          ctx_wr->dark_gray_hex,
-                          0,
-                          0,
-                          (float[2]){0.0f, 0.0f},
-                          0);
-            uint32_t cursor_color = ctx_wr->color_cursor;
-            float alpha_factor = ctx_wr->alpha_scale_cursor;
-            uint8_t color_alpha =
-                (ctx_wr->color_cursor_transparent >> 24) & 0xFF;
-            uint32_t cursor_color_transparent =
-                ((uint8_t)(color_alpha * alpha_factor) << 24) |
-                (ctx_wr->color_cursor_transparent & 0x00FFFFFF);
-            float cursor_layer = ctx_wr->z_layers[LAYER_CURSOR];
-            // draw note quads and figure out if cursor should be
-            // transparent
-            // TODO: spillover
-            for (uint32_t i = 0; i < note_quads->count; i++) {
-                if (note_quads->alive[i] == 0 || note_quads->hidden[i]) {
-                    continue;
-                }
-                double cursor_pos_x = ctx_wr->cursor_pos_x;
-                double cursor_pos_y = ctx_wr->cursor_pos_y;
-                double cursor_end_x = cursor_pos_x + ctx_wr->cursor_size_x;
-                double pos_x = note_quads->pos_x[i];
-                double pos_y = note_quads->pos_y[i];
-                double size_x = note_quads->size_x[i];
-                double end_x = pos_x + size_x;
-                double left_bound = ctx_wr->left_col;
-                double right_bound = ctx_wr->right_col + 1;
-                double top_bound = ctx_wr->top_row + 1;
-                double bottom_bound = ctx_wr->bottom_row;
-                if (pos_y > top_bound || pos_y < bottom_bound ||
-                    pos_x > right_bound || end_x < left_bound) {
-                    continue;
-                }
-                uint32_t color = note_quads->color[i];
-                uint32_t outline_color = note_quads->outline_color[i];
-                if (note_quads->mute[i]) {
-                    float alpha_factor = ctx_wr->alpha_scale;
-                    uint8_t color_alpha = (color >> 24) & 0xFF;
-                    uint8_t outline_color_alpha = (outline_color >> 24) & 0xFF;
-                    color = ((uint8_t)(color_alpha * alpha_factor) << 24) |
-                            (color & 0x00FFFFFF);
-                    outline_color =
-                        ((uint8_t)(outline_color_alpha * alpha_factor) << 24) |
-                        (outline_color & 0x00FFFFFF);
-                }
-                war_make_quad(quad_vertices,
-                              quad_indices,
-                              &quad_vertices_count,
-                              &quad_indices_count,
-                              (float[3]){(float)pos_x,
-                                         (float)note_quads->pos_y[i],
-                                         ctx_wr->z_layers[LAYER_NOTES]},
-                              (float[2]){(float)size_x, 1},
-                              color,
-                              default_outline_thickness,
-                              outline_color,
-                              (float[2]){0.0f, 0.0f},
-                              QUAD_GRID);
-                if (cursor_pos_y != pos_y || cursor_pos_x >= end_x ||
-                    cursor_end_x <= pos_x) {
-                    continue;
-                }
-                cursor_color = cursor_color_transparent;
-            }
-            if (ctx_fsm->current_mode == ctx_fsm->MODE_ROLL &&
-                ctx_fsm->current_mode != ctx_fsm->MODE_COMMAND &&
-                !ctx_wr->cursor_blinking) {
-                war_make_transparent_quad(
-                    transparent_quad_vertices,
-                    transparent_quad_indices,
-                    &transparent_quad_vertices_count,
-                    &transparent_quad_indices_count,
-                    (float[3]){ctx_wr->cursor_pos_x +
-                                   (float)ctx_wr->sub_col /
-                                       ctx_wr->navigation_sub_cells_col,
-                               ctx_wr->cursor_pos_y,
-                               cursor_layer},
-                    (float[2]){(float)ctx_wr->cursor_size_x, 1},
-                    cursor_color,
-                    0,
-                    0,
-                    (float[2]){0.0f, 0.0f},
-                    QUAD_GRID);
-            } else if (ctx_fsm->current_mode == ctx_fsm->MODE_VIEWS) {
-                // draw views
-                uint32_t offset_col = ctx_wr->left_col +
-                                      ((ctx_wr->viewport_cols +
-                                        ctx_wr->num_cols_for_line_numbers - 1) /
-                                           2 -
-                                       views->warpoon_viewport_cols / 2);
-                uint32_t offset_row = ctx_wr->bottom_row +
-                                      ((ctx_wr->viewport_rows +
-                                        ctx_wr->num_rows_for_status_bars - 1) /
-                                           2 -
-                                       views->warpoon_viewport_rows / 2);
-                // draw views background
-                war_make_quad(
-                    quad_vertices,
-                    quad_indices,
-                    &quad_vertices_count,
-                    &quad_indices_count,
-                    (float[3]){offset_col,
-                               offset_row,
-                               ctx_wr->z_layers[LAYER_POPUP_BACKGROUND]},
-                    (float[2]){views->warpoon_viewport_cols,
-                               views->warpoon_viewport_rows},
-                    views->warpoon_color_bg,
-                    ctx_wr->outline_thickness,
-                    views->warpoon_color_outline,
-                    (float[2]){0.0f, 0.0f},
-                    QUAD_OUTLINE);
-                // draw views gutter
-                war_make_quad(quad_vertices,
-                              quad_indices,
-                              &quad_vertices_count,
-                              &quad_indices_count,
-                              (float[3]){offset_col,
-                                         offset_row,
-                                         ctx_wr->z_layers[LAYER_POPUP_HUD]},
-                              (float[2]){views->warpoon_hud_cols,
-                                         views->warpoon_viewport_rows},
-                              views->warpoon_color_hud,
-                              ctx_wr->outline_thickness,
-                              views->warpoon_color_outline,
-                              (float[2]){0.0f, 0.0f},
-                              QUAD_OUTLINE);
-                // draw views cursor
-                if (!ctx_wr->cursor_blinking &&
-                    ctx_fsm->current_mode != ctx_fsm->MODE_COMMAND) {
-                    uint32_t cursor_span_x = 1;
-                    uint32_t cursor_pos_x = views->warpoon_col;
-                    if (views->warpoon_state == WARPOON_STATE_VISUAL_LINE) {
-                        cursor_span_x = views->warpoon_viewport_cols -
-                                        views->warpoon_hud_cols;
-                        cursor_pos_x = 0;
-                    }
-                    float alpha_factor = ctx_wr->alpha_scale;
-                    uint8_t color_alpha = (cursor_color >> 24) & 0xFF;
-                    // cursor_color =
-                    //     ((uint8_t)(color_alpha * alpha_factor) << 24) |
-                    //     (cursor_color & 0x00FFFFFF);
-                    war_make_quad(
-                        quad_vertices,
-                        quad_indices,
-                        &quad_vertices_count,
-                        &quad_indices_count,
-                        (float[3]){offset_col + views->warpoon_hud_cols +
-                                       cursor_pos_x - views->warpoon_left_col,
-                                   offset_row + views->warpoon_hud_rows +
-                                       views->warpoon_row -
-                                       views->warpoon_bottom_row,
-                                   ctx_wr->z_layers[LAYER_POPUP_TEXT]},
-                        (float[2]){cursor_span_x, 1},
-                        cursor_color,
-                        0,
-                        0,
-                        (float[2]){0.0f, 0.0f},
-                        0);
-                }
-                // draw views line numbers text
-                int number = views->warpoon_max_row - views->warpoon_top_row +
-                             views->warpoon_viewport_rows;
-                for (uint32_t row = views->warpoon_bottom_row;
-                     row <= views->warpoon_top_row;
-                     row++, number--) {
-                    uint32_t digits[2];
-                    digits[0] = (number / 10) % 10;
-                    digits[1] = number % 10;
-                    int digit_count = 2;
-                    if (digits[0] == 0) { digit_count--; }
-                    for (int col = 2; col > 2 - digit_count; col--) {
-                        war_make_text_quad(
-                            text_vertices,
-                            text_indices,
-                            &text_vertices_count,
-                            &text_indices_count,
-                            (float[3]){offset_col + col - 1,
-                                       offset_row + row -
-                                           views->warpoon_bottom_row +
-                                           views->warpoon_hud_rows,
-                                       ctx_wr->z_layers[LAYER_POPUP_HUD_TEXT]},
-                            (float[2]){1, 1},
-                            views->warpoon_color_hud_text,
-                            &ctx_vk->glyphs['0' + digits[col - 1]],
-                            ctx_wr->text_thickness,
-                            ctx_wr->text_feather,
-                            0);
-                    }
-                }
-                // draw views text
-                war_get_warpoon_text(views);
-                uint32_t row = views->warpoon_max_row;
-                for (uint32_t i_views = 0; i_views < views->views_count;
-                     i_views++, row--) {
-                    if (row > views->warpoon_top_row ||
-                        row < views->warpoon_bottom_row) {
-                        continue;
-                    }
-                    for (uint32_t col = 0;
-                         col <= views->warpoon_right_col &&
-                         views->warpoon_text[i_views][col] != '\0';
-                         col++) {
-                        war_make_text_quad(
-                            text_vertices,
-                            text_indices,
-                            &text_vertices_count,
-                            &text_indices_count,
-                            (float[3]){offset_col + views->warpoon_hud_cols +
-                                           col,
-                                       offset_row + views->warpoon_hud_rows +
-                                           row - views->warpoon_bottom_row,
-                                       ctx_wr->z_layers[LAYER_POPUP_TEXT]},
-                            (float[2]){1, 1},
-                            views->warpoon_color_text,
-                            &ctx_vk->glyphs[(int)views
-                                                ->warpoon_text[i_views][col]],
-                            ctx_wr->text_thickness,
-                            ctx_wr->text_feather,
-                            0);
-                    }
-                }
-            }
-            if (ctx_fsm->current_mode == ctx_fsm->MODE_COMMAND) {
-                if (ctx_command->prompt_text_size > 0) {
-                    war_make_quad(
-                        quad_vertices,
-                        quad_indices,
-                        &quad_vertices_count,
-                        &quad_indices_count,
-                        (float[3]){ctx_wr->left_col +
-                                       ctx_command->text_write_index +
-                                       ctx_command->prompt_text_size + 2,
-                                   ctx_wr->bottom_row + 1,
-                                   ctx_wr->z_layers[LAYER_HUD_CURSOR]},
-                        (float[2]){1, 1},
-                        ctx_wr->color_cursor,
-                        0,
-                        0,
-                        (float[2]){0.0f, 0.0f},
-                        0);
-                } else {
-                    war_make_quad(
-                        quad_vertices,
-                        quad_indices,
-                        &quad_vertices_count,
-                        &quad_indices_count,
-                        (float[3]){ctx_wr->left_col +
-                                       ctx_command->text_write_index +
-                                       ctx_command->prompt_text_size + 1,
-                                   ctx_wr->bottom_row + 1,
-                                   ctx_wr->z_layers[LAYER_HUD_CURSOR]},
-                        (float[2]){1, 1},
-                        ctx_wr->color_cursor,
-                        0,
-                        0,
-                        (float[2]){0.0f, 0.0f},
-                        0);
-                }
-            }
-            // draw playback bar
-            uint32_t playback_bar_color = ctx_wr->red_hex;
-            float span_y = ctx_wr->viewport_rows;
-            if (ctx_wr->top_row == atomic_load(&ctx_lua->A_NOTE_COUNT) - 1) {
-                span_y -= ctx_wr->num_rows_for_status_bars;
-            }
-            war_make_quad(
-                quad_vertices,
-                quad_indices,
-                &quad_vertices_count,
-                &quad_indices_count,
-                (float[3]){
-                    ((float)atomic_load(&atomics->play_frames) /
-                     atomic_load(&ctx_lua->A_SAMPLE_RATE)) /
-                        ((60.0f / atomic_load(&ctx_lua->A_BPM)) /
-                         atomic_load(&ctx_lua->A_DEFAULT_COLUMNS_PER_BEAT)),
-                    ctx_wr->bottom_row,
-                    ctx_wr->z_layers[LAYER_PLAYBACK_BAR]},
-                (float[2]){0, span_y},
-                playback_bar_color,
-                0,
-                0,
-                (float[2]){default_playback_bar_thickness, 0.0f},
-                QUAD_LINE | QUAD_GRID);
-            // draw status bar quads
-            war_make_quad(quad_vertices,
-                          quad_indices,
-                          &quad_vertices_count,
-                          &quad_indices_count,
-                          (float[3]){ctx_wr->left_col,
-                                     ctx_wr->bottom_row,
-                                     ctx_wr->z_layers[LAYER_HUD]},
-                          (float[2]){ctx_wr->viewport_cols + 1, 1},
-                          ctx_wr->red_hex,
-                          0,
-                          0,
-                          (float[2]){0.0f, 0.0f},
-                          0);
-            war_make_quad(quad_vertices,
-                          quad_indices,
-                          &quad_vertices_count,
-                          &quad_indices_count,
-                          (float[3]){ctx_wr->left_col,
-                                     ctx_wr->bottom_row + 1,
-                                     ctx_wr->z_layers[LAYER_HUD]},
-                          (float[2]){ctx_wr->viewport_cols + 1, 1},
-                          ctx_wr->dark_gray_hex,
-                          0,
-                          0,
-                          (float[2]){0.0f, 0.0f},
-                          0);
-            war_make_quad(quad_vertices,
-                          quad_indices,
-                          &quad_vertices_count,
-                          &quad_indices_count,
-                          (float[3]){ctx_wr->left_col,
-                                     ctx_wr->bottom_row + 2,
-                                     ctx_wr->z_layers[LAYER_HUD]},
-                          (float[2]){ctx_wr->viewport_cols + 1, 1},
-                          ctx_wr->darker_light_gray_hex,
-                          0,
-                          0,
-                          (float[2]){0.0f, 0.0f},
-                          0);
-            // draw piano quads
-            float gutter_end_span_inset = 5 * default_vertical_line_thickness;
-            switch (ctx_wr->hud_state) {
-            case HUD_PIANO_AND_LINE_NUMBERS:
-            case HUD_PIANO:
-                float span_y = ctx_wr->viewport_rows;
-                if (ctx_wr->top_row == ctx_wr->max_row) {
-                    span_y -= ctx_wr->num_rows_for_status_bars;
-                }
-                war_make_quad(quad_vertices,
-                              quad_indices,
-                              &quad_vertices_count,
-                              &quad_indices_count,
-                              (float[3]){ctx_wr->left_col,
-                                         ctx_wr->bottom_row +
-                                             ctx_wr->num_rows_for_status_bars,
-                                         ctx_wr->z_layers[LAYER_HUD]},
-                              (float[2]){3 - gutter_end_span_inset, span_y},
-                              ctx_wr->full_white_hex,
-                              0,
-                              0,
-                              (float[2]){0.0f, 0.0f},
-                              0);
-                for (uint32_t row = ctx_wr->bottom_row; row <= ctx_wr->top_row;
-                     row++) {
-                    if (row < ctx_wr->max_row) {
-                        war_make_quad(
-                            quad_vertices,
-                            quad_indices,
-                            &quad_vertices_count,
-                            &quad_indices_count,
-                            (float[3]){ctx_wr->left_col,
-                                       row + ctx_wr->num_rows_for_status_bars +
-                                           1,
-                                       ctx_wr->z_layers[LAYER_HUD]},
-                            (float[2]){3 - gutter_end_span_inset, 0},
-                            super_light_gray_hex,
-                            0,
-                            0,
-                            (float[2]){0.0f, piano_horizontal_line_thickness},
-                            QUAD_LINE);
-                    }
-                    uint32_t note = row % 12;
-                    if (note == 1 || note == 3 || note == 6 || note == 8 ||
-                        note == 10) {
-                        war_make_quad(
-                            quad_vertices,
-                            quad_indices,
-                            &quad_vertices_count,
-                            &quad_indices_count,
-                            (float[3]){ctx_wr->left_col,
-                                       row + ctx_wr->num_rows_for_status_bars,
-                                       ctx_wr->z_layers[LAYER_HUD]},
-                            (float[2]){2 - gutter_end_span_inset, 1},
-                            ctx_wr->black_hex,
-                            0,
-                            0,
-                            (float[2]){0.0f, 0.0f},
-                            0);
-                    }
-                }
-                break;
-            }
-            // draw line number quad
-            int ln_offset = (ctx_wr->hud_state == HUD_LINE_NUMBERS) ? 0 : 3;
-            if (ctx_wr->hud_state != HUD_PIANO) {
-                uint32_t span_y = ctx_wr->viewport_rows;
-                if (ctx_wr->top_row ==
-                    atomic_load(&ctx_lua->A_NOTE_COUNT) - 1) {
-                    span_y -= ctx_wr->num_rows_for_status_bars;
-                }
-                war_make_quad(quad_vertices,
-                              quad_indices,
-                              &quad_vertices_count,
-                              &quad_indices_count,
-                              (float[3]){ctx_wr->left_col + ln_offset -
-                                             default_vertical_line_thickness,
-                                         ctx_wr->bottom_row +
-                                             ctx_wr->num_rows_for_status_bars,
-                                         ctx_wr->z_layers[LAYER_HUD]},
-                              (float[2]){3 - gutter_end_span_inset, span_y},
-                              ctx_wr->red_hex,
-                              0,
-                              0,
-                              (float[2]){0.0f, 0.0f},
-                              0);
-                for (uint32_t row = ctx_wr->bottom_row; row <= ctx_wr->top_row;
-                     row++) {
-                    if (row >= ctx_wr->max_row) { continue; }
-                    war_make_quad(
-                        quad_vertices,
-                        quad_indices,
-                        &quad_vertices_count,
-                        &quad_indices_count,
-                        (float[3]){ctx_wr->left_col + ln_offset,
-                                   row + ctx_wr->num_rows_for_status_bars + 1,
-                                   ctx_wr->z_layers[LAYER_HUD]},
-                        (float[2]){3 - gutter_end_span_inset, 0},
-                        ctx_wr->full_white_hex,
-                        0,
-                        0,
-                        (float[2]){0.0f, piano_horizontal_line_thickness},
-                        QUAD_LINE);
-                }
-            }
-            // draw gridline quads
-            for (uint32_t row = ctx_wr->bottom_row + 1;
-                 row <= ctx_wr->top_row + 1;
-                 row++) {
-                war_make_quad(
-                    quad_vertices,
-                    quad_indices,
-                    &quad_vertices_count,
-                    &quad_indices_count,
-                    (float[3]){ctx_wr->left_col,
-                               row,
-                               ctx_wr->z_layers[LAYER_GRIDLINES]},
-                    (float[2]){ctx_wr->viewport_cols, 0},
-                    ctx_wr->darker_light_gray_hex,
-                    0,
-                    0,
-                    (float[2]){0.0f, default_horizontal_line_thickness},
-                    QUAD_LINE | QUAD_GRID);
-            }
-            qsort(ctx_wr->gridline_splits,
-                  MAX_GRIDLINE_SPLITS,
-                  sizeof(uint32_t),
-                  war_compare_desc_uint32);
-            for (uint32_t col = ctx_wr->left_col + 1;
-                 col <= ctx_wr->right_col + 1;
-                 col++) {
-                bool draw_vertical_line = 0;
-                uint32_t color;
-                for (uint32_t i = 0; i < MAX_GRIDLINE_SPLITS; i++) {
-                    draw_vertical_line =
-                        (col % ctx_wr->gridline_splits[i]) == 0;
-                    if (draw_vertical_line) {
-                        switch (i) {
-                        case 0:
-                            color = ctx_wr->white_hex;
-                            break;
-                        case 1:
-                            color = ctx_wr->darker_light_gray_hex;
-                            break;
-                        case 2:
-                            color = ctx_wr->red_hex;
-                            break;
-                        case 3:
-                            color = ctx_wr->black_hex;
-                            break;
-                        }
-                        break;
-                    }
-                }
-                if (!draw_vertical_line) { continue; }
-                uint32_t span_y = ctx_wr->viewport_rows;
-                if (ctx_wr->top_row ==
-                    atomic_load(&ctx_lua->A_NOTE_COUNT) - 1) {
-                    span_y -= ctx_wr->num_rows_for_status_bars;
-                }
-                war_make_quad(quad_vertices,
-                              quad_indices,
-                              &quad_vertices_count,
-                              &quad_indices_count,
-                              (float[3]){col,
-                                         ctx_wr->bottom_row,
-                                         ctx_wr->z_layers[LAYER_GRIDLINES]},
-                              (float[2]){0, span_y},
-                              color,
-                              0,
-                              0,
-                              (float[2]){default_vertical_line_thickness, 0},
-                              QUAD_LINE | QUAD_GRID);
-            }
-            memcpy(ctx_vk->quads_vertex_buffer_mapped,
-                   quad_vertices,
-                   sizeof(war_quad_vertex) * quad_vertices_count);
-            memcpy(ctx_vk->quads_index_buffer_mapped,
-                   quad_indices,
-                   sizeof(uint32_t) * quad_indices_count);
-            VkMappedMemoryRange quad_flush_ranges[2] = {
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->quads_vertex_buffer_memory,
-                 .offset = 0,
-                 .size = war_vulkan_align_size_up(
-                     sizeof(war_quad_vertex) * quad_vertices_count,
-                     ctx_vk->quads_vertex_buffer_memory_requirements.alignment,
-                     sizeof(war_quad_vertex) * quads_vertices_max)},
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->quads_index_buffer_memory,
-                 .offset = 0,
-                 .size = war_vulkan_align_size_up(
-                     sizeof(uint32_t) * quad_indices_count,
-                     ctx_vk->quads_index_buffer_memory_requirements.alignment,
-                     sizeof(uint32_t) * quads_indices_max)}};
-            vkFlushMappedMemoryRanges(ctx_vk->device, 2, quad_flush_ranges);
-            VkDeviceSize quad_vertices_offsets[2] = {0};
-            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-                                   0,
-                                   1,
-                                   &ctx_vk->quads_vertex_buffer,
-                                   quad_vertices_offsets);
-            // VkDeviceSize quad_instances_offsets[2] = {0};
-            // vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-            //                        1,
-            //                        1,
-            //                        &ctx_vk->quads_instance_buffer,
-            //                        quad_instances_offsets);
-            VkDeviceSize quad_indices_offset = 0;
-            vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
-                                 ctx_vk->quads_index_buffer,
-                                 quad_indices_offset,
-                                 VK_INDEX_TYPE_UINT32);
-            war_quad_push_constant quad_push_constant = {
-                .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
-                .physical_size = {physical_width, physical_height},
-                .cell_size = {ctx_wr->cell_width, ctx_wr->cell_height},
-                .zoom = ctx_wr->zoom_scale,
-                .cell_offsets = {ctx_wr->num_cols_for_line_numbers,
-                                 ctx_wr->num_rows_for_status_bars},
-                .scroll_margin = {ctx_wr->scroll_margin_cols,
-                                  ctx_wr->scroll_margin_rows},
-                .anchor_cell = {ctx_wr->cursor_pos_x, ctx_wr->cursor_pos_y},
-                .top_right = {ctx_wr->right_col, ctx_wr->top_row},
-            };
-            vkCmdPushConstants(ctx_vk->cmd_buffer,
-                               ctx_vk->pipeline_layout,
-                               VK_SHADER_STAGE_VERTEX_BIT,
-                               0,
-                               sizeof(war_quad_push_constant),
-                               &quad_push_constant);
-            vkCmdDrawIndexed(
-                ctx_vk->cmd_buffer, quad_indices_count, 1, 0, 0, 0);
-            // draw transparent quads
-            vkCmdBindPipeline(ctx_vk->cmd_buffer,
-                              VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              ctx_vk->transparent_quad_pipeline);
-            memcpy(ctx_vk->quads_vertex_buffer_mapped +
-                       quad_vertices_count * sizeof(war_quad_vertex),
-                   transparent_quad_vertices,
-                   sizeof(war_quad_vertex) * transparent_quad_vertices_count);
-            memcpy(ctx_vk->quads_index_buffer_mapped +
-                       quad_indices_count * sizeof(uint32_t),
-                   transparent_quad_indices,
-                   sizeof(uint32_t) * transparent_quad_indices_count);
-            VkDeviceSize aligned_flush_ranges_transparent_quad_vertex_offset =
-                war_vulkan_align_offset_down(
-                    sizeof(war_quad_vertex) * quad_vertices_count,
-                    ctx_vk->quads_vertex_buffer_memory_requirements.alignment,
-                    sizeof(war_quad_vertex) * quads_vertices_max);
-            VkDeviceSize aligned_flush_ranges_transparent_quad_vertex_size =
-                war_vulkan_align_size_up(
-                    sizeof(war_quad_vertex) * transparent_quad_vertices_count,
-                    ctx_vk->quads_vertex_buffer_memory_requirements.alignment,
-                    sizeof(war_quad_vertex) * quads_vertices_max -
-                        aligned_flush_ranges_transparent_quad_vertex_offset);
-            VkDeviceSize aligned_flush_ranges_transparent_quad_index_offset =
-                war_vulkan_align_offset_down(
-                    sizeof(uint32_t) * quad_indices_count,
-                    ctx_vk->quads_index_buffer_memory_requirements.alignment,
-                    sizeof(uint32_t) * quads_indices_max);
-            VkDeviceSize aligned_flush_ranges_transparent_quad_index_size =
-                war_vulkan_align_size_up(
-                    sizeof(uint32_t) * transparent_quad_indices_count,
-                    ctx_vk->quads_index_buffer_memory_requirements.alignment,
-                    sizeof(uint32_t) * quads_indices_max -
-                        aligned_flush_ranges_transparent_quad_index_offset);
-            VkMappedMemoryRange transparent_quad_flush_ranges[2] = {
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->quads_vertex_buffer_memory,
-                 .offset = aligned_flush_ranges_transparent_quad_vertex_offset,
-                 .size = aligned_flush_ranges_transparent_quad_vertex_size},
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->quads_index_buffer_memory,
-                 .offset = aligned_flush_ranges_transparent_quad_index_offset,
-                 .size = aligned_flush_ranges_transparent_quad_index_size}};
-            vkFlushMappedMemoryRanges(
-                ctx_vk->device, 2, transparent_quad_flush_ranges);
-            VkDeviceSize transparent_quad_vertices_offsets[2] = {
-                quad_vertices_count * sizeof(war_quad_vertex)};
-            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-                                   0,
-                                   1,
-                                   &ctx_vk->quads_vertex_buffer,
-                                   transparent_quad_vertices_offsets);
-            // VkDeviceSize transparent_quad_instances_offsets[2] = {0};
-            // vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-            //                        1,
-            //                        1,
-            //                        &ctx_vk->quads_instance_buffer,
-            //                        transparent_quad_instances_offsets);
-            VkDeviceSize transparent_quad_indices_offset =
-                quad_indices_count * sizeof(uint32_t);
-            vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
-                                 ctx_vk->quads_index_buffer,
-                                 transparent_quad_indices_offset,
-                                 VK_INDEX_TYPE_UINT32);
-            war_quad_push_constant transparent_quad_push_constant = {
-                .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
-                .physical_size = {physical_width, physical_height},
-                .cell_size = {ctx_wr->cell_width, ctx_wr->cell_height},
-                .zoom = ctx_wr->zoom_scale,
-                .cell_offsets = {ctx_wr->num_cols_for_line_numbers,
-                                 ctx_wr->num_rows_for_status_bars},
-                .scroll_margin = {ctx_wr->scroll_margin_cols,
-                                  ctx_wr->scroll_margin_rows},
-                .anchor_cell = {ctx_wr->cursor_pos_x, ctx_wr->cursor_pos_y},
-                .top_right = {ctx_wr->right_col, ctx_wr->top_row},
-            };
-            vkCmdPushConstants(ctx_vk->cmd_buffer,
-                               ctx_vk->pipeline_layout,
-                               VK_SHADER_STAGE_VERTEX_BIT,
-                               0,
-                               sizeof(war_quad_push_constant),
-                               &transparent_quad_push_constant);
-            vkCmdDrawIndexed(
-                ctx_vk->cmd_buffer, transparent_quad_indices_count, 1, 0, 0, 0);
-            //---------------------------------------------------------
-            // TEXT PIPELINE
-            //---------------------------------------------------------
-            vkCmdBindPipeline(ctx_vk->cmd_buffer,
-                              VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              ctx_vk->text_pipeline);
-            vkCmdBindDescriptorSets(ctx_vk->cmd_buffer,
-                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    ctx_vk->text_pipeline_layout,
-                                    0,
-                                    1,
-                                    &ctx_vk->font_descriptor_set,
-                                    0,
-                                    NULL);
-            // draw status bar text
-            uint32_t status_cols = (uint32_t)fminf(ctx_wr->viewport_cols,
-                                                   (float)ctx_status->capacity);
-            for (uint32_t col = 0; col < status_cols; col++) {
-                if (ctx_status->top[(int)col] != 0) {
-                    war_make_text_quad(
-                        text_vertices,
-                        text_indices,
-                        &text_vertices_count,
-                        &text_indices_count,
-                        (float[3]){col + ctx_wr->left_col,
-                                   2 + ctx_wr->bottom_row,
-                                   ctx_wr->z_layers[LAYER_HUD_TEXT]},
-                        (float[2]){1, 1},
-                        ctx_wr->white_hex,
-                        &ctx_vk->glyphs[(int)ctx_status->top[(int)col]],
-                        ctx_wr->text_thickness,
-                        ctx_wr->text_feather,
-                        0);
-                }
-                if (ctx_status->middle[(int)col] != 0) {
-                    war_make_text_quad(
-                        text_vertices,
-                        text_indices,
-                        &text_vertices_count,
-                        &text_indices_count,
-                        (float[3]){col + ctx_wr->left_col,
-                                   1 + ctx_wr->bottom_row,
-                                   ctx_wr->z_layers[LAYER_HUD_TEXT]},
-                        (float[2]){1, 1},
-                        ctx_wr->red_hex,
-                        &ctx_vk->glyphs[(int)ctx_status->middle[(int)col]],
-                        ctx_wr->text_thickness_bold,
-                        ctx_wr->text_feather_bold,
-                        0);
-                }
-                if (ctx_status->bottom[(int)col] != 0) {
-                    war_make_text_quad(
-                        text_vertices,
-                        text_indices,
-                        &text_vertices_count,
-                        &text_indices_count,
-                        (float[3]){col + ctx_wr->left_col,
-                                   ctx_wr->bottom_row,
-                                   ctx_wr->z_layers[LAYER_HUD_TEXT]},
-                        (float[2]){1, 1},
-                        ctx_wr->full_white_hex,
-                        &ctx_vk->glyphs[(int)ctx_status->bottom[(int)col]],
-                        ctx_wr->text_thickness,
-                        ctx_wr->text_feather,
-                        0);
-                }
-            }
-            // draw piano text
-            char* piano_notes[12] = {"C",
-                                     "C#",
-                                     "D",
-                                     "D#",
-                                     "E",
-                                     "F",
-                                     "F#",
-                                     "G",
-                                     "G#",
-                                     "A",
-                                     "A#",
-                                     "B"};
-            for (uint32_t row = ctx_wr->bottom_row;
-                 row <= ctx_wr->top_row &&
-                 ctx_wr->hud_state != HUD_LINE_NUMBERS;
-                 row++) {
-                uint32_t i_piano_notes = row % 12;
-                if (i_piano_notes == 1 || i_piano_notes == 3 ||
-                    i_piano_notes == 6 || i_piano_notes == 8 ||
-                    i_piano_notes == 10) {
-                    continue;
-                }
-                int octave = row / 12 - 1;
-                if (octave < 0) { octave = '-' - '0'; }
-                war_make_text_quad(
-                    text_vertices,
-                    text_indices,
-                    &text_vertices_count,
-                    &text_indices_count,
-                    (float[3]){1 + ctx_wr->left_col,
-                               row + ctx_wr->num_rows_for_status_bars,
-                               ctx_wr->z_layers[LAYER_HUD_TEXT]},
-                    (float[2]){1, 1},
-                    ctx_wr->black_hex,
-                    &ctx_vk->glyphs[piano_notes[i_piano_notes][0]],
-                    ctx_wr->text_thickness,
-                    ctx_wr->text_feather,
-                    0);
-                war_make_text_quad(
-                    text_vertices,
-                    text_indices,
-                    &text_vertices_count,
-                    &text_indices_count,
-                    (float[3]){2 + ctx_wr->left_col,
-                               row + ctx_wr->num_rows_for_status_bars,
-                               ctx_wr->z_layers[LAYER_HUD_TEXT]},
-                    (float[2]){1, 1},
-                    ctx_wr->black_hex,
-                    &ctx_vk->glyphs['0' + octave],
-                    ctx_wr->text_thickness,
-                    ctx_wr->text_feather,
-                    0);
-            }
-            // draw line number text
-            for (uint32_t row = ctx_wr->bottom_row;
-                 row <= ctx_wr->top_row && ctx_wr->hud_state != HUD_PIANO;
-                 row++) {
-                uint32_t digits[3];
-                digits[0] = (row / 100) % 10;
-                digits[1] = (row / 10) % 10;
-                digits[2] = row % 10;
-                int digit_count = 3;
-                if (digits[0] == 0) {
-                    digit_count = (digits[1] == 0) ? (digit_count - 2) :
-                                                     (digit_count - 1);
-                }
-                for (int col = ln_offset + 2;
-                     col > (ln_offset + 2) - digit_count;
-                     col--) {
-                    war_make_text_quad(
-                        text_vertices,
-                        text_indices,
-                        &text_vertices_count,
-                        &text_indices_count,
-                        (float[3]){ctx_wr->left_col + col,
-                                   row + ctx_wr->num_rows_for_status_bars,
-                                   ctx_wr->z_layers[LAYER_HUD_TEXT]},
-                        (float[2]){1, 1},
-                        ctx_wr->full_white_hex,
-                        &ctx_vk->glyphs['0' + digits[col - ln_offset]],
-                        ctx_wr->text_thickness,
-                        ctx_wr->text_feather,
-                        0);
-                }
-            }
-            memcpy(ctx_vk->text_vertex_buffer_mapped,
-                   text_vertices,
-                   sizeof(war_text_vertex) * text_vertices_count);
-            memcpy(ctx_vk->text_index_buffer_mapped,
-                   text_indices,
-                   sizeof(uint32_t) * text_indices_count);
-            VkMappedMemoryRange text_flush_ranges[2] = {
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->text_vertex_buffer_memory,
-                 .offset = 0,
-                 .size = war_vulkan_align_size_up(
-                     sizeof(war_text_vertex) * text_vertices_count,
-                     ctx_vk->text_vertex_buffer_memory_requirements.alignment,
-                     sizeof(war_text_vertex) * text_quads_vertices_max)},
-                {.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-                 .memory = ctx_vk->text_index_buffer_memory,
-                 .offset = 0,
-                 .size = war_vulkan_align_size_up(
-                     sizeof(uint32_t) * text_indices_count,
-                     ctx_vk->text_index_buffer_memory_requirements.alignment,
-                     sizeof(uint32_t) * text_quads_indices_max)}};
-            vkFlushMappedMemoryRanges(ctx_vk->device, 2, text_flush_ranges);
-            VkDeviceSize text_vertices_offsets[2] = {0};
-            vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-                                   0,
-                                   1,
-                                   &ctx_vk->text_vertex_buffer,
-                                   text_vertices_offsets);
-            // VkDeviceSize text_instances_offsets[2] = {0};
-            // vkCmdBindVertexBuffers(ctx_vk->cmd_buffer,
-            //                        1,
-            //                        1,
-            //                        &ctx_vk->text_instance_buffer,
-            //                        text_instances_offsets);
-            VkDeviceSize text_indices_offset = 0;
-            vkCmdBindIndexBuffer(ctx_vk->cmd_buffer,
-                                 ctx_vk->text_index_buffer,
-                                 text_indices_offset,
-                                 VK_INDEX_TYPE_UINT32);
-            war_text_push_constant text_push_constant = {
-                .bottom_left = {ctx_wr->left_col, ctx_wr->bottom_row},
-                .physical_size = {physical_width, physical_height},
-                .cell_size = {ctx_wr->cell_width, ctx_wr->cell_height},
-                .zoom = ctx_wr->zoom_scale,
-                .cell_offsets = {ctx_wr->num_cols_for_line_numbers,
-                                 ctx_wr->num_rows_for_status_bars},
-                .scroll_margin = {ctx_wr->scroll_margin_cols,
-                                  ctx_wr->scroll_margin_rows},
-                .anchor_cell = {ctx_wr->cursor_pos_x, ctx_wr->cursor_pos_y},
-                .top_right = {ctx_wr->right_col, ctx_wr->top_row},
-                .ascent = ctx_vk->ascent,
-                .descent = ctx_vk->descent,
-                .line_gap = ctx_vk->line_gap,
-                .baseline = ctx_vk->baseline,
-                .font_height = ctx_vk->font_height,
-            };
-            vkCmdPushConstants(ctx_vk->cmd_buffer,
-                               ctx_vk->text_pipeline_layout,
-                               VK_SHADER_STAGE_VERTEX_BIT,
-                               0,
-                               sizeof(war_text_push_constant),
-                               &text_push_constant);
-            vkCmdDrawIndexed(
-                ctx_vk->cmd_buffer, text_indices_count, 1, 0, 0, 0);
             //-----------------------------------------------------------------
-            // NSGT GRAPHICS PIPELINE
+            // NEW VULKAN PIPELINE BUFFER DRAW
             //-----------------------------------------------------------------
-            if ((ctx_fsm->current_mode != ctx_fsm->MODE_WAV &&
-                 ctx_fsm->current_mode != ctx_fsm->MODE_CAPTURE &&
-                 ctx_fsm->previous_mode != ctx_fsm->MODE_WAV &&
-                 ctx_fsm->previous_mode != ctx_fsm->MODE_CAPTURE)) {
-                goto war_label_end_render_pass;
+            ctx_new_vulkan->fn_buffer_idx_count = 0;
+            for (uint32_t i = 0; i < ctx_new_vulkan->pipeline_count; i++) {
+                for (uint32_t k = 0; k < ctx_new_vulkan->buffer_max; k++) {
+                    ctx_new_vulkan->fn_buffer_pipeline_idx
+                        [ctx_new_vulkan->fn_buffer_idx_count] = i;
+                    ctx_new_vulkan
+                        ->fn_buffer_idx[ctx_new_vulkan->fn_buffer_idx_count] =
+                        k;
+                    ctx_new_vulkan->fn_buffer_idx_count++;
+                }
             }
-            ctx_nsgt->graphics_viewport.x = 0.0f;
-            ctx_nsgt->graphics_viewport.y = 0.0f;
-            ctx_nsgt->graphics_viewport.width = (float)physical_width;
-            ctx_nsgt->graphics_viewport.height = (float)physical_height;
-            ctx_nsgt->graphics_viewport.minDepth = 0.0f,
-            ctx_nsgt->graphics_viewport.maxDepth = 1.0f,
-            ctx_nsgt->graphics_rect_2d.offset.x = 0;
-            ctx_nsgt->graphics_rect_2d.extent.width = (uint32_t)physical_width;
-            ctx_nsgt->graphics_rect_2d.extent.height =
-                (uint32_t)physical_height;
-            ctx_nsgt->graphics_push_constant.z_layer =
-                ctx_wr->z_layers[LAYER_GRIDLINES];
-            war_nsgt_draw(ctx_vk->cmd_buffer, ctx_nsgt);
-        war_label_end_render_pass:
+            war_new_vulkan_buffer_draw(ctx_new_vulkan->fn_buffer_idx_count,
+                                       ctx_new_vulkan->fn_buffer_pipeline_idx,
+                                       ctx_new_vulkan->fn_buffer_idx,
+                                       ctx_new_vulkan->cmd_buffer,
+                                       ctx_new_vulkan);
             //---------------------------------------------------------
-            //   END RENDER PASS
+            //    END RENDER PASS
             //---------------------------------------------------------
-            vkCmdEndRenderPass(ctx_vk->cmd_buffer);
-            result = vkEndCommandBuffer(ctx_vk->cmd_buffer);
+            vkCmdEndRenderPass(ctx_new_vulkan->cmd_buffer);
+            result = vkEndCommandBuffer(ctx_new_vulkan->cmd_buffer);
             assert(result == VK_SUCCESS);
             VkSubmitInfo submit_info = {0};
             submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
             submit_info.commandBufferCount = 1;
-            submit_info.pCommandBuffers = &ctx_vk->cmd_buffer;
-            // submit_info.signalSemaphoreCount = 1;
-            // submit_info.pSignalSemaphores = &ctx_vk->semaphore;
-            result =
-                vkResetFences(ctx_vk->device,
-                              1,
-                              &ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+            submit_info.pCommandBuffers = &ctx_new_vulkan->cmd_buffer;
+            result = vkResetFences(
+                ctx_new_vulkan->device, 1, &ctx_new_vulkan->fence);
             assert(result == VK_SUCCESS);
-            result =
-                vkQueueSubmit(ctx_vk->queue,
-                              1,
-                              &submit_info,
-                              ctx_vk->in_flight_fences[ctx_vk->current_frame]);
+            result = vkQueueSubmit(
+                ctx_new_vulkan->queue, 1, &submit_info, ctx_new_vulkan->fence);
             assert(result == VK_SUCCESS);
-            ctx_wr->trinity = 1;
+            ctx_misc->trinity = 1;
             goto war_label_wayland_done;
         }
         wl_display_error:
@@ -3283,9 +2863,9 @@ war_label_cmd_timeout_done:
                 // war_write_le16(set_source + 6, 24);
                 // war_write_le32(set_source + 8, 0);
                 // war_write_le32(set_source + 12, 0);
-                // war_write_le32(set_source + 16, physical_width);
-                // war_write_le32(set_source + 20, physical_height);
-                // dump_bytes(
+                // war_write_le32(set_source + 16,
+                // ctx_new_vulkan->physical_width); war_write_le32(set_source +
+                // 20, ctx_new_vulkan->physical_height); dump_bytes(
                 //    "wp_viewport::set_source request", set_source, 24);
                 // ssize_t set_source_written = write(fd, set_source, 24);
                 // assert(set_source_written == 24);
@@ -3294,8 +2874,8 @@ war_label_cmd_timeout_done:
                 war_write_le32(set_destination, wp_viewport_id);
                 war_write_le16(set_destination + 4, 2);
                 war_write_le16(set_destination + 6, 16);
-                war_write_le32(set_destination + 8, logical_width);
-                war_write_le32(set_destination + 12, logical_height);
+                war_write_le32(set_destination + 8, ctx_misc->logical_width);
+                war_write_le32(set_destination + 12, ctx_misc->logical_height);
                 // dump_bytes("wp_viewport::set_destination request",
                 //            set_destination,
                 //            16);
@@ -3317,6 +2897,7 @@ war_label_cmd_timeout_done:
                 new_id++;
             }
             war_wayland_wl_surface_commit(fd, wl_surface_id);
+            ctx_misc->trinity = 1;
             goto war_label_wayland_done;
         war_label_xdg_toplevel_configure:
             // dump_bytes("war_label_xdg_toplevel_configure event",
@@ -3329,15 +2910,6 @@ war_label_cmd_timeout_done:
             size_t states_bytes =
                 size - 12; // subtract object_id/opcode/length + width/height
             size_t num_states = states_bytes / 4;
-            ctx_wr->fullscreen = 0;
-            for (size_t i = 0; i < num_states; i++) {
-                uint32_t state = *(uint32_t*)(states_ptr + i * 4);
-                if (state == 2) { // XDG_TOPLEVEL_STATE_FULLSCREEN
-                    ctx_wr->fullscreen = 1;
-                    // call_king_terry("1 fullscreen");
-                    break;
-                }
-            }
             war_wl_surface_set_opaque_region(fd, wl_surface_id, 0);
             goto war_label_wayland_done;
         war_label_xdg_toplevel_close:
@@ -3393,7 +2965,7 @@ war_label_cmd_timeout_done:
             assert(wl_surface_destroy_written == 8);
 
             war_pc_to_a(pc_control, CONTROL_END_WAR, 0, NULL);
-            goto war_label_wayland_done;
+            goto war_label_end_wr;
         war_label_xdg_toplevel_configure_bounds:
             // dump_bytes("war_label_xdg_toplevel_configure_bounds event",
             //            msg_buffer + msg_buffer_offset,
@@ -3458,7 +3030,7 @@ war_label_cmd_timeout_done:
             uint8_t tail[20];
             war_write_le32(tail, 0);
             war_write_le32(tail + 4, 0);
-            war_write_le32(tail + 8, stride);
+            war_write_le32(tail + 8, ctx_misc->stride);
             war_write_le32(tail + 12, 0);
             war_write_le32(tail + 16, 0);
             struct iovec iov[2] = {
@@ -3475,7 +3047,7 @@ war_label_cmd_timeout_done:
             cmsg->cmsg_len = CMSG_LEN(sizeof(int));
             cmsg->cmsg_level = SOL_SOCKET;
             cmsg->cmsg_type = SCM_RIGHTS;
-            *((int*)CMSG_DATA(cmsg)) = ctx_vk->dmabuf_fd;
+            *((int*)CMSG_DATA(cmsg)) = ctx_new_vulkan->dmabuf_fd;
             ssize_t dmabuf_sent = sendmsg(fd, &msg, 0);
             if (dmabuf_sent < 0) perror("sendmsg");
             assert(dmabuf_sent == 28);
@@ -3493,8 +3065,8 @@ war_label_cmd_timeout_done:
                                // duplicate variables names
             war_write_le16(create_immed + 6, 28);
             war_write_le32(create_immed + 8, new_id);
-            war_write_le32(create_immed + 12, physical_width);
-            war_write_le32(create_immed + 16, physical_height);
+            war_write_le32(create_immed + 12, ctx_new_vulkan->physical_width);
+            war_write_le32(create_immed + 16, ctx_new_vulkan->physical_height);
             war_write_le32(create_immed + 20, DRM_FORMAT_ARGB8888);
             war_write_le32(create_immed + 24, 0);
             // dump_bytes("zwp_linux_buffer_params_v1::create_immed request",
@@ -3948,6 +3520,12 @@ war_label_cmd_timeout_done:
                     ctx_fsm->MODE_COMMAND = mode_value;
                 } else if (strcmp(mode_name, "wav") == 0) {
                     ctx_fsm->MODE_WAV = mode_value;
+                } else if (strcmp(mode_name, "visual") == 0) {
+                    ctx_fsm->MODE_VISUAL = mode_value;
+                } else if (strcmp(mode_name, "chord") == 0) {
+                    ctx_fsm->MODE_CHORD = mode_value;
+                } else {
+                    call_king_terry("unknown mode");
                 }
                 // call_king_terry("mode: %s, value: %i", mode_name,
                 // mode_value);
@@ -4167,7 +3745,6 @@ war_label_cmd_timeout_done:
             // dump_bytes("war_label_wl_keyboard_key event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            if (ctx_wr->end_window_render) { goto war_label_wayland_done; }
             uint32_t wl_key_state =
                 war_read_le32(msg_buffer + msg_buffer_offset + 8 + 4 + 4 + 4);
             uint32_t keycode =
@@ -4215,13 +3792,14 @@ war_label_cmd_timeout_done:
                     ctx_fsm->repeat_mod = mod;
                     ctx_fsm->repeating = 0;
                     ctx_fsm->key_last_event_us[FSM_3D_INDEX(
-                        ctx_fsm->current_state, keysym, mod)] = ctx_wr->now;
+                        ctx_fsm->current_state, keysym, mod)] = ctx_misc->now;
                     if (!ctx_fsm->key_down[FSM_3D_INDEX(
                             ctx_fsm->current_state, keysym, mod)]) {
                         ctx_fsm->key_down[FSM_3D_INDEX(
                             ctx_fsm->current_state, keysym, mod)] = 1;
                         ctx_fsm->key_last_event_us[FSM_3D_INDEX(
-                            ctx_fsm->current_state, keysym, mod)] = ctx_wr->now;
+                            ctx_fsm->current_state, keysym, mod)] =
+                            ctx_misc->now;
                     }
                     goto war_label_cmd_done;
                 }
@@ -4277,7 +3855,7 @@ war_label_cmd_timeout_done:
                 ctx_fsm->key_down[FSM_3D_INDEX(
                     ctx_fsm->current_state, keysym, mod)] = 1;
                 ctx_fsm->key_last_event_us[FSM_3D_INDEX(
-                    ctx_fsm->current_state, keysym, mod)] = ctx_wr->now;
+                    ctx_fsm->current_state, keysym, mod)] = ctx_misc->now;
             }
             uint64_t next_state_index = ctx_fsm->next_state[FSM_3D_INDEX(
                 ctx_fsm->current_state, keysym, mod)];
@@ -4296,7 +3874,7 @@ war_label_cmd_timeout_done:
                 goto war_label_cmd_done;
             }
             ctx_fsm->current_state = next_state_index;
-            ctx_fsm->state_last_event_us = ctx_wr->now;
+            ctx_fsm->state_last_event_us = ctx_misc->now;
             size_t mode_idx =
                 FSM_2D_MODE(ctx_fsm->current_state, ctx_fsm->current_mode);
             if (ctx_fsm->is_terminal[mode_idx] &&
@@ -4305,8 +3883,7 @@ war_label_cmd_timeout_done:
                 ctx_fsm->current_state = 0;
                 // repeats
                 if ((ctx_fsm->current_mode != ctx_fsm->MODE_MIDI ||
-                     (ctx_fsm->current_mode == ctx_fsm->MODE_MIDI &&
-                      ctx_wr->midi_toggle)) &&
+                     (ctx_fsm->current_mode == ctx_fsm->MODE_MIDI)) &&
                     ctx_fsm->handle_repeat[mode_idx]) {
                     ctx_fsm->repeat_keysym = keysym;
                     ctx_fsm->repeat_mod = mod;
@@ -4328,7 +3905,7 @@ war_label_cmd_timeout_done:
                     ctx_fsm->repeating = 0;
                     // timeouts
                     ctx_fsm->timeout_state_index = ctx_fsm->current_state;
-                    ctx_fsm->timeout_start_us = ctx_wr->now;
+                    ctx_fsm->timeout_start_us = ctx_misc->now;
                     ctx_fsm->timeout = 1;
                     ctx_fsm->current_state = 0;
                     goto war_label_cmd_done;
@@ -4337,8 +3914,7 @@ war_label_cmd_timeout_done:
                 ctx_fsm->current_state = 0;
                 // repeats
                 if ((ctx_fsm->current_mode != ctx_fsm->MODE_MIDI ||
-                     (ctx_fsm->current_mode == ctx_fsm->MODE_MIDI &&
-                      ctx_wr->midi_toggle)) &&
+                     (ctx_fsm->current_mode == ctx_fsm->MODE_MIDI)) &&
                     ctx_fsm->handle_repeat[mode_idx]) {
                     ctx_fsm->repeat_keysym = keysym;
                     ctx_fsm->repeat_mod = mod;
@@ -4355,9 +3931,7 @@ war_label_cmd_timeout_done:
             goto war_label_cmd_done;
         }
         war_label_cmd_done: {
-            ctx_wr->cursor_blink_previous_us = ctx_wr->now;
-            ctx_wr->cursor_blinking = 0;
-            ctx_wr->trinity = 1;
+            ctx_misc->trinity = 1;
             if (ctx_fsm->goto_cmd_repeat_done) {
                 ctx_fsm->goto_cmd_repeat_done = 0;
                 goto war_label_cmd_repeat_done;
@@ -4401,64 +3975,67 @@ war_label_cmd_timeout_done:
             // dump_bytes("war_label_wl_pointer_motion event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            ctx_wr->cursor_x = (float)(int32_t)war_read_le32(
-                                   msg_buffer + msg_buffer_offset + 12) /
-                               256.0f * scale_factor;
-            ctx_wr->cursor_y = (float)(int32_t)war_read_le32(
-                                   msg_buffer + msg_buffer_offset + 16) /
-                               256.0f * scale_factor;
+            // ctx_misc->cursor_x = (float)(int32_t)war_read_le32(
+            //                         msg_buffer + msg_buffer_offset + 12) /
+            //                     256.0f * scale_factor;
+            // ctx_misc->cursor_y = (float)(int32_t)war_read_le32(
+            //                         msg_buffer + msg_buffer_offset + 16) /
+            //                     256.0f * scale_factor;
             goto war_label_wayland_done;
         war_label_wl_pointer_button:
             // dump_bytes("war_label_wl_pointer_button event",
             //            msg_buffer + msg_buffer_offset,
             //            size);
-            switch (war_read_le32(msg_buffer + msg_buffer_offset + 8 + 12)) {
-            case 1:
-                if (war_read_le32(msg_buffer + msg_buffer_offset + 8 + 8) ==
-                    BTN_LEFT) {
-                    if (((int)(ctx_wr->cursor_x / ctx_vk->cell_width) -
-                         (int)ctx_wr->num_cols_for_line_numbers) < 0) {
-                        ctx_wr->cursor_pos_x = ctx_wr->left_col;
-                        break;
-                    }
-                    if ((((physical_height - ctx_wr->cursor_y) /
-                          ctx_vk->cell_height) -
-                         ctx_wr->num_rows_for_status_bars) < 0) {
-                        ctx_wr->cursor_pos_y = ctx_wr->bottom_row;
-                        break;
-                    }
-                    ctx_wr->cursor_pos_x =
-                        (uint32_t)(ctx_wr->cursor_x / ctx_vk->cell_width) -
-                        ctx_wr->num_cols_for_line_numbers + ctx_wr->left_col;
-                    ctx_wr->cursor_pos_y =
-                        (uint32_t)((physical_height - ctx_wr->cursor_y) /
-                                   ctx_vk->cell_height) -
-                        ctx_wr->num_rows_for_status_bars + ctx_wr->bottom_row;
-                    ctx_wr->cursor_blink_previous_us = ctx_wr->now;
-                    ctx_wr->cursor_blinking = 0;
-                    if (ctx_wr->cursor_pos_y > ctx_wr->max_row) {
-                        ctx_wr->cursor_pos_y = ctx_wr->max_row;
-                    }
-                    if (ctx_wr->cursor_pos_y > ctx_wr->top_row) {
-                        ctx_wr->cursor_pos_y = ctx_wr->top_row;
-                    }
-                    if (ctx_wr->cursor_pos_y < ctx_wr->bottom_row) {
-                        ctx_wr->cursor_pos_y = ctx_wr->bottom_row;
-                    }
-                    if (ctx_wr->cursor_pos_x > ctx_wr->max_col) {
-                        ctx_wr->cursor_pos_x = ctx_wr->max_col;
-                    }
-                    if (ctx_wr->cursor_pos_x > ctx_wr->right_col) {
-                        ctx_wr->cursor_pos_x = ctx_wr->right_col;
-                    }
-                    if (ctx_wr->cursor_pos_x < ctx_wr->left_col) {
-                        ctx_wr->cursor_pos_x = ctx_wr->left_col;
-                    }
-                    if (ctx_wr->layer_flux) {
-                        war_layer_flux(ctx_wr, atomics, ctx_play, ctx_color);
-                    }
-                }
-            }
+            // switch (war_read_le32(msg_buffer + msg_buffer_offset + 8 + 12)) {
+            // case 1:
+            //    if (war_read_le32(msg_buffer + msg_buffer_offset + 8 + 8) ==
+            //        BTN_LEFT) {
+            //        if (((int)(ctx_misc->cursor_x /
+            //                   ctx_new_vulkan->cell_width) -
+            //             (int)ctx_misc->num_cols_for_line_numbers) < 0) {
+            //            ctx_misc->cursor_pos_x = ctx_misc->left_col;
+            //            break;
+            //        }
+            //        if ((((ctx_new_vulkan->physical_height -
+            //               ctx_misc->cursor_y) /
+            //              ctx_new_vulkan->cell_height) -
+            //             ctx_misc->num_rows_for_status_bars) < 0) {
+            //            ctx_misc->cursor_pos_y = ctx_misc->bottom_row;
+            //            break;
+            //        }
+            //        ctx_misc->cursor_pos_x =
+            //            (uint32_t)(ctx_misc->cursor_x /
+            //                       ctx_new_vulkan->cell_width) -
+            //            ctx_misc->num_cols_for_line_numbers +
+            //            ctx_misc->left_col;
+            //        ctx_misc->cursor_pos_y =
+            //            (uint32_t)((ctx_new_vulkan->physical_height -
+            //                        ctx_misc->cursor_y) /
+            //                       ctx_new_vulkan->cell_height) -
+            //            ctx_misc->num_rows_for_status_bars +
+            //            ctx_misc->bottom_row;
+            //        ctx_misc->cursor_blink_previous_us = ctx_misc->now;
+            //        ctx_misc->cursor_blinking = 0;
+            //        if (ctx_misc->cursor_pos_y > ctx_misc->max_row) {
+            //            ctx_misc->cursor_pos_y = ctx_misc->max_row;
+            //        }
+            //        if (ctx_misc->cursor_pos_y > ctx_misc->top_row) {
+            //            ctx_misc->cursor_pos_y = ctx_misc->top_row;
+            //        }
+            //        if (ctx_misc->cursor_pos_y < ctx_misc->bottom_row) {
+            //            ctx_misc->cursor_pos_y = ctx_misc->bottom_row;
+            //        }
+            //        if (ctx_misc->cursor_pos_x > ctx_misc->max_col) {
+            //            ctx_misc->cursor_pos_x = ctx_misc->max_col;
+            //        }
+            //        if (ctx_misc->cursor_pos_x > ctx_misc->right_col) {
+            //            ctx_misc->cursor_pos_x = ctx_misc->right_col;
+            //        }
+            //        if (ctx_misc->cursor_pos_x < ctx_misc->left_col) {
+            //            ctx_misc->cursor_pos_x = ctx_misc->left_col;
+            //        }
+            //    }
+            //}
             goto war_label_wayland_done;
         war_label_wl_pointer_axis:
             // dump_bytes(
@@ -4578,8 +4155,11 @@ war_label_cmd_timeout_done:
     goto war_label_wr;
 }
 war_label_end_wr:
-    close(ctx_vk->dmabuf_fd);
-    ctx_vk->dmabuf_fd = -1;
+    //-----------------------------------------------------------------------
+    // CLEANUP END WAR
+    //-----------------------------------------------------------------------
+    close(ctx_new_vulkan->dmabuf_fd);
+    ctx_new_vulkan->dmabuf_fd = -1;
     xkb_state_unref(ctx_fsm->xkb_state);
     xkb_context_unref(ctx_fsm->xkb_context);
     end("war_window_render");
