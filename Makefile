@@ -211,23 +211,35 @@ PREFIX ?= /usr
 INCLUDEDIR := $(PREFIX)/include/war
 SHAREDIR := $(PREFIX)/share/war
 PCDIR := $(PREFIX)/lib/pkgconfig
+CLANGD_PATH := $(HOME)/.config/.clangd
 
 .PHONY: install-devel clean-devel
 
 install-devel: $(H_BUILD_FILES)
 	@echo "Installing WAR development files..."
+	# Install headers
 	@mkdir -p $(INCLUDEDIR)
 	@cp -r src/h/* $(INCLUDEDIR)/
-	@mkdir -p $(SHAREDIR)
-	@mkdir -p $(PCDIR)
-	@echo "prefix=$(PREFIX)" > $(PCDIR)/war-devel.pc
-	@echo "includedir=\$${prefix}/include/war" >> $(PCDIR)/war-devel.pc
-	@echo "Name: war-devel" >> $(PCDIR)/war-devel.pc
-	@echo "Description: WAR development files (headers, scripts)" >> $(PCDIR)/war-devel.pc
-	@echo "Version: $(WAR_VERSION)" >> $(PCDIR)/war-devel.pc
-	@echo "Cflags: -I\$${includedir}" >> $(PCDIR)/war-devel.pc
+
+	# Collect Pipewire/SPA cflags dynamically
+	@PIPEWIRE_CFLAGS="$$(pkg-config --cflags libpipewire-0.3)" ; \
+	  echo "Installing .pc file with dynamic Cflags: $$PIPEWIRE_CFLAGS" ; \
+	  mkdir -p $(PCDIR) ; \
+	  echo "prefix=$(PREFIX)" > $(PCDIR)/war-devel.pc ; \
+	  echo "includedir=\$${prefix}/include/war" >> $(PCDIR)/war-devel.pc ; \
+	  echo "Name: war-devel" >> $(PCDIR)/war-devel.pc ; \
+	  echo "Description: WAR development files (headers, scripts)" >> $(PCDIR)/war-devel.pc ; \
+	  echo "Version: $(WAR_VERSION)" >> $(PCDIR)/war-devel.pc ; \
+	  echo "Cflags: -I\$${includedir} $$PIPEWIRE_CFLAGS" >> $(PCDIR)/war-devel.pc ; \
+	  \
+	  # Generate .clangd from the same cflags
+	  mkdir -p $(dir $(CLANGD_PATH)) ; \
+	  echo "CompileFlags:" > $(CLANGD_PATH) ; \
+	  echo "  Add:" >> $(CLANGD_PATH) ; \
+	  for flag in $$PIPEWIRE_CFLAGS -I$(INCLUDEDIR) -D_REENTRANT ; do \
+	    echo "    - $$flag" >> $(CLANGD_PATH) ; \
+	  done
 
 clean-devel:
 	@echo "Cleaning WAR development install..."
-	@rm -rf $(INCLUDEDIR) $(SHAREDIR) $(PCDIR)/war-devel.pc
-
+	@rm -rf $(INCLUDEDIR) $(SHAREDIR) $(PCDIR)/war-devel.pc $(CLANGD_PATH)
