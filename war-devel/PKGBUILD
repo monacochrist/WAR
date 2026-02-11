@@ -1,6 +1,7 @@
+# Maintainer: Monaco Christ <your-email@example.com>
 pkgname=war-devel
-pkgver=0.0.0        # <- static pkgver
-pkgrel=2
+pkgver=0.0.0        # static pkgver
+pkgrel=4
 pkgdesc="WAR development files (headers, scripts)"
 arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
@@ -18,20 +19,21 @@ build() {
 package() {
     cd "$srcdir/WAR" || exit 1
 
-    # headers
+    # Install headers
     install -d "$pkgdir/usr/include/war"
     cp -r src/h/* "$pkgdir/usr/include/war/"
 
-    # .pc file
+    # Install pkg-config file
     install -d "$pkgdir/usr/lib/pkgconfig"
     local version="$(git log -1 --format=%cd --date=format:%Y%m%d%H%M)-$(git rev-parse --short HEAD)"
+
     cat > "$pkgdir/usr/lib/pkgconfig/war-devel.pc" <<EOF
 prefix=/usr
 includedir=\${prefix}/include/war
 Name: war-devel
 Description: WAR development files (headers, scripts)
 Version: $version
-Cflags: -I\${includedir}
+Requires.private: libpipewire-0.3 spa-0.2
+Cflags: -I\${includedir} \$(pkg-config --cflags libpipewire-0.3) -I/usr/include/spa-0.2
 EOF
 }
-
