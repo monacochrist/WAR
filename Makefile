@@ -114,7 +114,7 @@ SPV_BUILD_FILES := \
 	$(NEW_VULKAN_VERTEX_HUD_LINE_SHADER_SPV) \
 	$(NEW_VULKAN_VERTEX_HUD_TEXT_SHADER_SPV) \
 
-H_BUILD_DIR := $(BUILD_DIR)/h
+H_BUILD_DIR := $(SRC_DIR)/h
 BUILD_KEYMAP_FUNCTIONS_H := $(SRC_DIR)/lua/war_build_keymap_functions.lua
 H_BUILD_FILES := \
 	$(BUILD_KEYMAP_FUNCTIONS_H) \
@@ -202,3 +202,32 @@ gcc_check:
 	$(Q)$(CC) $(CFLAGS) -fsyntax-only $(SRC)
 
 -include $(DEP)
+
+#-----------------------------------------------------------------------------
+# war-devel
+#-----------------------------------------------------------------------------
+WAR_VERSION := 0.1.0-nightly-$(shell date +%Y%m%d%H%M)
+PREFIX ?= /usr
+INCLUDEDIR := $(PREFIX)/include/war
+SHAREDIR := $(PREFIX)/share/war
+PCDIR := $(PREFIX)/lib/pkgconfig
+
+.PHONY: install-devel clean-devel
+
+install-devel: $(H_BUILD_FILES)
+	@echo "Installing WAR development files..."
+	@mkdir -p $(INCLUDEDIR)
+	@cp -r src/h/* $(INCLUDEDIR)/
+	@mkdir -p $(SHAREDIR)
+	@mkdir -p $(PCDIR)
+	@echo "prefix=$(PREFIX)" > $(PCDIR)/war-devel.pc
+	@echo "includedir=\$${prefix}/include/war" >> $(PCDIR)/war-devel.pc
+	@echo "Name: war-devel" >> $(PCDIR)/war-devel.pc
+	@echo "Description: WAR development files (headers, scripts)" >> $(PCDIR)/war-devel.pc
+	@echo "Version: $(WAR_VERSION)" >> $(PCDIR)/war-devel.pc
+	@echo "Cflags: -I\$${includedir}" >> $(PCDIR)/war-devel.pc
+
+clean-devel:
+	@echo "Cleaning WAR development install..."
+	@rm -rf $(INCLUDEDIR) $(SHAREDIR) $(PCDIR)/war-devel.pc
+

@@ -9,13 +9,17 @@
 //-----------------------------------------------------------------------------
 
 #include "h/war_main.h"
-#include "../build/h/war_build_keymap_functions.h"
+#include "h/war_build_keymap_functions.h"
+#include "h/war_color.h"
+#include "h/war_config.h"
 #include "h/war_data.h"
 #include "h/war_debug_macros.h"
 #include "h/war_functions.h"
+#include "h/war_keymap.h"
 #include "h/war_keymap_functions.h"
 #include "h/war_new_vulkan.h"
 #include "h/war_nsgt.h"
+#include "h/war_pool.h"
 #include "h/war_wayland.h"
 
 #include <errno.h>
@@ -50,6 +54,57 @@
 
 int main() {
     CALL_KING_TERRY("war");
+    //-------------------------------------------------------------------------
+    // NEW
+    //-------------------------------------------------------------------------
+    
+    //
+    war_config_context* tmp_ctx_config = calloc(1, sizeof(war_config_context));
+    war_config_default(tmp_ctx_config);
+    war_pool_context* ctx_pool = calloc(1, sizeof(war_pool_context));
+    ctx_pool->max_allocations = tmp_ctx_config->POOL_MAX_ALLOCATIONS;
+    ctx_pool->size = calloc(ctx_pool->max_allocations, sizeof(uint64_t));
+    ctx_pool->offset = calloc(ctx_pool->max_allocations, sizeof(uint64_t));
+    ctx_pool->alignment = calloc(ctx_pool->max_allocations, sizeof(uint32_t));
+    ctx_pool->id = calloc(ctx_pool->max_allocations, sizeof(war_pool_id));
+    war_pool_default(ctx_pool, tmp_ctx_config);
+    //
+    for (uint32_t i = 0; i < ctx_pool->count; i++) {
+        ctx_pool->total_size += ctx_pool->size[i];
+    }
+    call_king_terry("new pool context total size: %u", ctx_pool->total_size);
+    ctx_pool->pool = mmap(NULL,
+                          ctx_pool->total_size,
+                          PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS,
+                          -1,
+                          0);
+    assert(ctx_pool->pool);
+    memset(ctx_pool->pool, 0, ctx_pool->total_size);
+    war_config_context* ctx_config =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_SHARED_CTX_CONFIG);
+    memcpy(ctx_config, tmp_ctx_config, sizeof(war_config_context));
+    //
+    war_color_context* ctx_color =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_COLOR);
+    war_color_default(ctx_color);
+    //
+    war_keymap_context* ctx_keymap =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP);
+    ctx_keymap->function =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION);
+    ctx_keymap->function_count = war_pool_alloc_new(
+        ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION_COUNT);
+    ctx_keymap->flags =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP_FLAGS);
+    ctx_keymap->next_state =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP_NEXT_STATE);
+    ctx_keymap->state_capacity = ctx_config->KEYMAP_STATE_CAPACITY;
+    ctx_keymap->function_capacity = ctx_config->KEYMAP_FUNCTION_CAPACITY;
+    ctx_keymap->keysym_capacity = ctx_config->KEYMAP_KEYSYM_CAPACITY;
+    ctx_keymap->mod_capacity = ctx_config->KEYMAP_MOD_CAPACITY;
+    war_keymap_default(ctx_keymap);
+
     //-------------------------------------------------------------------------
     // LUA
     //-------------------------------------------------------------------------
@@ -173,6 +228,10 @@ int main() {
         .layer = 0,
     };
     //-------------------------------------------------------------------------
+    // CONFIG CONTEXT
+    //-------------------------------------------------------------------------
+
+    //-------------------------------------------------------------------------
     // THREADS
     //-------------------------------------------------------------------------
     struct rlimit r_limit;
@@ -263,20 +322,20 @@ void* war_window_render(void* args) {
     //-------------------------------------------------------------------------
     // COMMAND CONTEXT
     //-------------------------------------------------------------------------
-    war_command_context* ctx_command =
-        war_pool_alloc(pool_wr, sizeof(war_command_context));
-    ctx_command->capacity = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
-    ctx_command->input =
-        war_pool_alloc(pool_wr, sizeof(int) * ctx_command->capacity);
-    ctx_command->text =
-        war_pool_alloc(pool_wr, sizeof(char) * ctx_command->capacity);
-    ctx_command->prompt_text =
-        war_pool_alloc(pool_wr, sizeof(char) * ctx_command->capacity);
-    ctx_command->prompt_text_size = 0;
-    ctx_command->input_write_index = 0;
-    ctx_command->text_write_index = 0;
-    ctx_command->input_read_index = 0;
-    ctx_command->text_size = 0;
+    // war_command_context* ctx_command =
+    //    war_pool_alloc(pool_wr, sizeof(war_command_context));
+    // ctx_command->capacity = atomic_load(&ctx_lua->CONFIG_PATH_MAX);
+    // ctx_command->input =
+    //    war_pool_alloc(pool_wr, sizeof(int) * ctx_command->capacity);
+    // ctx_command->text =
+    //    war_pool_alloc(pool_wr, sizeof(char) * ctx_command->capacity);
+    // ctx_command->prompt_text =
+    //    war_pool_alloc(pool_wr, sizeof(char) * ctx_command->capacity);
+    // ctx_command->prompt_text_size = 0;
+    // ctx_command->input_write_index = 0;
+    // ctx_command->text_write_index = 0;
+    // ctx_command->input_read_index = 0;
+    // ctx_command->text_size = 0;
     //-------------------------------------------------------------------------
     // FSM CONTEXT + REPEATS + TIMEOUTS
     //-------------------------------------------------------------------------
@@ -914,7 +973,7 @@ void* war_window_render(void* args) {
         .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
         .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
         .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
-        .flags = 0,
+        .flags = WAR_NEW_VULKAN_FLAGS_HIDDEN,
     };
     ctx_hud_text->count[ctx_hud_text->idx_status_bottom] = 1;
     ctx_hud_text->dirty[ctx_hud_text->idx_status_bottom] = 1;
@@ -1319,7 +1378,7 @@ void* war_window_render(void* args) {
             .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
             .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
             .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
-            .flags = 0,
+            .flags = WAR_NEW_VULKAN_FLAGS_HIDDEN,
         };
     ctx_line->count[ctx_line->idx_cell_grid] = 1;
     ctx_line->dirty[ctx_line->idx_cell_grid] = 1;
@@ -1441,7 +1500,7 @@ void* war_window_render(void* args) {
             .outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
             .foreground_color = {1.0f, 1.0f, 1.0f, 1.0f},
             .foreground_outline_color = {1.0f, 1.0f, 1.0f, 1.0f},
-            .flags = 0,
+            .flags = WAR_NEW_VULKAN_FLAGS_HIDDEN,
         };
     ctx_text->count[ctx_text->idx_status_bottom] = 1;
     ctx_text->dirty[ctx_text->idx_status_bottom] = 1;
@@ -1538,9 +1597,7 @@ void* war_window_render(void* args) {
     ctx_sequence->push_constant[ctx_sequence->idx_grid].cell_offset[0] = 3.0f;
     ctx_sequence->push_constant[ctx_sequence->idx_grid].cell_offset[1] = 3.0f;
     ctx_sequence->instance_count[ctx_sequence->idx_grid] = 1;
-    ctx_sequence->dirty[ctx_sequence->idx_grid] = 1;
-    //
-
+    ctx_sequence->dirty[ctx_sequence->idx_grid] = 0;
     //-------------------------------------------------------------------------
     // CAPTURE WAV
     //-------------------------------------------------------------------------
@@ -1605,6 +1662,11 @@ void* war_window_render(void* args) {
     *(war_data_chunk*)(capture_wav->file + sizeof(war_riff_header) +
                        sizeof(war_fmt_chunk)) = init_data_chunk;
     //-------------------------------------------------------------------------
+    // KEYMAP CONTEXT
+    //-------------------------------------------------------------------------
+    war_keymap_context* ctx_keymap =
+        war_pool_alloc(pool_wr, sizeof(war_keymap_context));
+    //-------------------------------------------------------------------------
     //  ENV
     //-------------------------------------------------------------------------
     war_env* env = war_pool_alloc(pool_wr, sizeof(war_env));
@@ -1612,7 +1674,7 @@ void* war_window_render(void* args) {
     env->ctx_lua = ctx_lua;
     env->ctx_play = ctx_play;
     env->ctx_capture = ctx_capture;
-    env->ctx_command = ctx_command;
+    // env->ctx_command = ctx_command;
     env->pool_wr = pool_wr;
     env->ctx_fsm = ctx_fsm;
     env->pc_capture = pc_capture;
@@ -1623,6 +1685,7 @@ war_label_wr: {
     if (war_pc_from_a(pc_control, &header, &size, control_payload)) {
         goto* pc_control_cmd[header];
     }
+    usleep(5000);
     ctx_misc->now = war_get_monotonic_time_us();
     //-------------------------------------------------------------------------
     // PLAY WRITER
@@ -1756,391 +1819,393 @@ war_label_skip_capture:
     //-------------------------------------------------------------------------
     // COMMAND MODE HANDLING
     //-------------------------------------------------------------------------
-    if (ctx_fsm->current_mode == ctx_fsm->MODE_COMMAND) {
-        if (ctx_command->input_write_index == 0 ||
-            ctx_command->input_read_index >= ctx_command->input_write_index) {
-            goto war_label_skip_command;
-        }
-        int input = ctx_command->input[ctx_command->input_read_index];
-        if (input == '\b') { // ASCII backspace
-            if (ctx_command->text_write_index > 0) {
-                for (int i = ctx_command->text_write_index - 1;
-                     i < ctx_command->text_size;
-                     i++) {
-                    ctx_command->text[i] = ctx_command->text[i + 1];
-                }
-                ctx_command->text_write_index--;
-                ctx_command->text_size--;
-                ctx_command->text[ctx_command->text_size] = '\0';
-            } else if (ctx_command->text_write_index == 0 &&
-                       ctx_command->text_size == 0) {
-                if (!ctx_command->prompt_type) {}
-            }
-        } else if (input == '\n') { // ASCII newline
-            uint32_t len = war_trim_whitespace(ctx_command->text);
-            if (ctx_command->prompt_type == WAR_COMMAND_PROMPT_NONE) {
-                goto war_label_command_mode_no_prompt;
-            }
-            switch (ctx_command->prompt_type) {
-            case WAR_COMMAND_PROMPT_CAPTURE_FNAME: {
-                if (len == 0) { goto war_label_command_processed; }
-                for (uint32_t i = 0; i < len; i++) {
-                    if (ctx_command->text[i] == ' ') {
-                        goto war_label_command_processed;
-                    }
-                }
-                memset(ctx_capture->fname, 0, ctx_capture->name_limit);
-                memcpy(ctx_capture->fname, ctx_fsm->cwd, ctx_fsm->cwd_size);
-                memcpy(ctx_capture->fname + ctx_fsm->cwd_size, "/", 1);
-                memcpy(ctx_capture->fname + ctx_fsm->cwd_size + 1,
-                       ctx_command->text,
-                       len);
-                ctx_capture->fname_size = len + ctx_fsm->cwd_size + 1;
-                // done
-                ctx_command->prompt_type = WAR_COMMAND_PROMPT_CAPTURE_NOTE;
-                memset(ctx_command->prompt_text, 0, ctx_command->capacity);
-                memcpy(ctx_command->prompt_text,
-                       ctx_capture->prompt_note_text,
-                       ctx_capture->prompt_note_text_size);
-                ctx_command->prompt_text_size =
-                    ctx_capture->prompt_note_text_size;
-                ctx_command->input_write_index = 1;
-                goto war_label_skip_command_processed;
-            }
-            case WAR_COMMAND_PROMPT_CAPTURE_NOTE: {
-                if (len == 0) { goto war_label_command_processed; }
-                int64_t note = 0;
-                for (uint32_t i = 0; i < len; i++) {
-                    if (ctx_command->text[i] == ' ' ||
-                        !isdigit(ctx_command->text[i])) {
-                        goto war_label_command_processed;
-                    }
-                    note = note * 10 + (ctx_command->text[i] - '0');
-                }
-                if (note < 0 || note > 127) {
-                    goto war_label_command_processed;
-                }
-                ctx_capture->note = note;
-                // done
-                ctx_command->prompt_type = WAR_COMMAND_PROMPT_CAPTURE_LAYER;
-                memset(ctx_command->prompt_text, 0, ctx_command->capacity);
-                memcpy(ctx_command->prompt_text,
-                       ctx_capture->prompt_layer_text,
-                       ctx_capture->prompt_layer_text_size);
-                ctx_command->prompt_text_size =
-                    ctx_capture->prompt_layer_text_size;
-                ctx_command->input_write_index = 1;
-                goto war_label_skip_command_processed;
-            }
-            case WAR_COMMAND_PROMPT_CAPTURE_LAYER: {
-                if (len == 0) { goto war_label_command_processed; }
-                uint64_t layer = 0;
-                for (uint32_t i = 0; i < len; i++) {
-                    char entry = ctx_command->text[i];
-                    if (!isdigit(entry) || entry == '0') {
-                        goto war_label_command_processed;
-                    }
-                    uint64_t bit_pos = entry - '1';
-                    layer |= (1ULL << bit_pos);
-                }
-                if (__builtin_popcountll(layer) != 1) {
-                    goto war_label_command_processed;
-                }
-                ctx_capture->layer = __builtin_ctzll(layer);
-                // uint64_t idx = ctx_capture->note * map_wav->layer_count +
-                //                ctx_capture->layer;
-                // uint64_t id = cache_file->next_id++;
-                // uint64_t old_id = map_wav->id[idx];
-                // map_wav->id[idx] = id;
-                // memset(map_wav->fname + idx * map_wav->name_limit,
-                //        0,
-                //        map_wav->name_limit);
-                // memcpy(map_wav->fname + idx * map_wav->name_limit,
-                //        ctx_capture->fname,
-                //        ctx_capture->fname_size);
-                // map_wav->fname_size[idx] = ctx_capture->fname_size;
-                // uint32_t cache_idx = 0;
-                // if (old_id > 0) {
-                //     for (uint32_t i = 0; i < cache_file->count; i++) {
-                //         if (cache_file->id[i] != old_id) { continue; }
-                //         cache_idx = i;
-                //         break;
-                //     }
-                // } else if (old_id == 0 && cache_file->free_count > 0) {
-                //     cache_idx = cache_file->free[--cache_file->free_count];
-                // } else if (old_id == 0 &&
-                //            cache_file->count < cache_file->capacity) {
-                //     cache_idx = cache_file->count++;
-                // } else {
-                //     uint32_t oldest_idx = 0;
-                //     for (uint32_t i = 1; i < cache_file->count; i++) {
-                //         if (cache_file->timestamp[i] <=
-                //             cache_file->timestamp[oldest_idx]) {
-                //             oldest_idx = i;
-                //         }
-                //     }
-                //     cache_idx = oldest_idx;
-                // }
-                // if (cache_file->id[cache_idx] != 0) {
-                //     if (cache_file->fd[cache_idx] >= 0) {
-                //         close(cache_file->fd[cache_idx]);
-                //         cache_file->fd[cache_idx] = -1;
-                //     }
-                //     if (cache_file->file[cache_idx] != MAP_FAILED) {
-                //         munmap(cache_file->file[cache_idx],
-                //                cache_file->memfd_capacity[cache_idx]);
-                //         cache_file->file[cache_idx] = MAP_FAILED;
-                //     }
-                //     if (cache_file->memfd[cache_idx] >= 0) {
-                //         close(cache_file->memfd[cache_idx]);
-                //         cache_file->memfd[cache_idx] = -1;
-                //     }
-                // }
-                // cache_file->id[cache_idx] = id;
-                // cache_file->type[cache_idx] = WAR_FILE_TYPE_WAV;
-                // cache_file->timestamp[cache_idx] =
-                // cache_file->next_timestamp++;
-                // cache_file->memfd_capacity[cache_idx] =
-                //     capture_wav->memfd_capacity;
-                // cache_file->memfd_size[cache_idx] = capture_wav->memfd_size;
-                // cache_file->memfd[cache_idx] = memfd_create(
-                //     map_wav->fname + idx * map_wav->name_limit, MFD_CLOEXEC);
-                // if (cache_file->memfd[cache_idx] < 0) {
-                //     // call_king_terry("memfd_create failed: %s",
-                //     //                 map_wav->fname + idx *
-                //     //                 map_wav->name_limit);
-                //     cache_file->id[cache_idx] = 0;
-                //     map_wav->id[idx] = 0;
-                //     goto war_label_command_processed;
-                // }
-                // cache_file->file[cache_idx] =
-                //     mmap(NULL,
-                //          cache_file->memfd_capacity[cache_idx],
-                //          PROT_READ | PROT_WRITE,
-                //          MAP_SHARED,
-                //          cache_file->memfd[cache_idx],
-                //          0);
-                // if (cache_file->file[cache_idx] == MAP_FAILED) {
-                //     // call_king_terry("mmap failed: %s",
-                //     //                 map_wav->fname + idx *
-                //     //                 map_wav->name_limit);
-                //     cache_file->id[cache_idx] = 0;
-                //     map_wav->id[idx] = 0;
-                //     close(cache_file->memfd[cache_idx]);
-                //     cache_file->memfd[cache_idx] = -1;
-                // }
-                // cache_file->fd[cache_idx] =
-                //     open(map_wav->fname + idx * map_wav->name_limit,
-                //          O_RDWR | O_CREAT | O_TRUNC,
-                //          0644);
-                // if (cache_file->fd[cache_idx] == -1) {
-                //     // call_king_terry("fd failed to open: %s",
-                //     //                 map_wav->fname + idx *
-                //     //                 map_wav->name_limit);
-                //     cache_file->id[cache_idx] = 0;
-                //     map_wav->id[idx] = 0;
-                //     close(cache_file->memfd[cache_idx]);
-                //     cache_file->memfd[cache_idx] = -1;
-                //     munmap(cache_file->file[cache_idx],
-                //            cache_file->memfd_capacity[cache_idx]);
-                //     cache_file->file[cache_idx] = MAP_FAILED;
-                //     goto war_label_command_processed;
-                // }
-                // cache_file->fd_size[cache_idx] = capture_wav->memfd_size;
-                // if (ftruncate(cache_file->fd[cache_idx],
-                //               cache_file->fd_size[cache_idx]) == -1) {
-                //     // call_king_terry("ftruncate failed: %s",
-                //     //                 map_wav->fname + idx *
-                //     //                 map_wav->name_limit);
-                //     cache_file->id[cache_idx] = 0;
-                //     map_wav->id[idx] = 0;
-                //     close(cache_file->memfd[cache_idx]);
-                //     cache_file->memfd[cache_idx] = -1;
-                //     munmap(cache_file->file[cache_idx],
-                //            cache_file->memfd_capacity[cache_idx]);
-                //     cache_file->file[cache_idx] = MAP_FAILED;
-                //     close(cache_file->fd[cache_idx]);
-                //     cache_file->fd[cache_idx] = -1;
-                //     goto war_label_command_processed;
-                // }
-                // off_t offset_1 = 0;
-                // ssize_t bytes_copied =
-                //     sendfile(cache_file->memfd[cache_idx],
-                //              capture_wav->memfd,
-                //              &offset_1,
-                //              cache_file->memfd_size[cache_idx]);
-                // if (bytes_copied !=
-                //     (ssize_t)cache_file->memfd_size[cache_idx]) {
-                //     // call_king_terry("sendfile failed: %s",
-                //     //                 map_wav->fname + idx *
-                //     //                 map_wav->name_limit);
-                //     cache_file->id[cache_idx] = 0;
-                //     map_wav->id[idx] = 0;
-                //     close(cache_file->memfd[cache_idx]);
-                //     cache_file->memfd[cache_idx] = -1;
-                //     munmap(cache_file->file[cache_idx],
-                //            cache_file->memfd_capacity[cache_idx]);
-                //     cache_file->file[cache_idx] = MAP_FAILED;
-                //     close(cache_file->fd[cache_idx]);
-                //     cache_file->fd[cache_idx] = -1;
-                //     goto war_label_command_processed;
-                // }
-                // off_t offset_2 = 0;
-                // bytes_copied = sendfile(cache_file->fd[cache_idx],
-                //                         cache_file->memfd[cache_idx],
-                //                         &offset_2,
-                //                         cache_file->memfd_size[cache_idx]);
-                // if (bytes_copied !=
-                //     (ssize_t)cache_file->memfd_size[cache_idx]) {
-                //     // call_king_terry("sendfile failed: %s",
-                //     //                 map_wav->fname + idx *
-                //     //                 map_wav->name_limit);
-                //     cache_file->id[cache_idx] = 0;
-                //     map_wav->id[idx] = 0;
-                //     close(cache_file->memfd[cache_idx]);
-                //     cache_file->memfd[cache_idx] = -1;
-                //     munmap(cache_file->file[cache_idx],
-                //            cache_file->memfd_capacity[cache_idx]);
-                //     cache_file->file[cache_idx] = MAP_FAILED;
-                //     close(cache_file->fd[cache_idx]);
-                //     cache_file->fd[cache_idx] = -1;
-                //     goto war_label_command_processed;
-                // }
-                ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
-                memset(ctx_command->prompt_text, 0, ctx_command->capacity);
-                ctx_command->prompt_text_size = 0;
-                goto war_label_skip_command_processed;
-            }
-            }
-        war_label_command_mode_no_prompt:
-            if (strcmp(ctx_command->text, "roll") == 0) {
-                memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
-                ctx_fsm->current_file_path_size = 0;
-            } else if (strcmp(ctx_command->text, "wav") == 0) {
-                memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
-                ctx_fsm->current_file_path_size = 0;
-            } else if (strncmp(ctx_command->text, "cd", 2) == 0) {
-                if (ctx_command->text[2] != ' ' &&
-                    ctx_command->text[2] != '\0') {
-                    goto war_label_command_processed;
-                }
-                if (ctx_command->text[2] == '\0') {
-                    // don't have $HOME
-                    goto war_label_command_processed;
-                }
-                ctx_command->text[0] = ' ';
-                ctx_command->text[1] = ' ';
-                len = war_trim_whitespace(ctx_command->text);
-                if (access(ctx_command->text, F_OK) == 0) {
-                    if (chdir(ctx_command->text) == 0) {
-                    } else {
-                        goto war_label_command_processed;
-                    }
-                } else {
-                    goto war_label_command_processed;
-                }
-                memset(ctx_fsm->cwd, 0, ctx_fsm->name_limit);
-                getcwd(ctx_fsm->cwd, ctx_fsm->name_limit);
-                ctx_fsm->cwd_size = strlen(ctx_fsm->cwd);
-                // call_king_terry("changed working directory to %s",
-                //                 ctx_fsm->cwd);
-                goto war_label_command_processed;
-            } else if (strncmp(ctx_command->text, "e", 1) == 0) {
-                if (ctx_command->text[1] != ' ' &&
-                    ctx_command->text[1] != '\0') {
-                    goto war_label_command_processed;
-                }
-                if (ctx_command->text[1] == '\0') {
-                    // reload project?
-                    goto war_label_command_processed;
-                }
-                // ctx_command->text[0] = ' ';
-                // len = war_trim_whitespace(ctx_command->text);
-                // memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
-                // ctx_fsm->current_file_path_size =
-                //     snprintf(ctx_fsm->current_file_path,
-                //              len + ctx_fsm->cwd_size + 2,
-                //              "%s/%s",
-                //              ctx_fsm->cwd,
-                //              ctx_command->text);
-                // ctx_fsm->ext_size = war_get_ext(
-                //     ctx_command->text, ctx_fsm->ext, ctx_fsm->name_limit);
-                // if (strcmp(ctx_fsm->ext, "wav") == 0) {
-                //     ctx_fsm->current_file_type = WAR_FILE_TYPE_WAV;
-                //     war_wav_mode(env);
-                // } else if (strcmp(ctx_fsm->ext, "war") == 0) {
-                //     ctx_fsm->current_file_type = WAR_FILE_TYPE_WAR;
-                //     war_roll_mode(env);
-                // } else {
-                //     switch (ctx_fsm->current_file_type) {
-                //     case WAR_FILE_TYPE_WAR:
-                //         war_roll_mode(env);
-                //         break;
-                //     case WAR_FILE_TYPE_WAV:
-                //         war_wav_mode(env);
-                //         break;
-                //     }
-                // }
-                //  call_king_terry("file_path: %s",
-                //  ctx_fsm->current_file_path);
-            } else if (strcmp(ctx_command->text, "pwd") == 0) {
-                // call_king_terry("pwd");
-                //  reset without resettign status bar
-                memset(ctx_command->text, 0, ctx_command->capacity);
-                ctx_command->text_size = 0;
-                ctx_command->text_write_index = 0;
-                memset(ctx_command->input, 0, ctx_command->capacity);
-                ctx_command->input_write_index = 0;
-                ctx_command->input_read_index = 0;
-                memset(ctx_command->prompt_text, 0, ctx_command->capacity);
-                ctx_command->prompt_text_size = 0;
-                ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
-                ctx_command->text_write_index = 0;
-                ctx_command->text_size = 0;
-                ctx_command->text[0] = '\0';
-                goto war_label_skip_command_processed;
-            } else if (strcmp(ctx_command->text, "q!") == 0) {
-                // call_king_terry("q!");
-                goto war_label_xdg_toplevel_close;
-            } else if (strcmp(ctx_command->text, "q") == 0) {
-                // call_king_terry("q");
-                goto war_label_xdg_toplevel_close;
-            }
-        war_label_command_processed:
-            ctx_command->text_write_index = 0;
-            ctx_command->text_size = 0;
-            ctx_command->text[0] = '\0';
-        war_label_skip_command_processed:
-        } else if (input == '\e') { // ASCII escape
-            ctx_command->text_write_index = 0;
-        } else if (input == 3) { // Arrow left
-            if (ctx_command->text_write_index > 0) {
-                ctx_command->text_write_index--;
-            }
-        } else if (input == 4) { // Arrow right
-            if (ctx_command->text_write_index < ctx_command->text_size) {
-                ctx_command->text_write_index++;
-            }
-        } else if (input == '\t') {
-        } else if (input == '\0') {
-        } else {
-            if (ctx_command->text_size < ctx_command->capacity - 1) {
-                if (ctx_command->text_write_index < ctx_command->text_size) {
-                    for (int i = ctx_command->text_size;
-                         i > ctx_command->text_write_index;
-                         i--) {
-                        ctx_command->text[i] = ctx_command->text[i - 1];
-                    }
-                }
+    // if (ctx_fsm->current_mode == ctx_fsm->MODE_COMMAND) {
+    //    if (ctx_command->input_write_index == 0 ||
+    //        ctx_command->input_read_index >= ctx_command->input_write_index) {
+    //        goto war_label_skip_command;
+    //    }
+    //    int input = ctx_command->input[ctx_command->input_read_index];
+    //    if (input == '\b') { // ASCII backspace
+    //        if (ctx_command->text_write_index > 0) {
+    //            for (int i = ctx_command->text_write_index - 1;
+    //                 i < ctx_command->text_size;
+    //                 i++) {
+    //                ctx_command->text[i] = ctx_command->text[i + 1];
+    //            }
+    //            ctx_command->text_write_index--;
+    //            ctx_command->text_size--;
+    //            ctx_command->text[ctx_command->text_size] = '\0';
+    //        } else if (ctx_command->text_write_index == 0 &&
+    //                   ctx_command->text_size == 0) {
+    //            if (!ctx_command->prompt_type) {}
+    //        }
+    //    } else if (input == '\n') { // ASCII newline
+    //        uint32_t len = war_trim_whitespace(ctx_command->text);
+    //        if (ctx_command->prompt_type == WAR_COMMAND_PROMPT_NONE) {
+    //            goto war_label_command_mode_no_prompt;
+    //        }
+    //        switch (ctx_command->prompt_type) {
+    //        case WAR_COMMAND_PROMPT_CAPTURE_FNAME: {
+    //            if (len == 0) { goto war_label_command_processed; }
+    //            for (uint32_t i = 0; i < len; i++) {
+    //                if (ctx_command->text[i] == ' ') {
+    //                    goto war_label_command_processed;
+    //                }
+    //            }
+    //            memset(ctx_capture->fname, 0, ctx_capture->name_limit);
+    //            memcpy(ctx_capture->fname, ctx_fsm->cwd, ctx_fsm->cwd_size);
+    //            memcpy(ctx_capture->fname + ctx_fsm->cwd_size, "/", 1);
+    //            memcpy(ctx_capture->fname + ctx_fsm->cwd_size + 1,
+    //                   ctx_command->text,
+    //                   len);
+    //            ctx_capture->fname_size = len + ctx_fsm->cwd_size + 1;
+    //            // done
+    //            ctx_command->prompt_type = WAR_COMMAND_PROMPT_CAPTURE_NOTE;
+    //            memset(ctx_command->prompt_text, 0, ctx_command->capacity);
+    //            memcpy(ctx_command->prompt_text,
+    //                   ctx_capture->prompt_note_text,
+    //                   ctx_capture->prompt_note_text_size);
+    //            ctx_command->prompt_text_size =
+    //                ctx_capture->prompt_note_text_size;
+    //            ctx_command->input_write_index = 1;
+    //            goto war_label_skip_command_processed;
+    //        }
+    //        case WAR_COMMAND_PROMPT_CAPTURE_NOTE: {
+    //            if (len == 0) { goto war_label_command_processed; }
+    //            int64_t note = 0;
+    //            for (uint32_t i = 0; i < len; i++) {
+    //                if (ctx_command->text[i] == ' ' ||
+    //                    !isdigit(ctx_command->text[i])) {
+    //                    goto war_label_command_processed;
+    //                }
+    //                note = note * 10 + (ctx_command->text[i] - '0');
+    //            }
+    //            if (note < 0 || note > 127) {
+    //                goto war_label_command_processed;
+    //            }
+    //            ctx_capture->note = note;
+    //            // done
+    //            ctx_command->prompt_type = WAR_COMMAND_PROMPT_CAPTURE_LAYER;
+    //            memset(ctx_command->prompt_text, 0, ctx_command->capacity);
+    //            memcpy(ctx_command->prompt_text,
+    //                   ctx_capture->prompt_layer_text,
+    //                   ctx_capture->prompt_layer_text_size);
+    //            ctx_command->prompt_text_size =
+    //                ctx_capture->prompt_layer_text_size;
+    //            ctx_command->input_write_index = 1;
+    //            goto war_label_skip_command_processed;
+    //        }
+    //        case WAR_COMMAND_PROMPT_CAPTURE_LAYER: {
+    //            if (len == 0) { goto war_label_command_processed; }
+    //            uint64_t layer = 0;
+    //            for (uint32_t i = 0; i < len; i++) {
+    //                char entry = ctx_command->text[i];
+    //                if (!isdigit(entry) || entry == '0') {
+    //                    goto war_label_command_processed;
+    //                }
+    //                uint64_t bit_pos = entry - '1';
+    //                layer |= (1ULL << bit_pos);
+    //            }
+    //            if (__builtin_popcountll(layer) != 1) {
+    //                goto war_label_command_processed;
+    //            }
+    //            ctx_capture->layer = __builtin_ctzll(layer);
+    //            // uint64_t idx = ctx_capture->note * map_wav->layer_count +
+    //            //                ctx_capture->layer;
+    //            // uint64_t id = cache_file->next_id++;
+    //            // uint64_t old_id = map_wav->id[idx];
+    //            // map_wav->id[idx] = id;
+    //            // memset(map_wav->fname + idx * map_wav->name_limit,
+    //            //        0,
+    //            //        map_wav->name_limit);
+    //            // memcpy(map_wav->fname + idx * map_wav->name_limit,
+    //            //        ctx_capture->fname,
+    //            //        ctx_capture->fname_size);
+    //            // map_wav->fname_size[idx] = ctx_capture->fname_size;
+    //            // uint32_t cache_idx = 0;
+    //            // if (old_id > 0) {
+    //            //     for (uint32_t i = 0; i < cache_file->count; i++) {
+    //            //         if (cache_file->id[i] != old_id) { continue; }
+    //            //         cache_idx = i;
+    //            //         break;
+    //            //     }
+    //            // } else if (old_id == 0 && cache_file->free_count > 0) {
+    //            //     cache_idx = cache_file->free[--cache_file->free_count];
+    //            // } else if (old_id == 0 &&
+    //            //            cache_file->count < cache_file->capacity) {
+    //            //     cache_idx = cache_file->count++;
+    //            // } else {
+    //            //     uint32_t oldest_idx = 0;
+    //            //     for (uint32_t i = 1; i < cache_file->count; i++) {
+    //            //         if (cache_file->timestamp[i] <=
+    //            //             cache_file->timestamp[oldest_idx]) {
+    //            //             oldest_idx = i;
+    //            //         }
+    //            //     }
+    //            //     cache_idx = oldest_idx;
+    //            // }
+    //            // if (cache_file->id[cache_idx] != 0) {
+    //            //     if (cache_file->fd[cache_idx] >= 0) {
+    //            //         close(cache_file->fd[cache_idx]);
+    //            //         cache_file->fd[cache_idx] = -1;
+    //            //     }
+    //            //     if (cache_file->file[cache_idx] != MAP_FAILED) {
+    //            //         munmap(cache_file->file[cache_idx],
+    //            //                cache_file->memfd_capacity[cache_idx]);
+    //            //         cache_file->file[cache_idx] = MAP_FAILED;
+    //            //     }
+    //            //     if (cache_file->memfd[cache_idx] >= 0) {
+    //            //         close(cache_file->memfd[cache_idx]);
+    //            //         cache_file->memfd[cache_idx] = -1;
+    //            //     }
+    //            // }
+    //            // cache_file->id[cache_idx] = id;
+    //            // cache_file->type[cache_idx] = WAR_FILE_TYPE_WAV;
+    //            // cache_file->timestamp[cache_idx] =
+    //            // cache_file->next_timestamp++;
+    //            // cache_file->memfd_capacity[cache_idx] =
+    //            //     capture_wav->memfd_capacity;
+    //            // cache_file->memfd_size[cache_idx] =
+    //            capture_wav->memfd_size;
+    //            // cache_file->memfd[cache_idx] = memfd_create(
+    //            //     map_wav->fname + idx * map_wav->name_limit,
+    //            MFD_CLOEXEC);
+    //            // if (cache_file->memfd[cache_idx] < 0) {
+    //            //     // call_king_terry("memfd_create failed: %s",
+    //            //     //                 map_wav->fname + idx *
+    //            //     //                 map_wav->name_limit);
+    //            //     cache_file->id[cache_idx] = 0;
+    //            //     map_wav->id[idx] = 0;
+    //            //     goto war_label_command_processed;
+    //            // }
+    //            // cache_file->file[cache_idx] =
+    //            //     mmap(NULL,
+    //            //          cache_file->memfd_capacity[cache_idx],
+    //            //          PROT_READ | PROT_WRITE,
+    //            //          MAP_SHARED,
+    //            //          cache_file->memfd[cache_idx],
+    //            //          0);
+    //            // if (cache_file->file[cache_idx] == MAP_FAILED) {
+    //            //     // call_king_terry("mmap failed: %s",
+    //            //     //                 map_wav->fname + idx *
+    //            //     //                 map_wav->name_limit);
+    //            //     cache_file->id[cache_idx] = 0;
+    //            //     map_wav->id[idx] = 0;
+    //            //     close(cache_file->memfd[cache_idx]);
+    //            //     cache_file->memfd[cache_idx] = -1;
+    //            // }
+    //            // cache_file->fd[cache_idx] =
+    //            //     open(map_wav->fname + idx * map_wav->name_limit,
+    //            //          O_RDWR | O_CREAT | O_TRUNC,
+    //            //          0644);
+    //            // if (cache_file->fd[cache_idx] == -1) {
+    //            //     // call_king_terry("fd failed to open: %s",
+    //            //     //                 map_wav->fname + idx *
+    //            //     //                 map_wav->name_limit);
+    //            //     cache_file->id[cache_idx] = 0;
+    //            //     map_wav->id[idx] = 0;
+    //            //     close(cache_file->memfd[cache_idx]);
+    //            //     cache_file->memfd[cache_idx] = -1;
+    //            //     munmap(cache_file->file[cache_idx],
+    //            //            cache_file->memfd_capacity[cache_idx]);
+    //            //     cache_file->file[cache_idx] = MAP_FAILED;
+    //            //     goto war_label_command_processed;
+    //            // }
+    //            // cache_file->fd_size[cache_idx] = capture_wav->memfd_size;
+    //            // if (ftruncate(cache_file->fd[cache_idx],
+    //            //               cache_file->fd_size[cache_idx]) == -1) {
+    //            //     // call_king_terry("ftruncate failed: %s",
+    //            //     //                 map_wav->fname + idx *
+    //            //     //                 map_wav->name_limit);
+    //            //     cache_file->id[cache_idx] = 0;
+    //            //     map_wav->id[idx] = 0;
+    //            //     close(cache_file->memfd[cache_idx]);
+    //            //     cache_file->memfd[cache_idx] = -1;
+    //            //     munmap(cache_file->file[cache_idx],
+    //            //            cache_file->memfd_capacity[cache_idx]);
+    //            //     cache_file->file[cache_idx] = MAP_FAILED;
+    //            //     close(cache_file->fd[cache_idx]);
+    //            //     cache_file->fd[cache_idx] = -1;
+    //            //     goto war_label_command_processed;
+    //            // }
+    //            // off_t offset_1 = 0;
+    //            // ssize_t bytes_copied =
+    //            //     sendfile(cache_file->memfd[cache_idx],
+    //            //              capture_wav->memfd,
+    //            //              &offset_1,
+    //            //              cache_file->memfd_size[cache_idx]);
+    //            // if (bytes_copied !=
+    //            //     (ssize_t)cache_file->memfd_size[cache_idx]) {
+    //            //     // call_king_terry("sendfile failed: %s",
+    //            //     //                 map_wav->fname + idx *
+    //            //     //                 map_wav->name_limit);
+    //            //     cache_file->id[cache_idx] = 0;
+    //            //     map_wav->id[idx] = 0;
+    //            //     close(cache_file->memfd[cache_idx]);
+    //            //     cache_file->memfd[cache_idx] = -1;
+    //            //     munmap(cache_file->file[cache_idx],
+    //            //            cache_file->memfd_capacity[cache_idx]);
+    //            //     cache_file->file[cache_idx] = MAP_FAILED;
+    //            //     close(cache_file->fd[cache_idx]);
+    //            //     cache_file->fd[cache_idx] = -1;
+    //            //     goto war_label_command_processed;
+    //            // }
+    //            // off_t offset_2 = 0;
+    //            // bytes_copied = sendfile(cache_file->fd[cache_idx],
+    //            //                         cache_file->memfd[cache_idx],
+    //            //                         &offset_2,
+    //            //                         cache_file->memfd_size[cache_idx]);
+    //            // if (bytes_copied !=
+    //            //     (ssize_t)cache_file->memfd_size[cache_idx]) {
+    //            //     // call_king_terry("sendfile failed: %s",
+    //            //     //                 map_wav->fname + idx *
+    //            //     //                 map_wav->name_limit);
+    //            //     cache_file->id[cache_idx] = 0;
+    //            //     map_wav->id[idx] = 0;
+    //            //     close(cache_file->memfd[cache_idx]);
+    //            //     cache_file->memfd[cache_idx] = -1;
+    //            //     munmap(cache_file->file[cache_idx],
+    //            //            cache_file->memfd_capacity[cache_idx]);
+    //            //     cache_file->file[cache_idx] = MAP_FAILED;
+    //            //     close(cache_file->fd[cache_idx]);
+    //            //     cache_file->fd[cache_idx] = -1;
+    //            //     goto war_label_command_processed;
+    //            // }
+    //            ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
+    //            memset(ctx_command->prompt_text, 0, ctx_command->capacity);
+    //            ctx_command->prompt_text_size = 0;
+    //            goto war_label_skip_command_processed;
+    //        }
+    //        }
+    //    war_label_command_mode_no_prompt:
+    //        if (strcmp(ctx_command->text, "roll") == 0) {
+    //            memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
+    //            ctx_fsm->current_file_path_size = 0;
+    //        } else if (strcmp(ctx_command->text, "wav") == 0) {
+    //            memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
+    //            ctx_fsm->current_file_path_size = 0;
+    //        } else if (strncmp(ctx_command->text, "cd", 2) == 0) {
+    //            if (ctx_command->text[2] != ' ' &&
+    //                ctx_command->text[2] != '\0') {
+    //                goto war_label_command_processed;
+    //            }
+    //            if (ctx_command->text[2] == '\0') {
+    //                // don't have $HOME
+    //                goto war_label_command_processed;
+    //            }
+    //            ctx_command->text[0] = ' ';
+    //            ctx_command->text[1] = ' ';
+    //            len = war_trim_whitespace(ctx_command->text);
+    //            if (access(ctx_command->text, F_OK) == 0) {
+    //                if (chdir(ctx_command->text) == 0) {
+    //                } else {
+    //                    goto war_label_command_processed;
+    //                }
+    //            } else {
+    //                goto war_label_command_processed;
+    //            }
+    //            memset(ctx_fsm->cwd, 0, ctx_fsm->name_limit);
+    //            getcwd(ctx_fsm->cwd, ctx_fsm->name_limit);
+    //            ctx_fsm->cwd_size = strlen(ctx_fsm->cwd);
+    //            // call_king_terry("changed working directory to %s",
+    //            //                 ctx_fsm->cwd);
+    //            goto war_label_command_processed;
+    //        } else if (strncmp(ctx_command->text, "e", 1) == 0) {
+    //            if (ctx_command->text[1] != ' ' &&
+    //                ctx_command->text[1] != '\0') {
+    //                goto war_label_command_processed;
+    //            }
+    //            if (ctx_command->text[1] == '\0') {
+    //                // reload project?
+    //                goto war_label_command_processed;
+    //            }
+    //            // ctx_command->text[0] = ' ';
+    //            // len = war_trim_whitespace(ctx_command->text);
+    //            // memset(ctx_fsm->current_file_path, 0, ctx_fsm->name_limit);
+    //            // ctx_fsm->current_file_path_size =
+    //            //     snprintf(ctx_fsm->current_file_path,
+    //            //              len + ctx_fsm->cwd_size + 2,
+    //            //              "%s/%s",
+    //            //              ctx_fsm->cwd,
+    //            //              ctx_command->text);
+    //            // ctx_fsm->ext_size = war_get_ext(
+    //            //     ctx_command->text, ctx_fsm->ext, ctx_fsm->name_limit);
+    //            // if (strcmp(ctx_fsm->ext, "wav") == 0) {
+    //            //     ctx_fsm->current_file_type = WAR_FILE_TYPE_WAV;
+    //            //     war_wav_mode(env);
+    //            // } else if (strcmp(ctx_fsm->ext, "war") == 0) {
+    //            //     ctx_fsm->current_file_type = WAR_FILE_TYPE_WAR;
+    //            //     war_roll_mode(env);
+    //            // } else {
+    //            //     switch (ctx_fsm->current_file_type) {
+    //            //     case WAR_FILE_TYPE_WAR:
+    //            //         war_roll_mode(env);
+    //            //         break;
+    //            //     case WAR_FILE_TYPE_WAV:
+    //            //         war_wav_mode(env);
+    //            //         break;
+    //            //     }
+    //            // }
+    //            //  call_king_terry("file_path: %s",
+    //            //  ctx_fsm->current_file_path);
+    //        } else if (strcmp(ctx_command->text, "pwd") == 0) {
+    //            // call_king_terry("pwd");
+    //            //  reset without resettign status bar
+    //            memset(ctx_command->text, 0, ctx_command->capacity);
+    //            ctx_command->text_size = 0;
+    //            ctx_command->text_write_index = 0;
+    //            memset(ctx_command->input, 0, ctx_command->capacity);
+    //            ctx_command->input_write_index = 0;
+    //            ctx_command->input_read_index = 0;
+    //            memset(ctx_command->prompt_text, 0, ctx_command->capacity);
+    //            ctx_command->prompt_text_size = 0;
+    //            ctx_command->prompt_type = WAR_COMMAND_PROMPT_NONE;
+    //            ctx_command->text_write_index = 0;
+    //            ctx_command->text_size = 0;
+    //            ctx_command->text[0] = '\0';
+    //            goto war_label_skip_command_processed;
+    //        } else if (strcmp(ctx_command->text, "q!") == 0) {
+    //            // call_king_terry("q!");
+    //            goto war_label_xdg_toplevel_close;
+    //        } else if (strcmp(ctx_command->text, "q") == 0) {
+    //            // call_king_terry("q");
+    //            goto war_label_xdg_toplevel_close;
+    //        }
+    //    war_label_command_processed:
+    //        ctx_command->text_write_index = 0;
+    //        ctx_command->text_size = 0;
+    //        ctx_command->text[0] = '\0';
+    //    war_label_skip_command_processed:
+    //    } else if (input == '\e') { // ASCII escape
+    //        ctx_command->text_write_index = 0;
+    //    } else if (input == 3) { // Arrow left
+    //        if (ctx_command->text_write_index > 0) {
+    //            ctx_command->text_write_index--;
+    //        }
+    //    } else if (input == 4) { // Arrow right
+    //        if (ctx_command->text_write_index < ctx_command->text_size) {
+    //            ctx_command->text_write_index++;
+    //        }
+    //    } else if (input == '\t') {
+    //    } else if (input == '\0') {
+    //    } else {
+    //        if (ctx_command->text_size < ctx_command->capacity - 1) {
+    //            if (ctx_command->text_write_index < ctx_command->text_size) {
+    //                for (int i = ctx_command->text_size;
+    //                     i > ctx_command->text_write_index;
+    //                     i--) {
+    //                    ctx_command->text[i] = ctx_command->text[i - 1];
+    //                }
+    //            }
 
-                ctx_command->text[ctx_command->text_write_index] = (char)input;
-                ctx_command->text_write_index++;
-                ctx_command->text_size++;
-                ctx_command->text[ctx_command->text_size] = '\0';
-            }
-        }
-        ctx_command->input_read_index++;
-    }
+    //            ctx_command->text[ctx_command->text_write_index] =
+    //            (char)input; ctx_command->text_write_index++;
+    //            ctx_command->text_size++;
+    //            ctx_command->text[ctx_command->text_size] = '\0';
+    //        }
+    //    }
+    //    ctx_command->input_read_index++;
+    //}
 war_label_skip_command:
     //---------------------------------------------------------------------
     // KEY REPEATS
@@ -2173,13 +2238,14 @@ war_label_skip_command:
                     //---------------------------------------------------------
                     if (ctx_fsm->current_mode == ctx_fsm->MODE_COMMAND) {
                         // Write repeated key to command input buffer
-                        if (ctx_command->input_write_index <
-                            ctx_command->capacity) {
-                            uint32_t merged = war_to_ascii(k, m);
-                            ctx_command->input[ctx_command->input_write_index] =
-                                merged;
-                            ctx_command->input_write_index++;
-                        }
+                        // if (ctx_command->input_write_index <
+                        //    ctx_command->capacity) {
+                        //    uint32_t merged = war_to_ascii(k, m);
+                        //    ctx_command->input[ctx_command->input_write_index]
+                        //    =
+                        //        merged;
+                        //    ctx_command->input_write_index++;
+                        //}
                         goto war_label_cmd_repeat_done; // Skip FSM processing
                     }
                     uint32_t next_state_index =
@@ -3780,13 +3846,13 @@ war_label_cmd_timeout_done:
             if (ctx_fsm->current_mode == ctx_fsm->MODE_COMMAND) {
                 if (pressed) {
                     // Write to input buffer for command mode
-                    if (ctx_command->input_write_index <
-                        ctx_command->capacity) {
-                        uint32_t merged = war_to_ascii(keysym, mod);
-                        ctx_command->input[ctx_command->input_write_index] =
-                            merged;
-                        ctx_command->input_write_index++;
-                    }
+                    // if (ctx_command->input_write_index <
+                    //    ctx_command->capacity) {
+                    //    uint32_t merged = war_to_ascii(keysym, mod);
+                    //    ctx_command->input[ctx_command->input_write_index] =
+                    //        merged;
+                    //    ctx_command->input_write_index++;
+                    //}
                     // SET UP REPEATS FOR COMMAND MODE
                     ctx_fsm->repeat_keysym = keysym;
                     ctx_fsm->repeat_mod = mod;
@@ -4426,6 +4492,7 @@ war_label_a: {
 }
 war_label_pc_a_done: {
     pw_loop_iterate(ctx_pw->loop, 0);
+    usleep(5000);
     goto war_label_a;
 }
 war_label_end_a: {

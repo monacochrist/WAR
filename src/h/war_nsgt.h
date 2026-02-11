@@ -11,10 +11,10 @@
 #ifndef WAR_NSGT_H
 #define WAR_NSGT_H
 
-#include "h/war_data.h"
-#include "h/war_debug_macros.h"
-#include "h/war_functions.h"
-#include "h/war_new_vulkan.h"
+#include "war_data.h"
+#include "war_debug_macros.h"
+#include "war_functions.h"
+#include "war_new_vulkan.h"
 
 #include <assert.h>
 #include <dirent.h>

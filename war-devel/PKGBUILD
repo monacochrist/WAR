@@ -1,0 +1,37 @@
+pkgname=war-devel
+pkgver=0.1.0        # <- static pkgver
+pkgrel=1
+pkgdesc="WAR development files (headers, scripts)"
+arch=('x86_64')
+url="https://github.com/monacochrist/WAR"
+license=('custom:WAR')
+depends=('lua' 'pipewire')
+makedepends=('gcc' 'glslang' 'pkgconf' 'lua')
+source=("WAR::git+https://github.com/monacochrist/WAR.git")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/WAR" || exit 1
+    make H_BUILD_DIR=src/h
+}
+
+package() {
+    cd "$srcdir/WAR" || exit 1
+
+    # headers
+    install -d "$pkgdir/usr/include/war"
+    cp -r src/h/* "$pkgdir/usr/include/war/"
+
+    # .pc file
+    install -d "$pkgdir/usr/lib/pkgconfig"
+    local version="$(git log -1 --format=%cd --date=format:%Y%m%d%H%M)-$(git rev-parse --short HEAD)"
+    cat > "$pkgdir/usr/lib/pkgconfig/war-devel.pc" <<EOF
+prefix=/usr
+includedir=\${prefix}/include/war
+Name: war-devel
+Description: WAR development files (headers, scripts)
+Version: $version
+Cflags: -I\${includedir}
+EOF
+}
+

@@ -11,9 +11,9 @@
 #ifndef WAR_NEW_VULKAN_H
 #define WAR_NEW_VULKAN_H
 
-#include "h/war_data.h"
-#include "h/war_debug_macros.h"
-#include "h/war_functions.h"
+#include "war_data.h"
+#include "war_debug_macros.h"
+#include "war_functions.h"
 
 #include <assert.h>
 #include <dirent.h>

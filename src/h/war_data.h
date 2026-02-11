@@ -11,7 +11,7 @@
 #ifndef WAR_DATA_H
 #define WAR_DATA_H
 
-#include "pipewire/stream.h"
+#include <pipewire/stream.h>
 #include <ft2build.h>
 #include <luajit-2.1/lauxlib.h>
 #include <luajit-2.1/lua.h>
@@ -362,8 +362,9 @@ typedef struct war_glyph_info {
 
 typedef uint32_t war_new_vulkan_flags;
 typedef enum war_new_vulkan_flags_bits {
-    WAR_NEW_VULKAN_FLAGS_OUTLINE = 1 << 0,
-    WAR_NEW_VULKAN_FLAGS_FOREGROUND = 1 << 1,
+    WAR_NEW_VULKAN_FLAGS_HIDDEN = 1 << 0,
+    WAR_NEW_VULKAN_FLAGS_OUTLINE = 1 << 1,
+    WAR_NEW_VULKAN_FLAGS_FOREGROUND = 1 << 2,
 } war_new_vulkan_flags_bits;
 
 typedef struct war_new_vulkan_vertex {
@@ -1120,30 +1121,55 @@ typedef struct __attribute__((packed)) war_color_body {
     uint32_t top_status_bar;
     uint32_t middle_status_bar;
     uint32_t bottom_status_bar;
+    uint32_t top_status_bar_cursor;
+    uint32_t middle_status_bar_cursor;
+    uint32_t bottom_status_bar_cursor;
     uint32_t top_status_bar_text;
     uint32_t middle_status_bar_text;
     uint32_t bottom_status_bar_text;
+    uint32_t top_status_bar_line;
+    uint32_t middle_status_bar_line;
+    uint32_t bottom_status_bar_line;
     uint32_t top_status_bar_text_foreground;
     uint32_t middle_status_bar_text_foreground;
     uint32_t bottom_status_bar_text_foreground;
+    uint32_t explore_header_text;
+    uint32_t explore_header_text_foreground;
+    uint32_t explore_text;
+    uint32_t explore_text_foreground;
+    uint32_t explore_editable_text;            // editable by war
+    uint32_t explore_editable_text_foreground; // editable by war
+    uint32_t explore_line;
+    uint32_t explore_directory_text;
+    uint32_t explore_directory_text_foreground;
+    uint32_t explore_cursor;
     uint32_t warpoon_text;
     uint32_t warpoon_text_foreground;
     uint32_t warpoon_outline;
     uint32_t warpoon_background;
-    uint32_t warpoon_grid;
-    uint32_t warpoon_grid_text;
+    uint32_t warpoon_gutter;
+    uint32_t warpoon_gutter_text;
+    uint32_t warpoon_line;
+    uint32_t warpoon_cursor;
+    uint32_t preview_outline;
+    uint32_t preview_text;
+    uint32_t preview_background;
+    uint32_t preview_line;
+    uint32_t preview_cursor;
     uint32_t mode_text;
     uint32_t error;
     uint32_t error_text;
     uint32_t background;
-    uint32_t gridline_1;
-    uint32_t gridline_2;
-    uint32_t gridline_3;
-    uint32_t gridline_4;
-    uint32_t gridline_1_foreground;
-    uint32_t gridline_2_foreground;
-    uint32_t gridline_3_foreground;
-    uint32_t gridline_4_foreground;
+    uint32_t line;
+    uint32_t line_foreground;
+    uint32_t line_stressed_1;
+    uint32_t line_stressed_2;
+    uint32_t line_stressed_3;
+    uint32_t line_stressed_4;
+    uint32_t line_stressed_1_foreground;
+    uint32_t line_stressed_2_foreground;
+    uint32_t line_stressed_3_foreground;
+    uint32_t line_stressed_4_foreground;
     uint32_t layer_none;
     uint32_t layer_1;
     uint32_t layer_2;
@@ -1210,40 +1236,48 @@ typedef struct __attribute__((packed)) war_color_body {
     uint32_t layer_8_text_foreground;
     uint32_t layer_9_text_foreground;
     uint32_t layer_multiple_text_foreground;
+    uint32_t audio_line;
+    uint32_t audio_background;
+    uint32_t audio_cursor;
+    uint32_t video_cursor;
     uint32_t gutter;
     uint32_t gutter_text;
+    uint32_t gutter_text_foreground;
+    uint32_t gutter_line;
     uint32_t piano_white_key;
     uint32_t piano_white_key_text;
     uint32_t piano_black_key;
+    uint32_t piano_line;
+    uint32_t playhead;
 } war_color_body;
 
-typedef struct war_color_context {
-    // color
-    char** path;
-    uint32_t* path_size;
-    uint32_t* path_capacity;
-    uint8_t** head;
-    uint64_t* head_size;
-    uint64_t* head_capacity;
-    uint8_t** body;
-    uint64_t* body_capacity;
-    // misc
-    uint64_t* id;
-    uint64_t* timestamp;
-    war_file_type_u32* file_type;
-    dev_t* st_dev;
-    ino_t* st_ino;
-    struct timespec* st_mtim;
-    int* memfd;
-    int* fd;
-    uint32_t config_path_max;
-    uint32_t* free;
-    uint32_t free_count;
-    uint32_t count;
-    uint32_t capacity;
-    uint64_t next_id;
-    uint64_t next_timestamp;
-} war_color_context;
+// typedef struct war_color_context {
+//     // color
+//     char** path;
+//     uint32_t* path_size;
+//     uint32_t* path_capacity;
+//     uint8_t** head;
+//     uint64_t* head_size;
+//     uint64_t* head_capacity;
+//     uint8_t** body;
+//     uint64_t* body_capacity;
+//     // misc
+//     uint64_t* id;
+//     uint64_t* timestamp;
+//     war_file_type_u32* file_type;
+//     dev_t* st_dev;
+//     ino_t* st_ino;
+//     struct timespec* st_mtim;
+//     int* memfd;
+//     int* fd;
+//     uint32_t config_path_max;
+//     uint32_t* free;
+//     uint32_t free_count;
+//     uint32_t count;
+//     uint32_t capacity;
+//     uint64_t next_id;
+//     uint64_t next_timestamp;
+// } war_color_context;
 
 typedef struct war_pipewire_context {
     struct pw_loop* loop;
@@ -1272,18 +1306,18 @@ enum war_command_prompt_types {
     WAR_COMMAND_PROMPT_CAPTURE_LAYER = 3,
 };
 
-typedef struct war_command_context {
-    int* input;
-    uint32_t input_write_index;
-    uint32_t input_read_index;
-    char* text;
-    uint32_t text_write_index;
-    uint32_t text_size;
-    uint8_t prompt_type;
-    char* prompt_text;
-    uint32_t prompt_text_size;
-    uint32_t capacity;
-} war_command_context;
+// typedef struct war_command_context {
+//     int* input;
+//     uint32_t input_write_index;
+//     uint32_t input_read_index;
+//     char* text;
+//     uint32_t text_write_index;
+//     uint32_t text_size;
+//     uint8_t prompt_type;
+//     char* prompt_text;
+//     uint32_t prompt_text_size;
+//     uint32_t capacity;
+// } war_command_context;
 
 typedef struct war_misc_context {
     double bpm;
@@ -1818,13 +1852,862 @@ typedef struct war_text_context {
     uint32_t buffer_count;
 } war_text_context;
 
+typedef uint64_t war_mode_flags;
+typedef enum war_mode_flags_bits {
+    WAR_MODE_NONE = 0,
+    WAR_MODE_ALL = 0xFFFFFFFFFFFFFFFFULL,
+    WAR_MODE_ROLL = 1ULL << 0,
+    WAR_MODE_VIEWS = 1ULL << 1,
+    WAR_MODE_CAPTURE = 1ULL << 2,
+    WAR_MODE_MIDI = 1ULL << 3,
+    WAR_MODE_COMMAND = 1ULL << 4,
+    WAR_MODE_WAV = 1ULL << 5,
+    WAR_MODE_VISUAL = 1ULL << 6,
+    WAR_MODE_CHORD = 1ULL << 7,
+} war_mode_flags_bits;
+
+typedef uint64_t war_keymap_flags;
+typedef enum war_keymap_flags_bits {
+    WAR_KEYMAP_NONE = 0,
+    WAR_KEYMAP_ALL = 0xFFFFFFFFFFFFFFFFULL,
+    WAR_KEYMAP_EXTEND = 1ULL << 0,
+    WAR_KEYMAP_RELEASE = 1ULL << 1,
+    WAR_KEYMAP_NO_REPEAT = 1ULL << 2,
+    WAR_KEYMAP_NO_TIMEOUT = 1ULL << 3,
+    //
+    WAR_KEYMAP_SHARED_LIBRARY = 1ULL << 4,
+    WAR_KEYMAP_PREFIX = 1ULL << 5,
+} war_keymap_flags_bits;
+
+typedef struct war_keymap_context {
+    uint32_t version;
+    //
+    void (**function)(war_env* env);
+    uint8_t* function_count;
+    war_keymap_flags* flags;
+    uint64_t* next_state;
+    //
+    uint32_t state_count;
+    uint32_t state_capacity;
+    uint32_t keysym_capacity;
+    uint32_t mod_capacity;
+    uint32_t function_capacity;
+} war_keymap_context;
+
+#define KEYMAP_3D_INDEX(state, keysym, mod, keymap)                            \
+    ((state) * ((keymap)->keysym_capacity * (keymap)->mod_capacity) +          \
+     (keysym) * (keymap)->mod_capacity + (mod))
+
+typedef struct war_lock_context {
+    atomic_flag config;
+    atomic_flag keymap;
+    atomic_flag color;
+    atomic_flag plugin;
+    atomic_flag command;
+} war_lock_context;
+
+typedef struct war_color_context {
+    uint32_t version;
+    //
+    uint32_t top_status_bar;
+    uint32_t middle_status_bar;
+    uint32_t bottom_status_bar;
+    uint32_t top_status_bar_cursor;
+    uint32_t middle_status_bar_cursor;
+    uint32_t bottom_status_bar_cursor;
+    uint32_t top_status_bar_text;
+    uint32_t middle_status_bar_text;
+    uint32_t bottom_status_bar_text;
+    uint32_t top_status_bar_line;
+    uint32_t middle_status_bar_line;
+    uint32_t bottom_status_bar_line;
+    uint32_t top_status_bar_text_foreground;
+    uint32_t middle_status_bar_text_foreground;
+    uint32_t bottom_status_bar_text_foreground;
+    uint32_t explore_header_text;
+    uint32_t explore_header_text_foreground;
+    uint32_t explore_text;
+    uint32_t explore_text_foreground;
+    uint32_t explore_editable_text;            // editable by war
+    uint32_t explore_editable_text_foreground; // editable by war
+    uint32_t explore_line;
+    uint32_t explore_directory_text;
+    uint32_t explore_directory_text_foreground;
+    uint32_t explore_cursor;
+    uint32_t warpoon_text;
+    uint32_t warpoon_text_foreground;
+    uint32_t warpoon_outline;
+    uint32_t warpoon_background;
+    uint32_t warpoon_gutter;
+    uint32_t warpoon_gutter_text;
+    uint32_t warpoon_line;
+    uint32_t warpoon_cursor;
+    uint32_t preview_outline;
+    uint32_t preview_text;
+    uint32_t preview_background;
+    uint32_t preview_line;
+    uint32_t preview_cursor;
+    uint32_t mode_text;
+    uint32_t error;
+    uint32_t error_text;
+    uint32_t background;
+    uint32_t line;
+    uint32_t line_foreground;
+    uint32_t line_stressed_1;
+    uint32_t line_stressed_2;
+    uint32_t line_stressed_3;
+    uint32_t line_stressed_4;
+    uint32_t line_stressed_1_foreground;
+    uint32_t line_stressed_2_foreground;
+    uint32_t line_stressed_3_foreground;
+    uint32_t line_stressed_4_foreground;
+    uint32_t layer_none;
+    uint32_t layer_1;
+    uint32_t layer_2;
+    uint32_t layer_3;
+    uint32_t layer_4;
+    uint32_t layer_5;
+    uint32_t layer_6;
+    uint32_t layer_7;
+    uint32_t layer_8;
+    uint32_t layer_9;
+    uint32_t layer_multiple;
+    uint32_t layer_none_foreground;
+    uint32_t layer_1_foreground;
+    uint32_t layer_2_foreground;
+    uint32_t layer_3_foreground;
+    uint32_t layer_4_foreground;
+    uint32_t layer_5_foreground;
+    uint32_t layer_6_foreground;
+    uint32_t layer_7_foreground;
+    uint32_t layer_8_foreground;
+    uint32_t layer_9_foreground;
+    uint32_t layer_multiple_foreground;
+    uint32_t layer_none_outline;
+    uint32_t layer_1_outline;
+    uint32_t layer_2_outline;
+    uint32_t layer_3_outline;
+    uint32_t layer_4_outline;
+    uint32_t layer_5_outline;
+    uint32_t layer_6_outline;
+    uint32_t layer_7_outline;
+    uint32_t layer_8_outline;
+    uint32_t layer_9_outline;
+    uint32_t layer_multiple_outline;
+    uint32_t layer_none_outline_foreground;
+    uint32_t layer_1_outline_foreground;
+    uint32_t layer_2_outline_foreground;
+    uint32_t layer_3_outline_foreground;
+    uint32_t layer_4_outline_foreground;
+    uint32_t layer_5_outline_foreground;
+    uint32_t layer_6_outline_foreground;
+    uint32_t layer_7_outline_foreground;
+    uint32_t layer_8_outline_foreground;
+    uint32_t layer_9_outline_foreground;
+    uint32_t layer_multiple_outline_foreground;
+    uint32_t layer_none_text;
+    uint32_t layer_1_text;
+    uint32_t layer_2_text;
+    uint32_t layer_3_text;
+    uint32_t layer_4_text;
+    uint32_t layer_5_text;
+    uint32_t layer_6_text;
+    uint32_t layer_7_text;
+    uint32_t layer_8_text;
+    uint32_t layer_9_text;
+    uint32_t layer_multiple_text;
+    uint32_t layer_none_text_foreground;
+    uint32_t layer_1_text_foreground;
+    uint32_t layer_2_text_foreground;
+    uint32_t layer_3_text_foreground;
+    uint32_t layer_4_text_foreground;
+    uint32_t layer_5_text_foreground;
+    uint32_t layer_6_text_foreground;
+    uint32_t layer_7_text_foreground;
+    uint32_t layer_8_text_foreground;
+    uint32_t layer_9_text_foreground;
+    uint32_t layer_multiple_text_foreground;
+    uint32_t audio_line;
+    uint32_t audio_background;
+    uint32_t audio_cursor;
+    uint32_t video_cursor;
+    uint32_t gutter;
+    uint32_t gutter_text;
+    uint32_t gutter_text_foreground;
+    uint32_t gutter_line;
+    uint32_t piano_white_key;
+    uint32_t piano_white_key_text;
+    uint32_t piano_black_key;
+    uint32_t piano_line;
+    uint32_t playhead;
+} war_color_context;
+
+typedef struct war_command_context {
+    uint32_t version;
+    //
+    void (**function)(war_env* env);
+    uint8_t* function_count;
+    war_keymap_flags* flags;
+    uint64_t* next_state;
+    //
+    uint32_t state_count;
+    uint32_t state_capacity;
+    uint32_t keysym_capacity;
+    uint32_t mod_capacity;
+    uint32_t function_capacity;
+} war_command_context;
+
+typedef struct war_config_context {
+    uint32_t version;
+    //
+    int A_SAMPLE_RATE;
+    double A_SAMPLE_DURATION;
+    double A_TARGET_SAMPLES_FACTOR;
+    int A_CHANNEL_COUNT;
+    int A_NOTE_COUNT;
+    float WR_CAPTURE_THRESHOLD;
+    int A_LAYER_COUNT;
+    int A_LAYERS_IN_RAM;
+    double A_BPM;
+    double BPM_SECONDS_PER_CELL;
+    double SUBDIVISION_SECONDS_PER_CELL;
+    int A_BASE_FREQUENCY;
+    int A_SCHED_FIFO_PRIORITY;
+    int A_BASE_NOTE;
+    int A_EDO;
+    int A_NOTES_MAX;
+    float A_DEFAULT_ATTACK;
+    float A_DEFAULT_SUSTAIN;
+    float A_DEFAULT_RELEASE;
+    float A_DEFAULT_GAIN;
+    double A_DEFAULT_COLUMNS_PER_BEAT;
+    int A_BYTES_NEEDED;
+    int A_BUILDER_DATA_SIZE;
+    int A_PLAY_DATA_SIZE;
+    int A_CAPTURE_DATA_SIZE;
+    int CACHE_FILE_CAPACITY;
+    int CONFIG_PATH_MAX;
+    int A_WARMUP_FRAMES_FACTOR;
+    int WR_VIEWS_SAVED;
+    float WR_COLOR_STEP;
+    double WR_PLAY_CALLBACK_FPS;
+    double WR_CAPTURE_CALLBACK_FPS;
+    int WR_WARPOON_TEXT_COLS;
+    int WR_STATES;
+    int WR_SEQUENCE_COUNT;
+    int WR_SEQUENCE_LENGTH_MAX;
+    int WR_CALLBACK_SIZE;
+    int WR_MODE_COUNT;
+    int WR_KEYSYM_COUNT;
+    int WR_MOD_COUNT;
+    int WR_NOTE_QUADS_MAX;
+    int WR_STATUS_BAR_COLS_MAX;
+    int WR_TEXT_QUADS_MAX;
+    int WR_QUADS_MAX;
+    char* WR_LEADER;
+    int WR_WAYLAND_MSG_BUFFER_SIZE;
+    int WR_WAYLAND_MAX_OBJECTS;
+    int WR_WAYLAND_MAX_OP_CODES;
+    int WR_FN_NAME_LIMIT;
+    int WR_UNDO_NODES_MAX;
+    int WR_UNDO_NODES_CHILDREN_MAX;
+    int WR_TIMESTAMP_LENGTH_MAX;
+    int WR_REPEAT_DELAY_US;
+    int WR_REPEAT_RATE_US;
+    int WR_CURSOR_BLINK_DURATION_US;
+    double WR_FPS;
+    int WR_UNDO_NOTES_BATCH_MAX;
+    int WR_INPUT_SEQUENCE_LENGTH_MAX;
+    int ROLL_POSITION_X_Y;
+    int POOL_ALIGNMENT;
+    int CMD_COUNT;
+    int PC_CONTROL_BUFFER_SIZE;
+    int PC_PLAY_BUFFER_SIZE;
+    int PC_CAPTURE_BUFFER_SIZE;
+    int VK_ATLAS_WIDTH;
+    int VK_ATLAS_HEIGHT;
+    float VK_FONT_PIXEL_HEIGHT;
+    int VK_MAX_FRAMES;
+    int VK_GLYPH_COUNT;
+    int VK_NSGT_DIFF_CAPACITY;
+    int VK_ALIGNMENT;
+    int NSGT_BIN_CAPACITY;
+    int NSGT_FRAME_CAPACITY;
+    int NSGT_FREQUENCY_MIN;
+    int NSGT_FREQUENCY_MAX;
+    float NSGT_ALPHA;
+    float NSGT_SHAPE_FACTOR;
+    int NSGT_WINDOW_LENGTH_MIN;
+    int NSGT_RESOURCE_COUNT;
+    int NSGT_DESCRIPTOR_SET_COUNT;
+    int NSGT_SHADER_COUNT;
+    int NSGT_PIPELINE_COUNT;
+    int NSGT_GRAPHICS_FPS;
+    int NSGT_GROUPS;
+    int NEW_VULKAN_RESOURCE_COUNT;
+    int NEW_VULKAN_DESCRIPTOR_SET_COUNT;
+    int NEW_VULKAN_SHADER_COUNT;
+    int NEW_VULKAN_PIPELINE_COUNT;
+    int NEW_VULKAN_GROUPS;
+    int NEW_VULKAN_NOTE_INSTANCE_MAX;
+    int NEW_VULKAN_TEXT_INSTANCE_MAX;
+    int NEW_VULKAN_LINE_INSTANCE_MAX;
+    int NEW_VULKAN_CURSOR_INSTANCE_MAX;
+    int NEW_VULKAN_HUD_INSTANCE_MAX;
+    int NEW_VULKAN_HUD_CURSOR_INSTANCE_MAX;
+    int NEW_VULKAN_HUD_TEXT_INSTANCE_MAX;
+    int NEW_VULKAN_HUD_LINE_INSTANCE_MAX;
+    int NEW_VULKAN_ATLAS_WIDTH;
+    int NEW_VULKAN_ATLAS_HEIGHT;
+    int NEW_VULKAN_FONT_PIXEL_HEIGHT;
+    int NEW_VULKAN_GLYPH_COUNT;
+    int NEW_VULKAN_SDF_SCALE;
+    int NEW_VULKAN_SDF_PADDING;
+    int NEW_VULKAN_BUFFER_MAX;
+    float NEW_VULKAN_SDF_RANGE;
+    float NEW_VULKAN_SDF_LARGE;
+    int CACHE_NSGT_CAPACITY;
+    int VK_NSGT_VISUAL_QUAD_CAPACITY;
+    int VK_NSGT_VISUAL_RESOURCE_COUNT;
+    float DEFAULT_ALPHA_SCALE;
+    float DEFAULT_CURSOR_ALPHA_SCALE;
+    float DEFAULT_PLAYBACK_BAR_THICKNESS;
+    float DEFAULT_TEXT_FEATHER;
+    float DEFAULT_TEXT_THICKNESS;
+    float DEFAULT_BOLD_TEXT_FEATHER;
+    float DEFAULT_BOLD_TEXT_THICKNESS;
+    float WINDOWED_TEXT_FEATHER;
+    float WINDOWED_TEXT_THICKNESS;
+    float DEFAULT_WINDOWED_ALPHA_SCALE;
+    float DEFAULT_WINDOWED_CURSOR_ALPHA_SCALE;
+    int HUD_COUNT;
+    int HUD_STATUS_BOTTOM_INSTANCE_MAX;
+    int HUD_STATUS_TOP_INSTANCE_MAX;
+    int HUD_STATUS_MIDDLE_INSTANCE_MAX;
+    int HUD_LINE_NUMBERS_INSTANCE_MAX;
+    int HUD_PIANO_INSTANCE_MAX;
+    int HUD_EXPLORE_INSTANCE_MAX;
+    int CURSOR_COUNT;
+    int CURSOR_DEFAULT_INSTANCE_MAX;
+    int LINE_COUNT;
+    int LINE_CELL_INSTANCE_MAX;
+    int LINE_BPM_INSTANCE_MAX;
+    int TEXT_COUNT;
+    int TEXT_STATUS_BOTTOM_INSTANCE_MAX;
+    int TEXT_STATUS_TOP_INSTANCE_MAX;
+    int TEXT_STATUS_MIDDLE_INSTANCE_MAX;
+    int TEXT_PIANO_INSTANCE_MAX;
+    int TEXT_LINE_NUMBERS_INSTANCE_MAX;
+    int TEXT_RELATIVE_LINE_NUMBERS_INSTANCE_MAX;
+    int TEXT_EXPLORE_INSTANCE_MAX;
+    int TEXT_ERROR_INSTANCE_MAX;
+    int NOTE_COUNT;
+    int NOTE_GRID_INSTANCE_MAX;
+    int HUD_LINE_COUNT;
+    int HUD_LINE_PIANO_INSTANCE_MAX;
+    int HUD_TEXT_COUNT;
+    int HUD_TEXT_STATUS_BOTTOM_INSTANCE_MAX;
+    int HUD_TEXT_STATUS_TOP_INSTANCE_MAX;
+    int HUD_TEXT_STATUS_MIDDLE_INSTANCE_MAX;
+    int HUD_TEXT_PIANO_INSTANCE_MAX;
+    int HUD_TEXT_LINE_NUMBERS_INSTANCE_MAX;
+    int HUD_TEXT_RELATIVE_LINE_NUMBERS_INSTANCE_MAX;
+    int HUD_TEXT_EXPLORE_INSTANCE_MAX;
+    int HUD_TEXT_ERROR_INSTANCE_MAX;
+    int HUD_CURSOR_COUNT;
+    int HUD_CURSOR_DEFAULT_INSTANCE_MAX;
+    // pool context
+    int POOL_MAX_ALLOCATIONS;
+    // keymap context
+    uint32_t KEYMAP_STATE_CAPACITY;
+    uint32_t KEYMAP_KEYSYM_CAPACITY;
+    uint32_t KEYMAP_MOD_CAPACITY;
+    uint32_t KEYMAP_FUNCTION_CAPACITY;
+} war_config_context;
+
+typedef uint64_t war_event_flags;
+typedef enum war_event_flags_bits {
+    WAR_EVENT_NONE = 0,
+    WAR_EVENT_ALL = 0xFFFFFFFFFFFFFFFFULL,
+    WAR_EVENT_MOVE_CURSOR_UP = 1ULL << 0,
+    WAR_EVENT_MOVE_CURSOR_DOWN = 1ULL << 1,
+    WAR_EVENT_MOVE_CURSOR_LEFT = 1ULL << 2,
+    WAR_EVENT_MOVE_CURSOR_RIGHT = 1ULL << 3,
+    WAR_EVENT_MOVE_CURSOR_UP_LEAP = 1ULL << 4,
+    WAR_EVENT_MOVE_CURSOR_DOWN_LEAP = 1ULL << 5,
+    WAR_EVENT_MOVE_CURSOR_LEFT_LEAP = 1ULL << 6,
+    WAR_EVENT_MOVE_CURSOR_RIGHT_LEAP = 1ULL << 7,
+} war_event_flags_bits;
+
+typedef struct war_hook_context {
+    war_mode_flags* mode_flags;
+    war_event_flags* event_flags;
+    void* (*function)(war_env* env);
+} war_hook_context;
+
+typedef uint32_t war_pool_id;
+typedef enum war_pool_id_enum {
+    //-------------------------------------------------------------------------
+    // AUDIO
+    //-------------------------------------------------------------------------
+    WAR_POOL_ID_AUDIO_CTX_PW,
+    WAR_POOL_ID_AUDIO_CTX_PW_PLAY_BUILDER_DATA,
+    WAR_POOL_ID_AUDIO_CTX_PW_CAPTURE_BUILDER_DATA,
+    WAR_POOL_ID_AUDIO_CTX_PW_PLAY_DATA,
+    WAR_POOL_ID_AUDIO_CTX_PW_CAPTURE_DATA,
+    WAR_POOL_ID_AUDIO_CONTROL_PAYLOAD,
+    WAR_POOL_ID_AUDIO_TMP_CONTROL_PAYLOAD,
+    WAR_POOL_ID_AUDIO_PC_CONTROL_CMD,
+    WAR_POOL_ID_AUDIO_PLAY_READ_COUNT,
+    WAR_POOL_ID_AUDIO_PLAY_LAST_READ_TIME,
+    WAR_POOL_ID_AUDIO_CAPTURE_READ_COUNT,
+    WAR_POOL_ID_AUDIO_CAPTURE_LAST_READ_TIME,
+    //-------------------------------------------------------------------------
+    // MAIN
+    //-------------------------------------------------------------------------
+    // ctx sequence
+    WAR_POOL_ID_MAIN_CTX_SEQUENCE,
+    WAR_POOL_ID_MAIN_CTX_SEQUENCE_PTRS,
+    WAR_POOL_ID_MAIN_CTX_SEQUENCE_SEQUENCE,
+    WAR_POOL_ID_MAIN_CTX_SEQUENCE_BUFFER_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_SEQUENCE_STAGE,
+    // ctx hud
+    WAR_POOL_ID_MAIN_CTX_HUD,
+    WAR_POOL_ID_MAIN_CTX_HUD_PTRS,
+    WAR_POOL_ID_MAIN_CTX_HUD_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_HUD_STAGE,
+    // ctx hud line
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE,
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE_PTRS,
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE_LINE_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_HUD_LINE_STAGE,
+    // ctx cursor
+    WAR_POOL_ID_MAIN_CTX_CURSOR,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_PTRS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_STAGE,
+    // ctx hud cursor
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_PTRS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_VISUAL_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_VISUAL_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_VISUAL_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_VISUAL_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_STAGE,
+    // ctx line
+    WAR_POOL_ID_MAIN_CTX_LINE,
+    WAR_POOL_ID_MAIN_CTX_LINE_PTRS,
+    WAR_POOL_ID_MAIN_CTX_LINE_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_LINE_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_LINE_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_LINE_LINE_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_LINE_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_LINE_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_LINE_STAGE,
+    // ctx text
+    WAR_POOL_ID_MAIN_CTX_TEXT,
+    WAR_POOL_ID_MAIN_CTX_TEXT_PTRS,
+    WAR_POOL_ID_MAIN_CTX_TEXT_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_TEXT_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_TEXT_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_TEXT_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_TEXT_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_TEXT_STAGE,
+    // ctx hud text
+    WAR_POOL_ID_MAIN_CTX_HUD_TEXT,
+    WAR_POOL_ID_MAIN_CTX_HUD_TEXT_PTRS,
+    WAR_POOL_ID_MAIN_CTX_HUD_TEXT_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_TEXT_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_TEXT_WIDTH_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_HUD_TEXT_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_HUD_TEXT_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_HUD_TEXT_STAGE,
+    // misc context
+    WAR_POOL_ID_MAIN_CTX_MISC,
+    // vk context
+    WAR_POOL_ID_MAIN_CTX_VK,
+    WAR_POOL_ID_MAIN_CTX_VK_IN_FLIGHT_FENCES,
+    WAR_POOL_ID_MAIN_CTX_VK_QUADS_VERTEX_BUFFER_MAPPED,
+    WAR_POOL_ID_MAIN_CTX_VK_QUADS_INDEX_BUFFER_MAPPED,
+    WAR_POOL_ID_MAIN_CTX_VK_QUADS_INSTANCE_BUFFER_MAPPED,
+    WAR_POOL_ID_MAIN_CTX_VK_GLYPHS,
+    WAR_POOL_ID_MAIN_CTX_VK_TEXT_VERTEX_BUFFER_MAPPED,
+    WAR_POOL_ID_MAIN_CTX_VK_TEXT_INSTANCE_BUFFER_MAPPED,
+    WAR_POOL_ID_MAIN_CTX_VK_TEXT_INDEX_BUFFER_MAPPED,
+    // nsgt context
+    WAR_POOL_ID_MAIN_CTX_NSGT,
+    WAR_POOL_ID_MAIN_CTX_NSGT_MEMORY_PROPERTY_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_USAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_BUFFER,
+    WAR_POOL_ID_MAIN_CTX_NSGT_MEMORY_REQUIREMENTS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_DEVICE_MEMORY,
+    WAR_POOL_ID_MAIN_CTX_NSGT_MAP,
+    WAR_POOL_ID_MAIN_CTX_NSGT_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_NSGT_DESCRIPTOR_BUFFER_INFO,
+    WAR_POOL_ID_MAIN_CTX_NSGT_COMPUTE_DESCRIPTOR_IMAGE_INFO,
+    WAR_POOL_ID_MAIN_CTX_NSGT_GRAPHICS_DESCRIPTOR_IMAGE_INFO,
+    WAR_POOL_ID_MAIN_CTX_NSGT_IMAGE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_IMAGE_VIEW,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FORMAT,
+    WAR_POOL_ID_MAIN_CTX_NSGT_EXTENT_3D,
+    WAR_POOL_ID_MAIN_CTX_NSGT_IMAGE_USAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_SHADER_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_DESCRIPTOR_SET_LAYOUT_BINDING,
+    WAR_POOL_ID_MAIN_CTX_NSGT_WRITE_DESCRIPTOR_SET,
+    WAR_POOL_ID_MAIN_CTX_NSGT_MAPPED_MEMORY_RANGE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_BUFFER_MEMORY_BARRIER,
+    WAR_POOL_ID_MAIN_CTX_NSGT_IMAGE_MEMORY_BARRIER,
+    WAR_POOL_ID_MAIN_CTX_NSGT_IMAGE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_IMAGE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NSGT_ACCESS_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_ACCESS_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_PIPELINE_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_SRC_IDX,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_DST_IDX,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_SIZE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_SRC_OFFSET,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_DST_OFFSET,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_DATA,
+    WAR_POOL_ID_MAIN_CTX_NSGT_FN_DATA_2,
+    WAR_POOL_ID_MAIN_CTX_NSGT_DESCRIPTOR_SET,
+    WAR_POOL_ID_MAIN_CTX_NSGT_DESCRIPTOR_SET_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NSGT_IMAGE_DESCRIPTOR_TYPE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_DESCRIPTOR_POOL,
+    WAR_POOL_ID_MAIN_CTX_NSGT_DESCRIPTOR_IMAGE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NSGT_SHADER_MODULE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_SHADER_STAGE_CREATE_INFO,
+    WAR_POOL_ID_MAIN_CTX_NSGT_SHADER_STAGE_FLAG_BITS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_SHADER_PATH,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_SET_IDX,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_SHADER_IDX,
+    WAR_POOL_ID_MAIN_CTX_NSGT_STRUCTURE_TYPE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PUSH_CONSTANT_SHADER_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PUSH_CONSTANT_SIZE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_BIND_POINT,
+    WAR_POOL_ID_MAIN_CTX_NSGT_SIZE,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_DISPATCH_GROUP,
+    WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_LOCAL_SIZE,
+    // new_vulkan context
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_MEMORY_PROPERTY_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_USAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_MEMORY_REQUIREMENTS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DEVICE_MEMORY,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_MAP,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_CAPACITY,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_BUFFER_INFO,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_COMPUTE_DESCRIPTOR_IMAGE_INFO,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_GRAPHICS_DESCRIPTOR_IMAGE_INFO,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_VIEW,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FORMAT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_EXTENT_3D,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_USAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SHADER_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_SET_LAYOUT_BINDING,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_WRITE_DESCRIPTOR_SET,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_MAPPED_MEMORY_RANGE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_MEMORY_BARRIER,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_MEMORY_BARRIER,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_IMAGE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_ACCESS_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_ACCESS_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PIPELINE_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_SRC_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_DST_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_SIZE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_SIZE_2,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_SRC_OFFSET,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_DST_OFFSET,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_DATA,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_DATA_2,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_SET,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_SET_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_DESCRIPTOR_TYPE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_POOL,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_IMAGE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SHADER_MODULE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_SHADER_STAGE_CREATE_INFO,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SHADER_STAGE_FLAG_BITS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SHADER_PATH,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_SET_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_SHADER_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_STRUCTURE_TYPE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PUSH_CONSTANT_SHADER_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PUSH_CONSTANT_SIZE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_BIND_POINT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SIZE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_DISPATCH_GROUP,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_LOCAL_SIZE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VIEWPORT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_RECT_2D,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IN_DESCRIPTOR_SET,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_INPUT_BINDING_DESCRIPTION,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_INPUT_RATE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_ATTRIBUTE_COUNT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_STRIDE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_OFFSETS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_FORMATS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_VERTEX_INPUT_BINDING_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_GLYPH_INFO,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_PUSH_CONSTANT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_COLOR_BLEND_ATTACHMENT_STATE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_INSTANCE_STAGE_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_Z_LAYER,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DIRTY_BUFFER,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DRAW_BUFFER,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_INSTANCE_COUNT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_FIRST_INSTANCE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_PIPELINE_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_FIRST_INSTANCE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_INSTANCE_COUNT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_SIZE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_SRC_OFFSET,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_ACCESS_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_PIPELINE_STAGE_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_IMAGE_LAYOUT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_SRC_RESOURCE_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_DST_RESOURCE_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PIPELINE_IDX,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PAN_X,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PAN_Y,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PAN_FACTOR_X,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PAN_FACTOR_Y,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PTRS_BUFFER_PUSH_CONSTANT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_NOTE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_TEXT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_LINE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_CURSOR,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_HUD,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_HUD_CURSOR,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_HUD_TEXT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_HUD_LINE,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PTRS_BUFFER_VIEWPORT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_VIEWPORT,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PTRS_BUFFER_RECT_2D,
+    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_RECT_2D,
+    // env
+    WAR_POOL_ID_MAIN_ENV,
+    // command context
+    WAR_POOL_ID_MAIN_CTX_COMMAND,
+    WAR_POOL_ID_MAIN_CTX_COMMAND_INPUT,
+    WAR_POOL_ID_MAIN_CTX_COMMAND_TEXT,
+    WAR_POOL_ID_MAIN_CTX_COMMAND_PROMPT,
+    // status context
+    WAR_POOL_ID_MAIN_CTX_STATUS,
+    WAR_POOL_ID_MAIN_CTX_STATUS_TOP,
+    WAR_POOL_ID_MAIN_CTX_STATUS_MIDDLE,
+    WAR_POOL_ID_MAIN_CTX_STATUS_BOTTOM,
+    // char input
+    WAR_POOL_ID_MAIN_CHAR_INPUT,
+    // play context
+    WAR_POOL_ID_MAIN_CTX_PLAY,
+    WAR_POOL_ID_MAIN_CTX_PLAY_KEY_LAYERS,
+    WAR_POOL_ID_MAIN_CTX_PLAY_KEYS,
+    // capture context
+    WAR_POOL_ID_MAIN_CTX_CAPTURE,
+    // capture_wav
+    WAR_POOL_ID_MAIN_CAPTURE_WAV,
+    WAR_POOL_ID_MAIN_CAPTURE_WAV_FNAME,
+    // cache
+    WAR_POOL_ID_MAIN_CACHE_FILE,
+    WAR_POOL_ID_MAIN_CACHE_FILE_ID,
+    WAR_POOL_ID_MAIN_CACHE_FILE_TIMESTAMP,
+    WAR_POOL_ID_MAIN_CACHE_FILE_FILE,
+    WAR_POOL_ID_MAIN_CACHE_FILE_TYPE,
+    WAR_POOL_ID_MAIN_CACHE_FILE_INODE,
+    WAR_POOL_ID_MAIN_CACHE_FILE_DEVICE,
+    WAR_POOL_ID_MAIN_CACHE_FILE_FD_SIZE,
+    WAR_POOL_ID_MAIN_CACHE_FILE_MEMFD_SIZE,
+    WAR_POOL_ID_MAIN_CACHE_FILE_MEMFD_CAPACITY,
+    WAR_POOL_ID_MAIN_CACHE_FILE_FD,
+    WAR_POOL_ID_MAIN_CACHE_FILE_MEMFD,
+    WAR_POOL_ID_MAIN_CACHE_FILE_FREE,
+    // map_wav
+    WAR_POOL_ID_MAIN_MAP_WAV,
+    WAR_POOL_ID_MAIN_MAP_WAV_ID,
+    WAR_POOL_ID_MAIN_MAP_WAV_FNAME,
+    WAR_POOL_ID_MAIN_MAP_WAV_FNAME_SIZE,
+    // color
+    WAR_POOL_ID_MAIN_CTX_COLOR,
+    // layres
+    WAR_POOL_ID_MAIN_LAYERS_ACTIVE,
+    // Colors
+    WAR_POOL_ID_MAIN_COLORS,
+    // views
+    WAR_POOL_ID_MAIN_VIEWS_COL,
+    WAR_POOL_ID_MAIN_VIEWS_ROW,
+    WAR_POOL_ID_MAIN_VIEWS_LEFT_COL,
+    WAR_POOL_ID_MAIN_VIEWS_RIGHT_COL,
+    WAR_POOL_ID_MAIN_VIEWS_BOTTOM_ROW,
+    WAR_POOL_ID_MAIN_VIEWS_TOP_ROW,
+    WAR_POOL_ID_MAIN_VIEWS_WARPOON_TEXT,
+    WAR_POOL_ID_MAIN_VIEWS_WARPOON_TEXT_ROWS,
+    // FSM CONTEXT
+    WAR_POOL_ID_MAIN_CTX_FSM,
+    WAR_POOL_ID_MAIN_CTX_FSM_FUNCTION,
+    WAR_POOL_ID_MAIN_CTX_FSM_FUNCTION_TYPE,
+    WAR_POOL_ID_MAIN_CTX_FSM_NAME,
+    WAR_POOL_ID_MAIN_CTX_FSM_IS_TERMINAL,
+    WAR_POOL_ID_MAIN_CTX_FSM_HANDLE_RELEASE,
+    WAR_POOL_ID_MAIN_CTX_FSM_HANDLE_TIMEOUT,
+    WAR_POOL_ID_MAIN_CTX_FSM_HANDLE_REPEAT,
+    WAR_POOL_ID_MAIN_CTX_FSM_IS_PREFIX,
+    WAR_POOL_ID_MAIN_CTX_FSM_NEXT_STATE,
+    WAR_POOL_ID_MAIN_CTX_FSM_CWD,
+    WAR_POOL_ID_MAIN_CTX_FSM_CURRENT_FILE_PATH,
+    WAR_POOL_ID_MAIN_CTX_FSM_EXT,
+    WAR_POOL_ID_MAIN_CTX_FSM_KEY_DOWN,
+    WAR_POOL_ID_MAIN_CTX_FSM_KEY_LAST_EVENT_US,
+    // quads vertices
+    WAR_POOL_ID_MAIN_QUAD_VERTICES,
+    WAR_POOL_ID_MAIN_QUAD_INDICES,
+    WAR_POOL_ID_MAIN_TRANSPARENT_QUAD_VERTICES,
+    WAR_POOL_ID_MAIN_TRANSPARENT_QUAD_INDICES,
+    WAR_POOL_ID_MAIN_TEXT_VERTICES,
+    WAR_POOL_ID_MAIN_TEXT_INDICES,
+    // note quads
+    WAR_POOL_ID_MAIN_NOTE_QUADS_ALIVE,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_ID,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_POS_X,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_POS_Y,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_LAYER,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_SIZE_X,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_NAVIGATION_X,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_NAVIGATION_X_NUMERATOR,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_NAVIGATION_X_DENOMINATOR,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_SIZE_X_NUMERATOR,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_SIZE_X_DENOMINATOR,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_COLOR,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_OUTLINE_COLOR,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_GAIN,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_VOICE,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_HIDDEN,
+    WAR_POOL_ID_MAIN_NOTE_QUADS_MUTE,
+    // keydown, keylasteventus, msgbuffer, pc_window_render, payload, input
+    // sequence
+    WAR_POOL_ID_MAIN_KEY_DOWN,
+    WAR_POOL_ID_MAIN_KEY_LAST_EVENT_US,
+    WAR_POOL_ID_MAIN_MSG_BUFFER,
+    WAR_POOL_ID_MAIN_OBJ_OP,
+    WAR_POOL_ID_MAIN_PC_CONTROL_CMD,
+    WAR_POOL_ID_MAIN_CONTROL_PAYLOAD,
+    WAR_POOL_ID_MAIN_TMP_CONTROL_PAYLOAD,
+    WAR_POOL_ID_MAIN_INPUT_SEQUENCE,
+    WAR_POOL_ID_MAIN_PROMPT,
+    WAR_POOL_ID_MAIN_CWD,
+    // undo tree
+    WAR_POOL_ID_MAIN_UNDO_TREE,
+    WAR_POOL_ID_MAIN_UNDO_NODE_ID,
+    WAR_POOL_ID_MAIN_UNDO_NODE_SEQ_NUM,
+    WAR_POOL_ID_MAIN_UNDO_NODE_BRANCH_ID,
+    WAR_POOL_ID_MAIN_UNDO_NODE_COMMAND,
+    WAR_POOL_ID_MAIN_UNDO_NODE_PAYLOAD,
+    WAR_POOL_ID_MAIN_UNDO_NODE_CURSOR_POS_X,
+    WAR_POOL_ID_MAIN_UNDO_NODE_CURSOR_POS_Y,
+    WAR_POOL_ID_MAIN_UNDO_NODE_LEFT_COL,
+    WAR_POOL_ID_MAIN_UNDO_NODE_RIGHT_COL,
+    WAR_POOL_ID_MAIN_UNDO_NODE_TOP_ROW,
+    WAR_POOL_ID_MAIN_UNDO_NODE_BOTTOM_ROW,
+    WAR_POOL_ID_MAIN_UNDO_NODE_TIMESTAMP,
+    WAR_POOL_ID_MAIN_UNDO_NODE_PARENT,
+    WAR_POOL_ID_MAIN_UNDO_NODE_NEXT,
+    WAR_POOL_ID_MAIN_UNDO_NODE_PREV,
+    WAR_POOL_ID_MAIN_UNDO_NODE_ALT_NEXT,
+    WAR_POOL_ID_MAIN_UNDO_NODE_ALT_PREV,
+    //-------------------------------------------------------------------------
+    // SHARED
+    //-------------------------------------------------------------------------
+    // ctx config
+    WAR_POOL_ID_SHARED_CTX_CONFIG,
+    // ctx keymap
+    WAR_POOL_ID_MAIN_CTX_KEYMAP,
+    WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION,
+    WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION_COUNT,
+    WAR_POOL_ID_MAIN_CTX_KEYMAP_FLAGS,
+    WAR_POOL_ID_MAIN_CTX_KEYMAP_NEXT_STATE,
+    //
+    WAR_POOL_ID_COUNT,
+} war_pool_id_enum;
+
+typedef struct war_pool_context {
+    uint32_t version;
+    //
+    uint64_t* size;
+    uint64_t* offset;
+    uint32_t* alignment;
+    war_pool_id* id;
+    //
+    uint8_t* pool;
+    //
+    uint32_t max_allocations;
+    uint32_t count;
+    uint64_t total_size;
+} war_pool_context;
+
+typedef uint64_t war_file_flags;
+typedef enum war_file_flags_bits {
+    WAR_FILE_NONE = 0,
+    WAR_FILE_ALL = 0xFFFFFFFFFFFFFFFFULL,
+    WAR_FILE_REGULAR = 1ULL << 0,
+    WAR_FILE_DIRECTORY = 1ULL << 1,
+    WAR_FILE_SYMLINK = 1ULL << 2,
+} war_file_flags_bits;
+
+typedef struct war_file_context {
+    war_file_flags* flags;
+    char* name;
+    uint64_t* parent;
+    //
+    uint64_t* children;
+    uint64_t* children_count;
+    //
+    uint64_t count;
+    uint64_t children_max;
+    uint64_t name_capacity;
+} war_file_context;
+
 struct war_env {
     war_atomics* atomics;
     war_color_context* ctx_color;
     war_lua_context* ctx_lua;
     war_play_context* ctx_play;
     war_capture_context* ctx_capture;
-    war_command_context* ctx_command;
+    // war_command_context* ctx_command;
     war_pool* pool_wr;
     war_file* capture_wav;
     war_fsm_context* ctx_fsm;
@@ -1833,6 +2716,8 @@ struct war_env {
     war_new_vulkan_context* ctx_new_vulkan;
     war_cursor_context* ctx_cursor;
     war_misc_context* ctx_misc;
+    // war_hook_context* hook;
+    void** plugins;
 };
 
 #endif // WAR_DATA_H

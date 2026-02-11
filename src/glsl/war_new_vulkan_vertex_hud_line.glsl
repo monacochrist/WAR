@@ -17,6 +17,8 @@ layout(location = 2) in vec2 in_instance_size;   // span in X/Y
 layout(location = 3) in float in_width;          // thickness
 layout(location = 4) in vec4 in_color;
 
+layout(location = 8) in uint in_flags;
+
 layout(push_constant) uniform PushConstants {
     layout(offset = 0) vec2 cell_size;
     layout(offset = 8) vec2 panning;
@@ -26,8 +28,10 @@ layout(push_constant) uniform PushConstants {
 } pc;
 
 layout(location = 0) out vec4 frag_color;
+flat layout(location = 1) out uint frag_flags;
 
 void main() {
+    frag_flags = in_flags;
     vec2 quadSizePx = in_instance_size * pc.cell_size * pc.zoom;
     vec2 perpSizePx; // perpendicular thickness
 

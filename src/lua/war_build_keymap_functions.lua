@@ -62,17 +62,17 @@ local function get_function_names()
 end
 
 local function build_keymap_functions(function_names)
-    local file_path = "build/h/war_build_keymap_functions.h"
+    local file_path = "src/h/war_build_keymap_functions.h"
     local file = io.open(file_path, "w")
     if not file then
         print("could not open " .. file_path)
         return
     end
     local license_header = get_license_header() .. "\n"
-    local file_banner = get_file_banner(file_path, "../../src/lua/war_build_keymap_functions.lua") .. "\n"
+    local file_banner = get_file_banner(file_path, "src/lua/war_build_keymap_functions.lua") .. "\n"
     local keymap_macros_content = ""
     local header_content =
-    "#ifndef WAR_BUILD_KEYMAP_FUNCTIONS_H\n#define WAR_BUILD_KEYMAP_FUNCTIONS_H\n\n#include \"../../src/h/war_data.h\"\n#include \"../../src/h/war_keymap_functions.h\"\n\n#include <string.h>\n\n"
+    "#ifndef WAR_BUILD_KEYMAP_FUNCTIONS_H\n#define WAR_BUILD_KEYMAP_FUNCTIONS_H\n\n#include \"war_data.h\"\n#include \"war_keymap_functions.h\"\n\n#include <string.h>\n\n"
     local macro_content_header = "static inline void (*war_build_keymap_functions(const char* name))(war_env*) {\n"
     local macro_content_body = ""
     for i, name in ipairs(function_names) do

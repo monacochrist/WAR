@@ -11,8 +11,8 @@
 #ifndef WAR_FUNCTIONS_H
 #define WAR_FUNCTIONS_H
 
-#include "h/war_data.h"
-#include "h/war_debug_macros.h"
+#include "war_data.h"
+#include "war_debug_macros.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -492,8 +492,8 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(VkImageMemoryBarrier);
             else if (strcmp(type, "VkSampler") == 0)
                 type_size = sizeof(VkSampler);
-            else if (strcmp(type, "war_command_context") == 0)
-                type_size = sizeof(war_command_context);
+            // else if (strcmp(type, "war_command_context") == 0)
+            //     type_size = sizeof(war_command_context);
             else if (strcmp(type, "war_play_context") == 0)
                 type_size = sizeof(war_play_context);
             else if (strcmp(type, "war_nsgt_context") == 0)
@@ -638,6 +638,18 @@ static inline void* war_pool_alloc(war_pool* pool, size_t size) {
     void* ptr = pool->pool_ptr;
     pool->pool_ptr += size;
     return ptr;
+}
+
+static inline void* war_pool_alloc_new(war_pool_context* ctx_pool,
+                                       war_pool_id id) {
+    for (uint32_t i = 0; i < ctx_pool->count; i++) {
+        if (ctx_pool->id[i] == id) {
+            assert(ctx_pool->pool + ctx_pool->offset[i]);
+            return ctx_pool->pool + ctx_pool->offset[i];
+        }
+    }
+    call_king_terry("no pool id found");
+    return NULL;
 }
 
 // --------------------------

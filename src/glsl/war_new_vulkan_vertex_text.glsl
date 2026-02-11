@@ -21,6 +21,8 @@ layout(location = 6) in float in_instance_ascent;
 layout(location = 7) in float in_instance_descent;
 layout(location = 8) in vec4 in_color;
 
+layout(location = 12) in uint in_flags;
+
 layout(push_constant) uniform PushConstants {
     vec2  cell_size;
     vec2  panning;
@@ -31,9 +33,11 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) out vec2 frag_uv;
 layout(location = 1) out vec4 frag_color;
+flat layout(location = 2) out uint frag_flags;
 
 // Full main for per-glyph alignment
 void main() {
+    frag_flags = in_flags;
     vec2 cellSizePx = in_instance_size * pc.cell_size * pc.zoom;
     vec2 glyphSizePx = cellSizePx * in_instance_glyph_scale;
 
