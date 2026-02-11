@@ -1,7 +1,7 @@
 # Maintainer: Monaco Christ <your-email@example.com>
 pkgname=war-devel
 pkgver=0.0.0        # static pkgver
-pkgrel=7
+pkgrel=9
 pkgdesc="WAR development files (headers, scripts)"
 arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
