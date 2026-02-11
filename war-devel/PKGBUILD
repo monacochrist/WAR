@@ -1,20 +1,35 @@
 # Maintainer: Monaco Christ <your-email@example.com>
 pkgname=war-devel
 pkgver=0.0.0        # static pkgver
-pkgrel=10
+pkgrel=11
 pkgdesc="WAR development files (headers, scripts)"
 arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
 depends=('lua' 'pipewire')
 makedepends=('gcc' 'glslang' 'pkgconf' 'lua')
-source=("WAR::git+https://github.com/monacochrist/WAR.git")
+source=("git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
 build() {
     cd "$srcdir/WAR" || exit 1
+
+    # Build headers
     make H_BUILD_DIR=src/h
-    make clangd
+
+    # Generate .clangd for IDEs
+    CLANGD_DIR="$HOME/.config/war"
+    CLANGD_PATH="$CLANGD_DIR/.clangd"
+    mkdir -p "$CLANGD_DIR"
+    PIPEWIRE_CFLAGS="$(pkg-config --cflags libpipewire-0.3)"
+    {
+        echo "CompileFlags:"
+        echo "  Add:"
+        for flag in -I"$srcdir/WAR/src/h" -D_REENTRANT $PIPEWIRE_CFLAGS; do
+            echo "    - $flag"
+        done
+    } > "$CLANGD_PATH"
+    echo ".clangd generated at $CLANGD_PATH"
 }
 
 package() {
@@ -26,9 +41,7 @@ package() {
 
     # Install pkg-config file
     install -d "$pkgdir/usr/lib/pkgconfig"
-    local version="$(git log -1 --format=%cd --date=format:%Y%m%d%H%M)-$(git rev-parse --short HEAD)"
-
-    # Write .pc with fully expanded Cflags
+    version="$(git log -1 --format=%cd --date=format:%Y%m%d%H%M)-$(git rev-parse --short HEAD)"
     cat > "$pkgdir/usr/lib/pkgconfig/war-devel.pc" <<EOF
 prefix=/usr
 includedir=\${prefix}/include/war
