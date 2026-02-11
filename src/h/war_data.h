@@ -11,7 +11,7 @@
 #ifndef WAR_DATA_H
 #define WAR_DATA_H
 
-#include <pipewire/stream.h>
+#include <pipewire-0.3/pipewire/stream.h>
 #include <ft2build.h>
 #include <luajit-2.1/lauxlib.h>
 #include <luajit-2.1/lua.h>
