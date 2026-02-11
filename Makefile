@@ -211,7 +211,7 @@ PREFIX ?= /usr
 INCLUDEDIR := $(PREFIX)/include/war
 SHAREDIR := $(PREFIX)/share/war
 PCDIR := $(PREFIX)/lib/pkgconfig
-CLANGD_PATH := $(HOME)/.config/.clangd
+CLANGD_PATH := $(HOME)/.config/war/.clangd
 
 .PHONY: install-devel clean-devel
 
