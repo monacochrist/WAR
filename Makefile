@@ -206,49 +206,16 @@ gcc_check:
 #-----------------------------------------------------------------------------
 # war-devel
 #-----------------------------------------------------------------------------
-WAR_VERSION := 0.1.0-nightly-$(shell date +%Y%m%d%H%M)
 PREFIX ?= /usr
 INCLUDEDIR := $(PREFIX)/include/war
-PCDIR := $(PREFIX)/lib/pkgconfig
-COMPILE_COMMANDS_PATH := $(HOME)/.config/war/compile_commands.json
 
 .PHONY: install-devel clean-devel
 
-install-devel: $(H_BUILD_FILES)
+install-devel:
 	@echo "Installing WAR development files..."
-	# Install headers
-	@mkdir -p $(INCLUDEDIR)
-	@cp -r src/h/* $(INCLUDEDIR)/
-
-	# Generate pkg-config file dynamically
-	@mkdir -p $(PCDIR)
-	@PIPEWIRE_CFLAGS="$$(pkg-config --cflags libpipewire-0.3)" ; \
-	{ \
-	  echo "prefix=$(PREFIX)"; \
-	  echo "includedir=\$${prefix}/include/war"; \
-	  echo "Name: war-devel"; \
-	  echo "Description: WAR development files (headers, scripts)"; \
-	  echo "Version: $(WAR_VERSION)"; \
-	  echo "Cflags: -I\$${includedir} -I/usr/include/pipewire-0.3 -I/usr/include/spa-0.2 -D_REENTRANT"; \
-	} > $(PCDIR)/war-devel.pc
-
-	# Generate compile_commands.json in ~/.config/war
-	@mkdir -p $(dir $(COMPILE_COMMANDS_PATH)) ; \
-	PIPEWIRE_CFLAGS="$$(pkg-config --cflags libpipewire-0.3)" ; \
-	CFLAGS="-I/usr/include/war -I/usr/include/pipewire-0.3 -I/usr/include/spa-0.2 -D_REENTRANT $$PIPEWIRE_CFLAGS" ; \
-	echo "[" > $(COMPILE_COMMANDS_PATH) ; \
-	for srcfile in $(shell find src -name '*.c'); do \
-	  echo "  {" >> $(COMPILE_COMMANDS_PATH) ; \
-	  echo "    \"directory\": \"$(PWD)\"," >> $(COMPILE_COMMANDS_PATH) ; \
-	  echo "    \"command\": \"gcc $$CFLAGS -c $$srcfile\"," >> $(COMPILE_COMMANDS_PATH) ; \
-	  echo "    \"file\": \"$$srcfile\"" >> $(COMPILE_COMMANDS_PATH) ; \
-	  echo "  }," >> $(COMPILE_COMMANDS_PATH) ; \
-	done ; \
-	# remove trailing comma and close JSON array
-	sed -i '$$ s/,$$//' $(COMPILE_COMMANDS_PATH) ; \
-	echo "]" >> $(COMPILE_COMMANDS_PATH) ; \
-	echo "compile_commands.json generated at $(COMPILE_COMMANDS_PATH)"
+	@mkdir -p $(DESTDIR)$(INCLUDEDIR)
+	@cp -r src/h/* $(DESTDIR)$(INCLUDEDIR)
 
 clean-devel:
 	@echo "Cleaning WAR development install..."
-	@rm -rf $(INCLUDEDIR) $(PCDIR)/war-devel.pc $(COMPILE_COMMANDS_PATH)
+	@rm -rf $(DESTDIR)$(INCLUDEDIR)

@@ -1,54 +1,39 @@
-# Maintainer: Monaco Christ <your-email@example.com>
 pkgname=war-devel
-pkgver=0.0.0        # static pkgver
-pkgrel=12
-pkgdesc="WAR development files (headers, scripts)"
+pkgver=0.0.0
+pkgrel=14
+pkgdesc="WAR development files (headers)"
 arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
-depends=('lua' 'pipewire')
-makedepends=('gcc' 'glslang' 'pkgconf' 'lua')
-source=("git+https://github.com/monacochrist/WAR.git")
+
+depends=('pipewire')
+makedepends=('git' 'pkgconf')
+
+source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
 build() {
     cd "$srcdir/WAR" || exit 1
-
-    # Build headers
     make H_BUILD_DIR=src/h
-
-    # Generate .clangd for IDEs
-    CLANGD_DIR="$HOME/.config/war"
-    CLANGD_PATH="$CLANGD_DIR/.clangd"
-    mkdir -p "$CLANGD_DIR"
-    PIPEWIRE_CFLAGS="$(pkg-config --cflags libpipewire-0.3)"
-    {
-        echo "CompileFlags:"
-        echo "  Add:"
-        for flag in -I"$srcdir/WAR/src/h" -D_REENTRANT $PIPEWIRE_CFLAGS; do
-            echo "    - $flag"
-        done
-    } > "$CLANGD_PATH"
-    echo ".clangd generated at $CLANGD_PATH"
 }
 
 package() {
     cd "$srcdir/WAR" || exit 1
 
-    # Install headers
-    install -d "$pkgdir/usr/include/war"
-    cp -r src/h/* "$pkgdir/usr/include/war/"
+    make install-devel DESTDIR="$pkgdir" PREFIX=/usr
 
-    # Install pkg-config file
     install -d "$pkgdir/usr/lib/pkgconfig"
+
     version="$(git log -1 --format=%cd --date=format:%Y%m%d%H%M)-$(git rev-parse --short HEAD)"
+
     cat > "$pkgdir/usr/lib/pkgconfig/war-devel.pc" <<EOF
 prefix=/usr
 includedir=\${prefix}/include/war
+
 Name: war-devel
-Description: WAR development files (headers, scripts)
+Description: WAR development files
 Version: $version
-Requires.private: libpipewire-0.3
-Cflags: -I\${includedir} -I/usr/include/pipewire-0.3 -I/usr/include/spa-0.2 -D_REENTRANT
+Requires: libpipewire-0.3
+Cflags: -I\${includedir}
 EOF
 }
