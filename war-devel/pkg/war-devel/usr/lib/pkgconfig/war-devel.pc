@@ -1,0 +1,7 @@
+prefix=/usr
+includedir=${prefix}/include/war
+Name: war-devel
+Description: WAR development files (headers, scripts)
+Version: 202602111831-fe455b44
+Requires.private: libpipewire-0.3
+Cflags: -I${includedir} -I/usr/include/pipewire-0.3 -I/usr/include/spa-0.2 -D_REENTRANT
