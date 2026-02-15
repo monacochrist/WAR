@@ -11,11 +11,14 @@
 #ifndef WAR_DATA_H
 #define WAR_DATA_H
 
-#include <pipewire/stream.h>
+#define _XOPEN_SOURCE 700
+#define _POSIX_C_SOURCE 200809L
+#include <locale.h>
 #include <ft2build.h>
 #include <luajit-2.1/lauxlib.h>
 #include <luajit-2.1/lua.h>
 #include <luajit-2.1/lualib.h>
+#include <pipewire/stream.h>
 #include <spa-0.2/spa/param/audio/raw.h>
 #include <spa-0.2/spa/pod/builder.h>
 #include <stdatomic.h>
@@ -27,6 +30,7 @@
 #include <vulkan/vulkan_core.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <sys/types.h>
 #include FT_FREETYPE_H
 
 enum war_mods {
@@ -2223,6 +2227,17 @@ typedef struct war_config_context {
     uint32_t KEYMAP_KEYSYM_CAPACITY;
     uint32_t KEYMAP_MOD_CAPACITY;
     uint32_t KEYMAP_FUNCTION_CAPACITY;
+    // core directories
+    char* DIR_CONFIG;
+    char* DIR_CACHE;
+    char* DIR_UNDO;
+    char* DIR_OVERRIDE;
+    char* DIR_JUMPLIST;
+    char* DIR_WARPOON;
+    // hot context
+    uint32_t HOT_CONTEXT_NAME_LIMIT;
+    uint32_t HOT_CONTEXT_CMD_LIMIT;
+    char* HOT_CONTEXT_TEMPLATE;
 } war_config_context;
 
 typedef uint64_t war_event_flags;
@@ -2520,8 +2535,6 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_VIEWPORT,
     WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PTRS_BUFFER_RECT_2D,
     WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_RECT_2D,
-    // env
-    WAR_POOL_ID_MAIN_ENV,
     // command context
     WAR_POOL_ID_MAIN_CTX_COMMAND,
     WAR_POOL_ID_MAIN_CTX_COMMAND_INPUT,
@@ -2649,17 +2662,27 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_UNDO_NODE_PREV,
     WAR_POOL_ID_MAIN_UNDO_NODE_ALT_NEXT,
     WAR_POOL_ID_MAIN_UNDO_NODE_ALT_PREV,
-    //-------------------------------------------------------------------------
-    // SHARED
-    //-------------------------------------------------------------------------
     // ctx config
-    WAR_POOL_ID_SHARED_CTX_CONFIG,
+    WAR_POOL_ID_CONFIG_CONTEXT,
     // ctx keymap
     WAR_POOL_ID_MAIN_CTX_KEYMAP,
     WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION,
     WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION_COUNT,
     WAR_POOL_ID_MAIN_CTX_KEYMAP_FLAGS,
     WAR_POOL_ID_MAIN_CTX_KEYMAP_NEXT_STATE,
+    // ctx hot
+    WAR_POOL_ID_HOT_CONTEXT,
+    WAR_POOL_ID_HOT_CONTEXT_FUNCTION,
+    WAR_POOL_ID_HOT_CONTEXT_HANDLE,
+    WAR_POOL_ID_HOT_CONTEXT_FN_ID,
+    // env
+    WAR_POOL_ID_ENV,
+    // pool context
+    WAR_POOL_ID_POOL_CONTEXT,
+    WAR_POOL_ID_POOL_CONTEXT_SIZE,
+    WAR_POOL_ID_POOL_CONTEXT_OFFSET,
+    WAR_POOL_ID_POOL_CONTEXT_ALIGNMENT,
+    WAR_POOL_ID_POOL_CONTEXT_ID,
     //
     WAR_POOL_ID_COUNT,
 } war_pool_id_enum;
@@ -2674,40 +2697,34 @@ typedef struct war_pool_context {
     //
     uint8_t* pool;
     //
-    uint32_t max_allocations;
     uint32_t count;
     uint64_t total_size;
 } war_pool_context;
 
-typedef uint64_t war_file_flags;
-typedef enum war_file_flags_bits {
-    WAR_FILE_NONE = 0,
-    WAR_FILE_ALL = 0xFFFFFFFFFFFFFFFFULL,
-    WAR_FILE_REGULAR = 1ULL << 0,
-    WAR_FILE_DIRECTORY = 1ULL << 1,
-    WAR_FILE_SYMLINK = 1ULL << 2,
-} war_file_flags_bits;
-
-typedef struct war_file_context {
-    war_file_flags* flags;
-    char* name;
-    uint64_t* parent;
+typedef uint32_t war_hot_id;
+typedef enum war_hot_id_enum {
+    WAR_HOT_ID_CONFIG,
+    WAR_HOT_ID_COMMAND,
+    WAR_HOT_ID_COLOR,
+    WAR_HOT_ID_PLUGIN,
+    WAR_HOT_ID_POOL,
+    WAR_HOT_ID_KEYMAP,
     //
-    uint64_t* children;
-    uint64_t* children_count;
+    WAR_HOT_ID_COUNT,
+} war_hot_id_enum;
+typedef struct war_hot_context {
+    void** function;
+    void** handle;
     //
-    uint64_t count;
-    uint64_t children_max;
-    uint64_t name_capacity;
-} war_file_context;
+    uint32_t fn_count;
+    war_hot_id* fn_id;
+} war_hot_context;
 
 struct war_env {
     war_atomics* atomics;
-    war_color_context* ctx_color;
     war_lua_context* ctx_lua;
     war_play_context* ctx_play;
     war_capture_context* ctx_capture;
-    // war_command_context* ctx_command;
     war_pool* pool_wr;
     war_file* capture_wav;
     war_fsm_context* ctx_fsm;
@@ -2716,8 +2733,15 @@ struct war_env {
     war_new_vulkan_context* ctx_new_vulkan;
     war_cursor_context* ctx_cursor;
     war_misc_context* ctx_misc;
-    // war_hook_context* hook;
+    // new
+    war_config_context* ctx_config;
+    war_command_context* ctx_command;
+    war_keymap_context* ctx_keymap;
+    war_pool_context* ctx_pool;
+    war_hook_context* ctx_hook;
     void** plugins;
+    war_color_context* ctx_color;
+    war_hot_context* ctx_hot;
 };
 
 #endif // WAR_DATA_H

@@ -9,8 +9,6 @@
 //-----------------------------------------------------------------------------
 
 #include "h/war_main.h"
-
-
 #include "h/war_build_keymap_functions.h"
 #include "h/war_color.h"
 #include "h/war_config.h"
@@ -59,53 +57,63 @@ int main() {
     //-------------------------------------------------------------------------
     // NEW
     //-------------------------------------------------------------------------
-    
-    //
+    // bootstrap
     war_config_context* tmp_ctx_config = calloc(1, sizeof(war_config_context));
     war_config_default(tmp_ctx_config);
-    war_pool_context* ctx_pool = calloc(1, sizeof(war_pool_context));
-    ctx_pool->max_allocations = tmp_ctx_config->POOL_MAX_ALLOCATIONS;
-    ctx_pool->size = calloc(ctx_pool->max_allocations, sizeof(uint64_t));
-    ctx_pool->offset = calloc(ctx_pool->max_allocations, sizeof(uint64_t));
-    ctx_pool->alignment = calloc(ctx_pool->max_allocations, sizeof(uint32_t));
-    ctx_pool->id = calloc(ctx_pool->max_allocations, sizeof(war_pool_id));
-    war_pool_default(ctx_pool, tmp_ctx_config);
-    //
-    for (uint32_t i = 0; i < ctx_pool->count; i++) {
-        ctx_pool->total_size += ctx_pool->size[i];
+    war_pool_context* tmp_ctx_pool = calloc(1, sizeof(war_pool_context));
+    tmp_ctx_pool->size =
+        calloc(tmp_ctx_config->POOL_MAX_ALLOCATIONS, sizeof(uint64_t));
+    tmp_ctx_pool->offset =
+        calloc(tmp_ctx_config->POOL_MAX_ALLOCATIONS, sizeof(uint64_t));
+    tmp_ctx_pool->alignment =
+        calloc(tmp_ctx_config->POOL_MAX_ALLOCATIONS, sizeof(uint32_t));
+    tmp_ctx_pool->id =
+        calloc(tmp_ctx_config->POOL_MAX_ALLOCATIONS, sizeof(war_pool_id));
+    war_pool_default(tmp_ctx_pool, tmp_ctx_config);
+    for (uint32_t i = 0; i < tmp_ctx_pool->count; i++) {
+        tmp_ctx_pool->total_size += tmp_ctx_pool->size[i];
     }
-    call_king_terry("new pool context total size: %u", ctx_pool->total_size);
-    ctx_pool->pool = mmap(NULL,
-                          ctx_pool->total_size,
-                          PROT_READ | PROT_WRITE,
-                          MAP_PRIVATE | MAP_ANONYMOUS,
-                          -1,
-                          0);
-    assert(ctx_pool->pool);
-    memset(ctx_pool->pool, 0, ctx_pool->total_size);
+    tmp_ctx_pool->pool = mmap(NULL,
+                              tmp_ctx_pool->total_size,
+                              PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS,
+                              -1,
+                              0);
+    memset(tmp_ctx_pool->pool, 0, tmp_ctx_pool->total_size);
+    // war_pool_context* ctx_pool =
+    //     war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_POOL_CONTEXT);
+    // ctx_pool->size =
+    //     war_pool_alloc_new(ctx_pool, WAR_POOL_ID_POOL_CONTEXT_SIZE);
+    // ctx_pool->offset =
+    //     war_pool_alloc_new(ctx_pool, WAR_POOL_ID_POOL_CONTEXT_OFFSET);
+    // ctx_pool->alignment =
+    //     war_pool_alloc_new(ctx_pool, WAR_POOL_ID_POOL_CONTEXT_ALIGNMENT);
+    // ctx_pool->id = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_POOL_CONTEXT_ID);
     war_config_context* ctx_config =
-        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_SHARED_CTX_CONFIG);
-    memcpy(ctx_config, tmp_ctx_config, sizeof(war_config_context));
-    //
-    war_color_context* ctx_color =
-        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_COLOR);
-    war_color_default(ctx_color);
-    //
-    war_keymap_context* ctx_keymap =
-        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP);
-    ctx_keymap->function =
-        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION);
-    ctx_keymap->function_count = war_pool_alloc_new(
-        ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION_COUNT);
-    ctx_keymap->flags =
-        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP_FLAGS);
-    ctx_keymap->next_state =
-        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_KEYMAP_NEXT_STATE);
-    ctx_keymap->state_capacity = ctx_config->KEYMAP_STATE_CAPACITY;
-    ctx_keymap->function_capacity = ctx_config->KEYMAP_FUNCTION_CAPACITY;
-    ctx_keymap->keysym_capacity = ctx_config->KEYMAP_KEYSYM_CAPACITY;
-    ctx_keymap->mod_capacity = ctx_config->KEYMAP_MOD_CAPACITY;
-    war_keymap_default(ctx_keymap);
+        war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_CONFIG_CONTEXT);
+    war_config_default(ctx_config);
+    war_hot_context* ctx_hot =
+        war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT);
+    ctx_hot->function =
+        war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_FUNCTION);
+    ctx_hot->handle =
+        war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_HANDLE);
+    ctx_hot->fn_id =
+        war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_FN_ID);
+    war_env* env = war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_ENV);
+    env->ctx_config = ctx_config;
+    env->ctx_hot = ctx_hot;
+    ctx_hot->fn_id[0] = WAR_HOT_ID_CONFIG;
+    ctx_hot->fn_count = 1;
+    call_king_terry("edo before: %u", ctx_config->A_EDO);
+    war_mkdir(ctx_config->DIR_CONFIG, 0755);
+    war_mkdir(ctx_config->DIR_CACHE, 0755);
+    war_mkdir(ctx_config->DIR_OVERRIDE, 0755);
+    war_mkdir(ctx_config->DIR_UNDO, 0755);
+    war_mkdir(ctx_config->DIR_WARPOON, 0755);
+    war_mkdir(ctx_config->DIR_JUMPLIST, 0755);
+    war_override(ctx_hot->fn_count, ctx_hot->fn_id, env);
+    call_king_terry("edo after: %u", ctx_config->A_EDO);
 
     //-------------------------------------------------------------------------
     // LUA

@@ -15,8 +15,9 @@
 #define WAR_CONFIG_H_VERSION 0
 #endif // WAR_CONFIG_H_VERSION
 
-#include "stdint.h"
 #include "war_data.h"
+
+#include <stdint.h>
 
 // sets defaults, no need to call during override since it's called at init
 static inline void war_config_default(war_config_context* config) {
@@ -200,6 +201,24 @@ static inline void war_config_default(war_config_context* config) {
     config->KEYMAP_KEYSYM_CAPACITY = 256;
     config->KEYMAP_MOD_CAPACITY = 32;
     config->KEYMAP_FUNCTION_CAPACITY = 4;
+    // core directories
+    config->DIR_CONFIG = "$HOME/.config/war";
+    config->DIR_CACHE = "$HOME/.cache/war";
+    config->DIR_UNDO = "$HOME/.cache/war/undo";         // global
+    config->DIR_OVERRIDE = "$HOME/.cache/war/override"; // global
+    config->DIR_JUMPLIST = "$HOME/.cache/war/jumplist"; // global
+    config->DIR_WARPOON = "$HOME/.cache/war/warpoon";   // per project
+    // hot context
+    config->HOT_CONTEXT_NAME_LIMIT = 256;
+    config->HOT_CONTEXT_CMD_LIMIT = 256;
+    config->HOT_CONTEXT_TEMPLATE =
+        "cc -shared -fPIC -std=c99 "
+        "-D_GNU_SOURCE "
+        "-I/usr/include/libdrm "
+        "-I/usr/include/freetype2 "
+        "%s -o %s "
+        "$(pkg-config --cflags --libs libpipewire-0.3 freetype2) "
+        "-ldrm -lvulkan -lluajit-5.1 -lxkbcommon -lasound -lpthread -lm -ldl";
 }
 
 void war_config_override(war_config_context* config);
