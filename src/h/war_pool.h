@@ -1859,6 +1859,11 @@ static inline void war_pool_default(war_pool_context* pool,
                  WAR_POOL_ID_HOT_CONTEXT_FN_ID,
                  sizeof(war_hot_id) * WAR_HOT_ID_COUNT,
                  32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_HOT_CONTEXT_NAME,
+                 sizeof(char*) * WAR_HOT_ID_COUNT,
+                 32);
     // pool context
     war_pool_set(
         pool, config, WAR_POOL_ID_POOL_CONTEXT, sizeof(war_pool_context), 32);

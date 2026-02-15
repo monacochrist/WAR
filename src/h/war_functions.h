@@ -1405,212 +1405,282 @@ static inline uint32_t war_trim_whitespace(char* text) {
     return len;
 }
 
-static inline uint32_t
-war_get_ext(const char* file_name, char* ext, uint32_t name_limit) {
-    if (!file_name || !ext) return 0;
-    memset(ext, 0, name_limit);
-
-    char* last_dot = strrchr(file_name, '.');
-    if (!last_dot) {
-        ext[0] = '\0';
-        return 0; // No extension found
-    }
-
-    // Only copy if there's actually an extension
-    char* ext_start = last_dot + 1;
-    uint32_t ext_len = strlen(ext_start);
-    uint32_t copy_len = (ext_len < name_limit) ? ext_len : name_limit - 1;
-
-    memcpy(ext, ext_start, copy_len);
-    ext[copy_len] = '\0';
-    return copy_len;
-}
-
-static inline void war_mkdir(char* dir, __mode_t mode) {
-    if (!dir || !dir[0]) return;
-    char path[4096] = {0};
+static inline void war_expand_env(const char* in, char* out, size_t out_size) {
     size_t j = 0;
-    // Inline environment variable expansion ($HOME, $VAR, etc.)
-    for (size_t i = 0; dir[i] && j < sizeof(path) - 1; i++) {
-        if (dir[i] == '$') {
+
+    for (size_t i = 0; in[i] && j < out_size - 1; i++) {
+
+        if (in[i] == '$') {
+
             size_t start = i + 1;
             size_t end = start;
-            while ((dir[end] >= 'A' && dir[end] <= 'Z') ||
-                   (dir[end] >= 'a' && dir[end] <= 'z') ||
-                   (dir[end] >= '0' && dir[end] <= '9') || dir[end] == '_') {
+
+            while ((in[end] >= 'A' && in[end] <= 'Z') ||
+                   (in[end] >= 'a' && in[end] <= 'z') ||
+                   (in[end] >= '0' && in[end] <= '9') || in[end] == '_')
                 end++;
-            }
+
             char varname[64] = {0};
             size_t len = end - start;
             if (len >= sizeof(varname)) len = sizeof(varname) - 1;
-            memcpy(varname, dir + start, len);
-            char* val = getenv(varname);
+
+            memcpy(varname, in + start, len);
+
+            const char* val = getenv(varname);
             if (val) {
-                size_t val_len = strlen(val);
-                if (j + val_len >= sizeof(path) - 1)
-                    val_len = sizeof(path) - 1 - j;
-                memcpy(path + j, val, val_len);
-                j += val_len;
+                size_t vlen = strlen(val);
+                if (j + vlen >= out_size - 1) vlen = out_size - 1 - j;
+
+                memcpy(out + j, val, vlen);
+                j += vlen;
             }
+
             i = end - 1;
         } else {
-            path[j++] = dir[i];
+            out[j++] = in[i];
         }
     }
-    path[j] = '\0';
-    // Attempt to create the directory
-    if (mkdir(path, mode) && errno != EEXIST) {
+
+    out[j] = '\0';
+}
+
+static inline void war_mkdir(const char* dir, __mode_t mode) {
+    if (!dir || !dir[0]) return;
+
+    char path[4096] = {0};
+
+    // Expand environment variables
+    war_expand_env(dir, path, sizeof(path));
+
+    if (!path[0]) return;
+
+    if (mkdir(path, mode) == -1) {
+        if (errno == EEXIST) {
+            // Already exists — fine.
+            return;
+        }
+
         call_king_terry("mkdir failed: %s (%s)", path, strerror(errno));
     }
 }
 
+static inline void
+war_path_to_unique_filename(const char* path, char* out, size_t out_size) {
+    size_t j = 0;
+    for (size_t i = 0; path[i] && j < out_size - 1; i++) {
+        if (path[i] == '/') {
+            if (j + 1 < out_size - 1) out[j++] = '%';
+        } else {
+            out[j++] = path[i];
+        }
+    }
+    out[j] = '\0';
+}
+
 static inline void war_override(uint32_t count, war_hot_id* id, war_env* env) {
     war_hot_context* hot = env->ctx_hot;
+    war_color_context* color = env->ctx_color;
+    war_pool_context* pool = env->ctx_pool;
     war_config_context* config = env->ctx_config;
+    war_command_context* command = env->ctx_command;
+    war_keymap_context* keymap = env->ctx_keymap;
+
     for (uint32_t idx = 0; idx < count; idx++) {
-        char tmp_path[4096] = {0};
-        char output[4096] = {0};
-        switch (id[idx]) {
-        case WAR_HOT_ID_CONFIG:
-            goto war_label_load_config;
-        case WAR_HOT_ID_COMMAND:
-            goto war_label_load_command;
-        case WAR_HOT_ID_COLOR:
-            goto war_label_load_color;
-        case WAR_HOT_ID_PLUGIN:
-            goto war_label_load_plugin;
-        case WAR_HOT_ID_POOL:
-            goto war_label_load_pool;
-        case WAR_HOT_ID_KEYMAP:
-            goto war_label_load_keymap;
-        }
-        continue;
-    war_label_load_config:
-        // close previous handle if exists
+        char tmp_dir[4096] = {0};
+        char override_dir[4096] = {0};
+
         if (hot->handle[id[idx]]) {
             dlclose(hot->handle[id[idx]]);
             hot->handle[id[idx]] = NULL;
             hot->function[id[idx]] = NULL;
         }
-        // --------------------------------------------------
-        // 1) Expand $HOME in DIR_CONFIG
-        // --------------------------------------------------
-        memcpy(tmp_path, config->DIR_CONFIG, strlen(config->DIR_CONFIG));
-        size_t j = 0;
-        for (size_t i = 0; tmp_path[i] && j < sizeof(output) - 1; i++) {
-            if (tmp_path[i] == '$') {
-                size_t start = i + 1;
-                size_t end = start;
-                while ((tmp_path[end] >= 'A' && tmp_path[end] <= 'Z') ||
-                       (tmp_path[end] >= 'a' && tmp_path[end] <= 'z') ||
-                       (tmp_path[end] >= '0' && tmp_path[end] <= '9') ||
-                       tmp_path[end] == '_')
-                    end++;
-                char varname[64] = {0};
-                size_t len = end - start;
-                if (len >= sizeof(varname)) len = sizeof(varname) - 1;
-                memcpy(varname, tmp_path + start, len);
-                char* val = getenv(varname);
-                if (val) {
-                    size_t val_len = strlen(val);
-                    if (j + val_len >= sizeof(output) - 1)
-                        val_len = sizeof(output) - 1 - j;
-                    memcpy(output + j, val, val_len);
-                    j += val_len;
-                }
-                i = end - 1;
-            } else {
-                output[j++] = tmp_path[i];
+
+        // -----------------------------
+        // Expand directories inline
+        // -----------------------------
+        {
+            size_t j = 0;
+            for (size_t i = 0; config->DIR_CONFIG[i] && j < sizeof(tmp_dir) - 1;
+                 i++) {
+                if (config->DIR_CONFIG[i] == '$') {
+                    size_t start = i + 1, end = start;
+                    while ((config->DIR_CONFIG[end] >= 'A' &&
+                            config->DIR_CONFIG[end] <= 'Z') ||
+                           (config->DIR_CONFIG[end] >= 'a' &&
+                            config->DIR_CONFIG[end] <= 'z') ||
+                           (config->DIR_CONFIG[end] >= '0' &&
+                            config->DIR_CONFIG[end] <= '9') ||
+                           config->DIR_CONFIG[end] == '_')
+                        end++;
+                    char varname[64] = {0};
+                    size_t len = end - start;
+                    if (len >= sizeof(varname)) len = sizeof(varname) - 1;
+                    memcpy(varname, config->DIR_CONFIG + start, len);
+                    char* val = getenv(varname);
+                    if (val) {
+                        size_t vlen = strlen(val);
+                        if (j + vlen >= sizeof(tmp_dir) - 1)
+                            vlen = sizeof(tmp_dir) - 1 - j;
+                        memcpy(tmp_dir + j, val, vlen);
+                        j += vlen;
+                    }
+                    i = end - 1;
+                } else
+                    tmp_dir[j++] = config->DIR_CONFIG[i];
             }
+            tmp_dir[j] = '\0';
         }
-        output[j] = '\0';
-        // --------------------------------------------------
-        // 2) Open config dir
-        // --------------------------------------------------
-        DIR* directory = opendir(output);
-        if (!directory) {
-            call_king_terry("war_override: invalid directory");
-            continue;
+
+        {
+            size_t j = 0;
+            for (size_t i = 0;
+                 config->DIR_OVERRIDE[i] && j < sizeof(override_dir) - 1;
+                 i++) {
+                if (config->DIR_OVERRIDE[i] == '$') {
+                    size_t start = i + 1, end = start;
+                    while ((config->DIR_OVERRIDE[end] >= 'A' &&
+                            config->DIR_OVERRIDE[end] <= 'Z') ||
+                           (config->DIR_OVERRIDE[end] >= 'a' &&
+                            config->DIR_OVERRIDE[end] <= 'z') ||
+                           (config->DIR_OVERRIDE[end] >= '0' &&
+                            config->DIR_OVERRIDE[end] <= '9') ||
+                           config->DIR_OVERRIDE[end] == '_')
+                        end++;
+                    char varname[64] = {0};
+                    size_t len = end - start;
+                    if (len >= sizeof(varname)) len = sizeof(varname) - 1;
+                    memcpy(varname, config->DIR_OVERRIDE + start, len);
+                    char* val = getenv(varname);
+                    if (val) {
+                        size_t vlen = strlen(val);
+                        if (j + vlen >= sizeof(override_dir) - 1)
+                            vlen = sizeof(override_dir) - 1 - j;
+                        memcpy(override_dir + j, val, vlen);
+                        j += vlen;
+                    }
+                    i = end - 1;
+                } else
+                    override_dir[j++] = config->DIR_OVERRIDE[i];
+            }
+            override_dir[j] = '\0';
         }
-        struct dirent* entry;
-        while ((entry = readdir(directory)) != NULL) {
-            if (strcmp(entry->d_name, ".") == 0 ||
-                strcmp(entry->d_name, "..") == 0)
-                continue;
-            size_t len = strlen(entry->d_name);
-            if (len > 2 && strcmp(entry->d_name + len - 2, ".c") == 0) {
-                // --------------------------------------------------
-                // 3) Full path to .c file
-                // --------------------------------------------------
-                char cpath[4096];
-                snprintf(cpath, sizeof(cpath), "%s/%s", output, entry->d_name);
-                // --------------------------------------------------
-                // 4) Corresponding .so path in override
-                // --------------------------------------------------
-                char sopath[4096];
-                snprintf(sopath,
-                         sizeof(sopath),
-                         "%s/%s.so",
-                         config->DIR_OVERRIDE,
+
+        // -----------------------------
+        // Iterative recursion (stack) inline
+        // -----------------------------
+        char dirs[128][4096];
+        int stack_top = 0;
+        strncpy(dirs[stack_top++], tmp_dir, sizeof(dirs[0]) - 1);
+
+        while (stack_top > 0) {
+            char* current_dir = dirs[--stack_top];
+            DIR* directory = opendir(current_dir);
+            if (!directory) continue;
+
+            struct dirent* entry;
+            while ((entry = readdir(directory)) != NULL) {
+                if (strcmp(entry->d_name, ".") == 0 ||
+                    strcmp(entry->d_name, "..") == 0)
+                    continue;
+
+                char full_path[4096];
+                snprintf(full_path,
+                         sizeof(full_path),
+                         "%s/%s",
+                         current_dir,
                          entry->d_name);
 
-                struct stat st_c, st_so;
-                int so_exists = (stat(sopath, &st_so) == 0);
-                int recompile = 1;
-                if (stat(cpath, &st_c) == 0) {
-                    if (so_exists && st_c.st_mtime <= st_so.st_mtime) {
-                        // up-to-date, load inline
-                        void* handle = dlopen(sopath, RTLD_NOW);
-                        if (handle) {
-                            hot->handle[id[idx]] = handle;
-                            hot->function[id[idx]] =
-                                dlsym(handle, "war_config_override");
-                            char* err = dlerror();
-                            if (err) {
-                                call_king_terry("dlsym error: %s", err);
-                            }
-                        }
-                        recompile = 0;
+                struct stat st;
+                if (stat(full_path, &st) != 0) continue;
+
+                if (S_ISDIR(st.st_mode)) {
+                    if (stack_top < 128)
+                        strncpy(
+                            dirs[stack_top++], full_path, sizeof(dirs[0]) - 1);
+                } else if (strlen(entry->d_name) > 2 &&
+                           strcmp(entry->d_name + strlen(entry->d_name) - 2,
+                                  ".c") == 0) {
+                    // ------------------------------------------
+                    // 3) Unique .so path inline
+                    // ------------------------------------------
+                    char unique_name[4096];
+                    size_t j = 0;
+                    for (size_t i = 0;
+                         full_path[i] && j < sizeof(unique_name) - 1;
+                         i++)
+                        unique_name[j++] =
+                            (full_path[i] == '/') ? '%' : full_path[i];
+                    unique_name[j] = '\0';
+
+                    char sopath[4096];
+                    snprintf(sopath,
+                             sizeof(sopath),
+                             "%s/%s.so",
+                             override_dir,
+                             unique_name);
+
+                    struct stat st_so;
+                    int so_exists = (stat(sopath, &st_so) == 0);
+                    int recompile = 1;
+                    if (st.st_mtime <= st_so.st_mtime) recompile = 0;
+
+                    if (recompile) {
+                        char cmd[8192];
+                        snprintf(cmd,
+                                 sizeof(cmd),
+                                 config->HOT_CONTEXT_TEMPLATE,
+                                 full_path,
+                                 sopath);
+                        int rc = system(cmd);
+                        if (rc != 0) continue;
                     }
-                }
-                if (recompile) {
-                    // --------------------------------------------------
-                    // 5) Recompile using template
-                    // --------------------------------------------------
-                    char cmd[8192];
-                    snprintf(cmd,
-                             sizeof(cmd),
-                             config->HOT_CONTEXT_TEMPLATE,
-                             cpath,
-                             sopath);
-                    system(cmd);
-                    // dlopen after compilation
-                    void* handle = dlopen(sopath, RTLD_NOW);
-                    if (handle) {
-                        hot->handle[id[idx]] = handle;
-                        hot->function[id[idx]] =
-                            dlsym(handle, "war_config_override");
-                        char* err = dlerror();
-                        if (err) { call_king_terry("dlsym error: %s", err); }
+
+                    void* handle = dlopen(sopath, RTLD_NOW | RTLD_GLOBAL);
+                    if (!handle) continue;
+
+                    dlerror();
+                    void* fn = dlsym(handle, hot->name[idx]);
+                    char* err = dlerror();
+                    if (err) {
+                        dlclose(handle);
+                        continue;
                     }
+
+                    hot->handle[id[idx]] = handle;
+                    hot->function[id[idx]] = fn;
                 }
             }
+            closedir(directory);
         }
-        closedir(directory);
+
+        // -----------------------------
+        // Call function inline
+        // -----------------------------
         if (hot->function[id[idx]]) {
-            ((void (*)(war_config_context*))hot->function[id[idx]])(config);
+            switch (id[idx]) {
+            case WAR_HOT_ID_CONFIG:
+                ((void (*)(war_config_context*))hot->function[id[idx]])(config);
+                break;
+            case WAR_HOT_ID_COMMAND:
+                ((void (*)(war_command_context*))hot->function[id[idx]])(
+                    command);
+                break;
+            case WAR_HOT_ID_COLOR:
+                ((void (*)(war_color_context*))hot->function[id[idx]])(color);
+                break;
+            case WAR_HOT_ID_PLUGIN:
+                ((void (*)(war_env*))hot->function[id[idx]])(env);
+                break;
+            case WAR_HOT_ID_POOL:
+                ((void (*)(war_pool_context*,
+                           war_config_context*))hot->function[id[idx]])(pool,
+                                                                        config);
+                break;
+            case WAR_HOT_ID_KEYMAP:
+                ((void (*)(war_keymap_context*))hot->function[id[idx]])(keymap);
+                break;
+            }
         }
-        continue;
-    war_label_load_command:
-        continue;
-    war_label_load_color:
-        continue;
-    war_label_load_plugin:
-        continue;
-    war_label_load_pool:
-        continue;
-    war_label_load_keymap:
-        continue;
     }
 }
 

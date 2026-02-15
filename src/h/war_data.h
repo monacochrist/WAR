@@ -13,8 +13,8 @@
 
 #define _XOPEN_SOURCE 700
 #define _POSIX_C_SOURCE 200809L
-#include <locale.h>
 #include <ft2build.h>
+#include <locale.h>
 #include <luajit-2.1/lauxlib.h>
 #include <luajit-2.1/lua.h>
 #include <luajit-2.1/lualib.h>
@@ -26,11 +26,11 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/types.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
-#include <sys/types.h>
 #include FT_FREETYPE_H
 
 enum war_mods {
@@ -2675,6 +2675,7 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_HOT_CONTEXT_FUNCTION,
     WAR_POOL_ID_HOT_CONTEXT_HANDLE,
     WAR_POOL_ID_HOT_CONTEXT_FN_ID,
+    WAR_POOL_ID_HOT_CONTEXT_NAME,
     // env
     WAR_POOL_ID_ENV,
     // pool context
@@ -2715,6 +2716,7 @@ typedef enum war_hot_id_enum {
 typedef struct war_hot_context {
     void** function;
     void** handle;
+    char** name;
     //
     uint32_t fn_count;
     war_hot_id* fn_id;

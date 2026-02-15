@@ -100,12 +100,19 @@ int main() {
         war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_HANDLE);
     ctx_hot->fn_id =
         war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_FN_ID);
+    ctx_hot->name =
+        war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_NAME);
+    ctx_hot->name[WAR_HOT_ID_CONFIG] = "war_config_override";
+    ctx_hot->name[WAR_HOT_ID_COMMAND] = "war_command_override";
+    ctx_hot->name[WAR_HOT_ID_COLOR] = "war_color_override";
+    ctx_hot->name[WAR_HOT_ID_PLUGIN] = "war_plugin_override";
+    ctx_hot->name[WAR_HOT_ID_POOL] = "war_pool_override";
+    ctx_hot->name[WAR_HOT_ID_KEYMAP] = "war_keymap_override";
     war_env* env = war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_ENV);
     env->ctx_config = ctx_config;
     env->ctx_hot = ctx_hot;
     ctx_hot->fn_id[0] = WAR_HOT_ID_CONFIG;
     ctx_hot->fn_count = 1;
-    call_king_terry("edo before: %u", ctx_config->A_EDO);
     war_mkdir(ctx_config->DIR_CONFIG, 0755);
     war_mkdir(ctx_config->DIR_CACHE, 0755);
     war_mkdir(ctx_config->DIR_OVERRIDE, 0755);
@@ -113,7 +120,6 @@ int main() {
     war_mkdir(ctx_config->DIR_WARPOON, 0755);
     war_mkdir(ctx_config->DIR_JUMPLIST, 0755);
     war_override(ctx_hot->fn_count, ctx_hot->fn_id, env);
-    call_king_terry("edo after: %u", ctx_config->A_EDO);
 
     //-------------------------------------------------------------------------
     // LUA

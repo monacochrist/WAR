@@ -25,6 +25,6 @@ static inline void war_command_default(war_command_context* command) {
     war_command_set(command, "");
 }
 
-void war_command_override(war_command_context* command) {}
+void war_command_override(war_command_context* command);
 
 #endif // WAR_COMMAND_H

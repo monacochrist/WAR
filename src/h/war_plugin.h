@@ -35,6 +35,6 @@ static inline void war_plugin_init_example(war_env* env) {
                    print_hello_world);
 }
 
-void war_plugin_init(war_env* env);
+void war_plugin_override(war_env* env);
 
 #endif // WAR_PLUGIN_H

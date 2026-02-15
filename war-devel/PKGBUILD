@@ -1,6 +1,6 @@
 pkgname=war-devel
 pkgver=0.0.0
-pkgrel=15
+pkgrel=16
 pkgdesc="WAR development files (headers)"
 arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
