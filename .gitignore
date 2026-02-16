@@ -14,6 +14,13 @@ build.zig
 /build/
 .cache/
 
+# PKGBUILD
+/war/*
+/war-devel/*
+!/war/PKGBUILD
+!/war-devel/PKGBUILD
+
+
 # todo or markdown
 *.md
 
