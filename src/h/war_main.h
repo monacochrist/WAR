@@ -13,6 +13,6 @@
 
 void* war_window_render(void* args);
 
-void* war_audio(void* args);
+void* war_pipewire(void* args);
 
 #endif // WAR_MAIN_H

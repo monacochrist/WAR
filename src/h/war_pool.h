@@ -1466,28 +1466,7 @@ static inline void war_pool_default(war_pool_context* pool,
                                      config->NEW_VULKAN_BUFFER_MAX),
                  32);
     // env
-    war_pool_set(pool, config, WAR_POOL_ID_ENV, sizeof(war_env) * (1), 32);
-    // command context
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_COMMAND,
-                 sizeof(war_command_context) * (1),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_COMMAND_INPUT,
-                 sizeof(int) * (config->CONFIG_PATH_MAX),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_COMMAND_TEXT,
-                 sizeof(char) * (config->CONFIG_PATH_MAX),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_COMMAND_PROMPT,
-                 sizeof(char) * (config->CONFIG_PATH_MAX),
-                 32);
+    war_pool_set(pool, config, WAR_POOL_ID_ENV, sizeof(war_env), 32);
     // char input
     war_pool_set(pool,
                  config,
@@ -1523,12 +1502,6 @@ static inline void war_pool_default(war_pool_context* pool,
                  config,
                  WAR_POOL_ID_MAIN_CAPTURE_WAV_FNAME,
                  sizeof(char) * (config->CONFIG_PATH_MAX),
-                 32);
-    // color
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_COLOR,
-                 sizeof(war_color_context) * (1),
                  32);
     // layres
     war_pool_set(pool,
@@ -1812,35 +1785,6 @@ static inline void war_pool_default(war_pool_context* pool,
                  WAR_POOL_ID_CONFIG_CONTEXT,
                  sizeof(war_config_context),
                  32);
-    // ctx keymap
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_KEYMAP,
-                 sizeof(war_keymap_context),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION,
-                 sizeof(void*) * config->KEYMAP_STATE_CAPACITY *
-                     config->KEYMAP_FUNCTION_CAPACITY,
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION_COUNT,
-                 sizeof(uint8_t) * config->KEYMAP_STATE_CAPACITY,
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_KEYMAP_FLAGS,
-                 sizeof(war_keymap_flags) * config->KEYMAP_STATE_CAPACITY,
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_KEYMAP_NEXT_STATE,
-                 sizeof(uint64_t) * config->KEYMAP_STATE_CAPACITY *
-                     config->KEYMAP_MOD_CAPACITY *
-                     config->KEYMAP_KEYSYM_CAPACITY,
-                 32);
     // hot context
     war_pool_set(
         pool, config, WAR_POOL_ID_HOT_CONTEXT, sizeof(war_hot_context), 32);
@@ -1886,6 +1830,93 @@ static inline void war_pool_default(war_pool_context* pool,
                  config,
                  WAR_POOL_ID_POOL_CONTEXT_ID,
                  sizeof(war_pool_id) * config->POOL_MAX_ALLOCATIONS,
+                 32);
+    // hook context
+    war_pool_set(
+        pool, config, WAR_POOL_ID_HOOK_CONTEXT, sizeof(war_hook_context), 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_HOOK_CONTEXT_MODE_FLAGS,
+                 sizeof(war_mode_flags) * config->HOOK_CONTEXT_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_HOOK_CONTEXT_EVENT_FLAGS,
+                 sizeof(war_event_flags) * config->HOOK_CONTEXT_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_HOOK_CONTEXT_FUNCTION,
+                 sizeof(void*) * config->HOOK_CONTEXT_CAPACITY,
+                 32);
+    // command context
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_COMMAND_CONTEXT,
+                 sizeof(war_command_context),
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION,
+                 sizeof(void*) * config->COMMAND_CONTEXT_STATE_CAPACITY *
+                     config->COMMAND_CONTEXT_FUNCTION_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION_COUNT,
+                 sizeof(uint8_t) * config->COMMAND_CONTEXT_STATE_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_COMMAND_CONTEXT_FLAGS,
+                 sizeof(war_command_flags) *
+                     config->COMMAND_CONTEXT_STATE_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_COMMAND_CONTEXT_NEXT_STATE,
+                 sizeof(uint64_t) * config->COMMAND_CONTEXT_STATE_CAPACITY,
+                 32);
+    //  color context
+    war_pool_set(
+        pool, config, WAR_POOL_ID_COLOR_CONTEXT, sizeof(war_color_context), 32);
+    // keymap context
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_KEYMAP_CONTEXT,
+                 sizeof(war_keymap_context),
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION,
+                 sizeof(void*) * config->KEYMAP_MODE_CAPACITY *
+                     config->KEYMAP_STATE_CAPACITY *
+                     config->KEYMAP_FUNCTION_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION_COUNT,
+                 sizeof(uint8_t) * config->KEYMAP_MODE_CAPACITY *
+                     config->KEYMAP_STATE_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_KEYMAP_CONTEXT_FLAGS,
+                 sizeof(war_keymap_flags) * config->KEYMAP_MODE_CAPACITY *
+                     config->KEYMAP_STATE_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_KEYMAP_CONTEXT_NEXT_STATE,
+                 sizeof(uint64_t) * config->KEYMAP_MODE_CAPACITY *
+                     config->KEYMAP_STATE_CAPACITY *
+                     config->KEYMAP_MOD_CAPACITY *
+                     config->KEYMAP_KEYSYM_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_KEYMAP_CONTEXT_STATE_COUNT,
+                 sizeof(uint32_t) * config->KEYMAP_MODE_CAPACITY,
                  32);
 }
 

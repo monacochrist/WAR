@@ -13,6 +13,7 @@
 
 #define _XOPEN_SOURCE 700
 #define _POSIX_C_SOURCE 200809L
+#include "h/war_debug_macros.h"
 #include <ft2build.h>
 #include <locale.h>
 #include <luajit-2.1/lauxlib.h>
@@ -1856,20 +1857,32 @@ typedef struct war_text_context {
     uint32_t buffer_count;
 } war_text_context;
 
+typedef uint32_t war_mode_id;
+typedef enum war_mode_id_enum {
+    WAR_MODE_ID_ROLL,
+    WAR_MODE_ID_VIEWS,
+    WAR_MODE_ID_CAPTURE,
+    WAR_MODE_ID_MIDI,
+    WAR_MODE_ID_COMMAND,
+    WAR_MODE_ID_WAV,
+    WAR_MODE_ID_VISUAL,
+    WAR_MODE_ID_CHORD,
+    //
+    WAR_MODE_COUNT,
+} war_mode_id_enum;
 typedef uint64_t war_mode_flags;
 typedef enum war_mode_flags_bits {
     WAR_MODE_NONE = 0,
     WAR_MODE_ALL = 0xFFFFFFFFFFFFFFFFULL,
-    WAR_MODE_ROLL = 1ULL << 0,
-    WAR_MODE_VIEWS = 1ULL << 1,
-    WAR_MODE_CAPTURE = 1ULL << 2,
-    WAR_MODE_MIDI = 1ULL << 3,
-    WAR_MODE_COMMAND = 1ULL << 4,
-    WAR_MODE_WAV = 1ULL << 5,
-    WAR_MODE_VISUAL = 1ULL << 6,
-    WAR_MODE_CHORD = 1ULL << 7,
+    WAR_MODE_ROLL = 1ULL << WAR_MODE_ID_ROLL,
+    WAR_MODE_VIEWS = 1ULL << WAR_MODE_ID_VIEWS,
+    WAR_MODE_CAPTURE = 1ULL << WAR_MODE_ID_CAPTURE,
+    WAR_MODE_MIDI = 1ULL << WAR_MODE_ID_MIDI,
+    WAR_MODE_COMMAND = 1ULL << WAR_MODE_ID_COMMAND,
+    WAR_MODE_WAV = 1ULL << WAR_MODE_ID_WAV,
+    WAR_MODE_VISUAL = 1ULL << WAR_MODE_ID_VISUAL,
+    WAR_MODE_CHORD = 1ULL << WAR_MODE_ID_CHORD,
 } war_mode_flags_bits;
-
 typedef uint64_t war_keymap_flags;
 typedef enum war_keymap_flags_bits {
     WAR_KEYMAP_NONE = 0,
@@ -1882,7 +1895,6 @@ typedef enum war_keymap_flags_bits {
     WAR_KEYMAP_SHARED_LIBRARY = 1ULL << 4,
     WAR_KEYMAP_PREFIX = 1ULL << 5,
 } war_keymap_flags_bits;
-
 typedef struct war_keymap_context {
     uint32_t version;
     //
@@ -1891,16 +1903,8 @@ typedef struct war_keymap_context {
     war_keymap_flags* flags;
     uint64_t* next_state;
     //
-    uint32_t state_count;
-    uint32_t state_capacity;
-    uint32_t keysym_capacity;
-    uint32_t mod_capacity;
-    uint32_t function_capacity;
+    uint32_t* state_count; // per mode
 } war_keymap_context;
-
-#define KEYMAP_3D_INDEX(state, keysym, mod, keymap)                            \
-    ((state) * ((keymap)->keysym_capacity * (keymap)->mod_capacity) +          \
-     (keysym) * (keymap)->mod_capacity + (mod))
 
 typedef struct war_lock_context {
     atomic_flag config;
@@ -2046,19 +2050,39 @@ typedef struct war_color_context {
     uint32_t playhead;
 } war_color_context;
 
+// typedef struct war_keymap_context {
+//     uint32_t version;
+//     //
+//     void (**function)(war_env* env);
+//     uint8_t* function_count;
+//     war_keymap_flags* flags;
+//     uint64_t* next_state;
+//     //
+//     uint32_t state_count;
+//     uint32_t state_capacity;
+//     uint32_t keysym_capacity;
+//     uint32_t mod_capacity;
+//     uint32_t function_capacity;
+// } war_keymap_context;
+
+typedef uint64_t war_command_flags;
+typedef enum war_command_flags_bits {
+    WAR_COMMAND_NONE = 0,
+    WAR_COMMAND_ALL = 0xFFFFFFFFFFFFFFFFULL,
+    WAR_COMMAND_EXTEND = 1ULL << 0,
+    //
+    WAR_COMMAND_SHARED_LIBRARY = 1ULL << 4,
+    WAR_COMMAND_PREFIX = 1ULL << 5,
+} war_command_flags_bits;
 typedef struct war_command_context {
     uint32_t version;
     //
     void (**function)(war_env* env);
     uint8_t* function_count;
-    war_keymap_flags* flags;
+    war_command_flags* flags;
     uint64_t* next_state;
     //
     uint32_t state_count;
-    uint32_t state_capacity;
-    uint32_t keysym_capacity;
-    uint32_t mod_capacity;
-    uint32_t function_capacity;
 } war_command_context;
 
 typedef struct war_config_context {
@@ -2227,6 +2251,7 @@ typedef struct war_config_context {
     uint32_t KEYMAP_KEYSYM_CAPACITY;
     uint32_t KEYMAP_MOD_CAPACITY;
     uint32_t KEYMAP_FUNCTION_CAPACITY;
+    uint32_t KEYMAP_MODE_CAPACITY;
     // core directories
     char* DIR_CONFIG;
     char* DIR_CACHE;
@@ -2238,26 +2263,48 @@ typedef struct war_config_context {
     uint32_t HOT_CONTEXT_NAME_LIMIT;
     uint32_t HOT_CONTEXT_CMD_LIMIT;
     char* HOT_CONTEXT_TEMPLATE;
+    // command context
+    uint32_t COMMAND_CONTEXT_STATE_CAPACITY;
+    uint32_t COMMAND_CONTEXT_FUNCTION_CAPACITY;
+    // hook context
+    uint32_t HOOK_CONTEXT_CAPACITY;
 } war_config_context;
 
+typedef uint32_t war_event_id;
+typedef enum war_event_id_enum {
+    WAR_EVENT_ID_MOVE_CURSOR_UP,
+    WAR_EVENT_ID_MOVE_CURSOR_DOWN,
+    WAR_EVENT_ID_MOVE_CURSOR_LEFT,
+    WAR_EVENT_ID_MOVE_CURSOR_RIGHT,
+    WAR_EVENT_ID_MOVE_CURSOR_UP_LEAP,
+    WAR_EVENT_ID_MOVE_CURSOR_DOWN_LEAP,
+    WAR_EVENT_ID_MOVE_CURSOR_LEFT_LEAP,
+    WAR_EVENT_ID_MOVE_CURSOR_RIGHT_LEAP,
+    //
+    WAR_EVENT_COUNT,
+} war_event_id_enum;
 typedef uint64_t war_event_flags;
 typedef enum war_event_flags_bits {
     WAR_EVENT_NONE = 0,
     WAR_EVENT_ALL = 0xFFFFFFFFFFFFFFFFULL,
-    WAR_EVENT_MOVE_CURSOR_UP = 1ULL << 0,
-    WAR_EVENT_MOVE_CURSOR_DOWN = 1ULL << 1,
-    WAR_EVENT_MOVE_CURSOR_LEFT = 1ULL << 2,
-    WAR_EVENT_MOVE_CURSOR_RIGHT = 1ULL << 3,
-    WAR_EVENT_MOVE_CURSOR_UP_LEAP = 1ULL << 4,
-    WAR_EVENT_MOVE_CURSOR_DOWN_LEAP = 1ULL << 5,
-    WAR_EVENT_MOVE_CURSOR_LEFT_LEAP = 1ULL << 6,
-    WAR_EVENT_MOVE_CURSOR_RIGHT_LEAP = 1ULL << 7,
+    WAR_EVENT_MOVE_CURSOR_UP = 1ULL << WAR_EVENT_ID_MOVE_CURSOR_UP,
+    WAR_EVENT_MOVE_CURSOR_DOWN = 1ULL << WAR_EVENT_ID_MOVE_CURSOR_DOWN,
+    WAR_EVENT_MOVE_CURSOR_LEFT = 1ULL << WAR_EVENT_ID_MOVE_CURSOR_LEFT,
+    WAR_EVENT_MOVE_CURSOR_RIGHT = 1ULL << WAR_EVENT_ID_MOVE_CURSOR_RIGHT,
+    WAR_EVENT_MOVE_CURSOR_UP_LEAP = 1ULL << WAR_EVENT_ID_MOVE_CURSOR_UP_LEAP,
+    WAR_EVENT_MOVE_CURSOR_DOWN_LEAP = 1ULL
+                                      << WAR_EVENT_ID_MOVE_CURSOR_DOWN_LEAP,
+    WAR_EVENT_MOVE_CURSOR_LEFT_LEAP = 1ULL
+                                      << WAR_EVENT_ID_MOVE_CURSOR_LEFT_LEAP,
+    WAR_EVENT_MOVE_CURSOR_RIGHT_LEAP = 1ULL
+                                       << WAR_EVENT_ID_MOVE_CURSOR_RIGHT_LEAP,
 } war_event_flags_bits;
-
 typedef struct war_hook_context {
     war_mode_flags* mode_flags;
     war_event_flags* event_flags;
-    void* (*function)(war_env* env);
+    void (**function)(war_env* env);
+    //
+    uint32_t count;
 } war_hook_context;
 
 typedef uint32_t war_pool_id;
@@ -2535,11 +2582,6 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_VIEWPORT,
     WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PTRS_BUFFER_RECT_2D,
     WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_RECT_2D,
-    // command context
-    WAR_POOL_ID_MAIN_CTX_COMMAND,
-    WAR_POOL_ID_MAIN_CTX_COMMAND_INPUT,
-    WAR_POOL_ID_MAIN_CTX_COMMAND_TEXT,
-    WAR_POOL_ID_MAIN_CTX_COMMAND_PROMPT,
     // status context
     WAR_POOL_ID_MAIN_CTX_STATUS,
     WAR_POOL_ID_MAIN_CTX_STATUS_TOP,
@@ -2575,8 +2617,6 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_MAP_WAV_ID,
     WAR_POOL_ID_MAIN_MAP_WAV_FNAME,
     WAR_POOL_ID_MAIN_MAP_WAV_FNAME_SIZE,
-    // color
-    WAR_POOL_ID_MAIN_CTX_COLOR,
     // layres
     WAR_POOL_ID_MAIN_LAYERS_ACTIVE,
     // Colors
@@ -2664,12 +2704,6 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_UNDO_NODE_ALT_PREV,
     // ctx config
     WAR_POOL_ID_CONFIG_CONTEXT,
-    // ctx keymap
-    WAR_POOL_ID_MAIN_CTX_KEYMAP,
-    WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION,
-    WAR_POOL_ID_MAIN_CTX_KEYMAP_FUNCTION_COUNT,
-    WAR_POOL_ID_MAIN_CTX_KEYMAP_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_KEYMAP_NEXT_STATE,
     // ctx hot
     WAR_POOL_ID_HOT_CONTEXT,
     WAR_POOL_ID_HOT_CONTEXT_FUNCTION,
@@ -2684,6 +2718,26 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_POOL_CONTEXT_OFFSET,
     WAR_POOL_ID_POOL_CONTEXT_ALIGNMENT,
     WAR_POOL_ID_POOL_CONTEXT_ID,
+    // hook context
+    WAR_POOL_ID_HOOK_CONTEXT,
+    WAR_POOL_ID_HOOK_CONTEXT_MODE_FLAGS,
+    WAR_POOL_ID_HOOK_CONTEXT_EVENT_FLAGS,
+    WAR_POOL_ID_HOOK_CONTEXT_FUNCTION,
+    // command context
+    WAR_POOL_ID_COMMAND_CONTEXT,
+    WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION,
+    WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION_COUNT,
+    WAR_POOL_ID_COMMAND_CONTEXT_FLAGS,
+    WAR_POOL_ID_COMMAND_CONTEXT_NEXT_STATE,
+    // color context
+    WAR_POOL_ID_COLOR_CONTEXT,
+    // keymap context
+    WAR_POOL_ID_KEYMAP_CONTEXT,
+    WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION,
+    WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION_COUNT,
+    WAR_POOL_ID_KEYMAP_CONTEXT_FLAGS,
+    WAR_POOL_ID_KEYMAP_CONTEXT_NEXT_STATE,
+    WAR_POOL_ID_KEYMAP_CONTEXT_STATE_COUNT,
     //
     WAR_POOL_ID_COUNT,
 } war_pool_id_enum;
@@ -2741,7 +2795,6 @@ struct war_env {
     war_keymap_context* ctx_keymap;
     war_pool_context* ctx_pool;
     war_hook_context* ctx_hook;
-    void** plugins;
     war_color_context* ctx_color;
     war_hot_context* ctx_hot;
 };

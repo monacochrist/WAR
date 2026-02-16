@@ -19,12 +19,85 @@
 
 #include "war_data.h"
 
-static inline void war_command_set(war_command_context* command, ...) {}
+static inline void war_command_set(war_command_context* command,
+                                   war_config_context* config,
+                                   uint32_t sequence_count,
+                                   char** sequences,
+                                   void (*function)(war_env* env),
+                                   war_command_flags flags) {
+    if (!command || !sequences || !function) return;
 
-static inline void war_command_default(war_command_context* command) {
-    war_command_set(command, "");
+    for (uint32_t seq_idx = 0; seq_idx < sequence_count; seq_idx++) {
+        const char* seq = sequences[seq_idx];
+        if (!seq) continue;
+
+        size_t len = strlen(seq);
+        if (len == 0) continue;
+
+        uint64_t current_state = 0; // root state
+        size_t offset = 0;
+
+        while (offset < len) {
+            char ch = seq[offset]; // current character
+            // index into next_state table
+            size_t idx =
+                current_state * 256 + (unsigned char)ch; // 256 = CHAR_CAPACITY
+            uint64_t next_state = command->next_state[idx];
+
+            if (next_state == 0) {
+                if (command->state_count <
+                    config->COMMAND_CONTEXT_STATE_CAPACITY) {
+                    next_state = command->state_count++;
+                } else {
+                    next_state = config->COMMAND_CONTEXT_STATE_CAPACITY -
+                                 1; // fallback on overflow
+                }
+                command->next_state[idx] = next_state;
+            }
+
+            // mark prefix if not the last char
+            if (offset + 1 < len) {
+                command->flags[next_state] |= WAR_COMMAND_PREFIX;
+            }
+
+            // assign function if terminal state
+            if (offset + 1 >= len) {
+                uint8_t func_idx = command->function_count[next_state];
+
+                if (flags & WAR_COMMAND_EXTEND) {
+                    if (func_idx < config->COMMAND_CONTEXT_FUNCTION_CAPACITY) {
+                        command->function
+                            [next_state *
+                                 config->COMMAND_CONTEXT_FUNCTION_CAPACITY +
+                             func_idx] = function;
+                        command->function_count[next_state]++;
+                    } // else overflow ignored
+                } else {
+                    command->function
+                        [next_state *
+                             config->COMMAND_CONTEXT_FUNCTION_CAPACITY +
+                         0] = function;
+                    command->function_count[next_state] = 1;
+                }
+
+                // set extra flags
+                command->flags[next_state] |= flags;
+            }
+
+            current_state = next_state;
+            offset++;
+        }
+    }
 }
 
-void war_command_override(war_command_context* command);
+static inline void war_command_default(war_command_context* command,
+                                       war_config_context* config) {
+    // war_command_set(
+    //     command, config, 3, (char*[]){"a", "b", "aa"}, war_command_example,
+    //     0);
+}
+
+void war_command_override(war_command_context* command,
+                          war_config_context* config);
 
 #endif // WAR_COMMAND_H

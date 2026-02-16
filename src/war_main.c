@@ -11,6 +11,7 @@
 #include "h/war_main.h"
 #include "h/war_build_keymap_functions.h"
 #include "h/war_color.h"
+#include "h/war_command.h"
 #include "h/war_config.h"
 #include "h/war_data.h"
 #include "h/war_debug_macros.h"
@@ -79,57 +80,165 @@ int main() {
                               MAP_PRIVATE | MAP_ANONYMOUS,
                               -1,
                               0);
+    if (tmp_ctx_pool->pool == MAP_FAILED) {
+        call_king_terry("tmp pool map failed, total_size: %llu",
+                        tmp_ctx_pool->total_size);
+    }
     memset(tmp_ctx_pool->pool, 0, tmp_ctx_pool->total_size);
-    // war_pool_context* ctx_pool =
-    //     war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_POOL_CONTEXT);
-    // ctx_pool->size =
-    //     war_pool_alloc_new(ctx_pool, WAR_POOL_ID_POOL_CONTEXT_SIZE);
-    // ctx_pool->offset =
-    //     war_pool_alloc_new(ctx_pool, WAR_POOL_ID_POOL_CONTEXT_OFFSET);
-    // ctx_pool->alignment =
-    //     war_pool_alloc_new(ctx_pool, WAR_POOL_ID_POOL_CONTEXT_ALIGNMENT);
-    // ctx_pool->id = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_POOL_CONTEXT_ID);
-    war_config_context* ctx_config =
-        war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_CONFIG_CONTEXT);
-    war_config_default(ctx_config);
-    war_hot_context* ctx_hot =
+    war_hot_context* tmp_ctx_hot =
         war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT);
-    ctx_hot->function =
+    tmp_ctx_hot->function =
         war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_FUNCTION);
-    ctx_hot->handle =
+    tmp_ctx_hot->handle =
         war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_HANDLE);
-    ctx_hot->fn_id =
+    tmp_ctx_hot->fn_id =
         war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_FN_ID);
-    ctx_hot->name =
+    tmp_ctx_hot->name =
         war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_HOT_CONTEXT_NAME);
-    ctx_hot->name[WAR_HOT_ID_CONFIG] = "war_config_override";
-    ctx_hot->name[WAR_HOT_ID_COMMAND] = "war_command_override";
-    ctx_hot->name[WAR_HOT_ID_COLOR] = "war_color_override";
-    ctx_hot->name[WAR_HOT_ID_PLUGIN] = "war_plugin_override";
-    ctx_hot->name[WAR_HOT_ID_POOL] = "war_pool_override";
-    ctx_hot->name[WAR_HOT_ID_KEYMAP] = "war_keymap_override";
-    war_env* env = war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_ENV);
+    tmp_ctx_hot->name[WAR_HOT_ID_CONFIG] = "war_config_override";
+    tmp_ctx_hot->name[WAR_HOT_ID_COMMAND] = "war_command_override";
+    tmp_ctx_hot->name[WAR_HOT_ID_COLOR] = "war_color_override";
+    tmp_ctx_hot->name[WAR_HOT_ID_PLUGIN] = "war_plugin_override";
+    tmp_ctx_hot->name[WAR_HOT_ID_POOL] = "war_pool_override";
+    tmp_ctx_hot->name[WAR_HOT_ID_KEYMAP] = "war_keymap_override";
+    war_env* tmp_env = war_pool_alloc_new(tmp_ctx_pool, WAR_POOL_ID_ENV);
+    tmp_env->ctx_config = tmp_ctx_config;
+    tmp_env->ctx_hot = tmp_ctx_hot;
+    war_mkdir(tmp_ctx_config->DIR_CONFIG, 0755);
+    war_mkdir(tmp_ctx_config->DIR_CACHE, 0755);
+    war_mkdir(tmp_ctx_config->DIR_OVERRIDE, 0755);
+    war_mkdir(tmp_ctx_config->DIR_UNDO, 0755);
+    war_mkdir(tmp_ctx_config->DIR_WARPOON, 0755);
+    war_mkdir(tmp_ctx_config->DIR_JUMPLIST, 0755);
+    tmp_ctx_hot->fn_id[0] = WAR_HOT_ID_CONFIG;
+    tmp_ctx_hot->fn_count = 1;
+    war_override(tmp_ctx_hot->fn_count, tmp_ctx_hot->fn_id, tmp_env);
+    war_pool_context* ctx_pool = calloc(1, sizeof(war_pool_context));
+    ctx_pool->size =
+        calloc(tmp_ctx_config->POOL_MAX_ALLOCATIONS, sizeof(uint64_t));
+    ctx_pool->offset =
+        calloc(tmp_ctx_config->POOL_MAX_ALLOCATIONS, sizeof(uint64_t));
+    ctx_pool->alignment =
+        calloc(tmp_ctx_config->POOL_MAX_ALLOCATIONS, sizeof(uint32_t));
+    ctx_pool->id =
+        calloc(tmp_ctx_config->POOL_MAX_ALLOCATIONS, sizeof(war_pool_id));
+    war_pool_default(ctx_pool, tmp_ctx_config);
+    tmp_ctx_hot->fn_id[0] = WAR_HOT_ID_POOL;
+    tmp_ctx_hot->fn_count = 1;
+    tmp_env->ctx_pool = ctx_pool;
+    war_override(tmp_ctx_hot->fn_count, tmp_ctx_hot->fn_id, tmp_env);
+    for (uint32_t i = 0; i < ctx_pool->count; i++) {
+        ctx_pool->total_size += ctx_pool->size[i];
+    }
+    ctx_pool->pool = mmap(NULL,
+                          ctx_pool->total_size,
+                          PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS,
+                          -1,
+                          0);
+    if (ctx_pool->pool == MAP_FAILED) {
+        call_king_terry("pool map failed, total_size: %llu",
+                        ctx_pool->total_size);
+    }
+    memset(ctx_pool->pool, 0, ctx_pool->total_size);
+    war_config_context* ctx_config =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_CONFIG_CONTEXT);
+    memcpy((uint8_t*)ctx_config,
+           (uint8_t*)tmp_ctx_config,
+           war_pool_size(ctx_pool, WAR_POOL_ID_CONFIG_CONTEXT));
+    war_hot_context* ctx_hot =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOT_CONTEXT);
+    ctx_hot->function =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOT_CONTEXT_FUNCTION);
+    ctx_hot->handle =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOT_CONTEXT_HANDLE);
+    ctx_hot->fn_id =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOT_CONTEXT_FN_ID);
+    ctx_hot->name = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOT_CONTEXT_NAME);
+    memcpy((uint8_t*)ctx_hot->function,
+           (uint8_t*)tmp_ctx_hot->function,
+           war_pool_size(ctx_pool, WAR_POOL_ID_HOT_CONTEXT_FUNCTION));
+    memcpy((uint8_t*)ctx_hot->handle,
+           (uint8_t*)tmp_ctx_hot->handle,
+           war_pool_size(ctx_pool, WAR_POOL_ID_HOT_CONTEXT_HANDLE));
+    memcpy((uint8_t*)ctx_hot->name,
+           (uint8_t*)tmp_ctx_hot->name,
+           war_pool_size(ctx_pool, WAR_POOL_ID_HOT_CONTEXT_NAME));
+    free(tmp_ctx_config);
+    tmp_ctx_config = NULL;
+    tmp_env = NULL;
+    free(tmp_ctx_pool->size);
+    free(tmp_ctx_pool->offset);
+    free(tmp_ctx_pool->alignment);
+    free(tmp_ctx_pool->id);
+    if (munmap(tmp_ctx_pool->pool, tmp_ctx_pool->total_size) == -1) {
+        call_king_terry("munmap failed");
+    }
+    free(tmp_ctx_pool);
+    tmp_ctx_pool = NULL;
+    war_color_context* ctx_color =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COLOR_CONTEXT);
+    war_color_default(ctx_color);
+
+    war_keymap_context* ctx_keymap =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT);
+    ctx_keymap->function =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION);
+    ctx_keymap->function_count =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION_COUNT);
+    ctx_keymap->flags =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT_FLAGS);
+    ctx_keymap->next_state =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT_NEXT_STATE);
+    ctx_keymap->state_count =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT_STATE_COUNT);
+    for (uint32_t i = 0; i < ctx_config->KEYMAP_MODE_CAPACITY; i++) {
+        ctx_keymap->state_count[i] = 1;
+    }
+    war_keymap_default(ctx_keymap, ctx_config);
+
+    war_command_context* ctx_command =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT);
+    ctx_command->function =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION);
+    ctx_command->function_count = war_pool_alloc_new(
+        ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION_COUNT);
+    ctx_command->flags =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT_FLAGS);
+    ctx_command->next_state =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT_NEXT_STATE);
+    ctx_command->state_count = 1;
+    war_command_default(ctx_command, ctx_config);
+
+    war_hook_context* ctx_hook =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOOK_CONTEXT);
+    ctx_hook->mode_flags =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOOK_CONTEXT_MODE_FLAGS);
+    ctx_hook->event_flags =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOOK_CONTEXT_EVENT_FLAGS);
+    ctx_hook->function =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOOK_CONTEXT_FUNCTION);
+
+    war_env* env = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_ENV);
+    env->ctx_color = ctx_color;
+    env->ctx_keymap = ctx_keymap;
+    env->ctx_command = ctx_command;
+    env->ctx_hook = ctx_hook;
+    env->ctx_pool = ctx_pool;
     env->ctx_config = ctx_config;
     env->ctx_hot = ctx_hot;
-    ctx_hot->fn_id[0] = WAR_HOT_ID_CONFIG;
-    ctx_hot->fn_count = 1;
-    war_mkdir(ctx_config->DIR_CONFIG, 0755);
-    war_mkdir(ctx_config->DIR_CACHE, 0755);
-    war_mkdir(ctx_config->DIR_OVERRIDE, 0755);
-    war_mkdir(ctx_config->DIR_UNDO, 0755);
-    war_mkdir(ctx_config->DIR_WARPOON, 0755);
-    war_mkdir(ctx_config->DIR_JUMPLIST, 0755);
+    ctx_hot->fn_id[0] = WAR_HOT_ID_COLOR;
+    ctx_hot->fn_id[1] = WAR_HOT_ID_KEYMAP;
+    ctx_hot->fn_id[2] = WAR_HOT_ID_COMMAND;
+    ctx_hot->fn_id[3] = WAR_HOT_ID_PLUGIN;
+    ctx_hot->fn_count = 4;
     war_override(ctx_hot->fn_count, ctx_hot->fn_id, env);
-
     //-------------------------------------------------------------------------
-    // LUA
+    //  LUA
     //-------------------------------------------------------------------------
     war_lua_context ctx_lua;
     ctx_lua.L = luaL_newstate();
-    if (!ctx_lua.L) {
-        // call_king_terry("failed to create Lua state");
-        return -1;
-    }
+    if (!ctx_lua.L) { return -1; }
     luaL_openlibs(ctx_lua.L);
     war_load_lua_config(&ctx_lua, "src/lua/war_main.lua");
     //-------------------------------------------------------------------------
@@ -255,9 +364,9 @@ int main() {
         call_king_terry("failed to get r_limit");
     }
     if (r_limit.rlim_max != RLIM_INFINITY) {
-        call_king_terry("r_limit max: %ul", r_limit.rlim_max);
+        // call_king_terry("r_limit max: %ul", r_limit.rlim_max);
     } else {
-        call_king_terry("r_limit max: %s", "unlimited");
+        // call_king_terry("r_limit max: %s", "unlimited");
     }
     war_pool pool_wr;
     war_pool pool_a;
@@ -272,7 +381,7 @@ int main() {
     pthread_create(
         &war_audio_thread,
         NULL,
-        war_audio,
+        war_pipewire,
         (void* [6]){
             &pc_control, &atomics, &pool_a, &ctx_lua, &pc_play, &pc_capture});
     pthread_join(war_window_render_thread, NULL);
@@ -4340,11 +4449,8 @@ static void war_capture(void* userdata) {
     }
     pw_stream_queue_buffer(ctx_pw->capture_stream, b);
 }
-//-----------------------------------------------------------------------------
-// THREAD AUDIO
-//-----------------------------------------------------------------------------
-void* war_audio(void* args) {
-    header("war_audio");
+
+void* war_pipewire(void* args) {
     void** args_ptrs = (void**)args;
     war_producer_consumer* pc_control = args_ptrs[0];
     war_atomics* atomics = args_ptrs[1];
@@ -4517,7 +4623,6 @@ war_label_end_a: {
     pw_stream_destroy(ctx_pw->capture_stream);
     pw_loop_destroy(ctx_pw->loop);
     pw_deinit();
-    end("war_audio");
     return 0;
 }
 }

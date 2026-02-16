@@ -17,8 +17,6 @@
 
 #include "war_data.h"
 
-#include <stdint.h>
-
 // sets defaults, no need to call during override since it's called at init
 static inline void war_config_default(war_config_context* config) {
     config->version = WAR_CONFIG_H_VERSION;
@@ -201,6 +199,7 @@ static inline void war_config_default(war_config_context* config) {
     config->KEYMAP_KEYSYM_CAPACITY = 256;
     config->KEYMAP_MOD_CAPACITY = 32;
     config->KEYMAP_FUNCTION_CAPACITY = 4;
+    config->KEYMAP_MODE_CAPACITY = WAR_MODE_COUNT;
     // core directories
     config->DIR_CONFIG = "$HOME/.config/war";
     config->DIR_CACHE = "$HOME/.cache/war";
@@ -219,6 +218,11 @@ static inline void war_config_default(war_config_context* config) {
         "%s -o %s "
         "$(pkg-config --cflags --libs libpipewire-0.3 freetype2) "
         "-ldrm -lvulkan -lluajit-5.1 -lxkbcommon -lasound -lpthread -lm -ldl";
+    // command context
+    config->COMMAND_CONTEXT_STATE_CAPACITY = 500;
+    config->COMMAND_CONTEXT_FUNCTION_CAPACITY = 4;
+    // hook context
+    config->HOOK_CONTEXT_CAPACITY = 200;
 }
 
 void war_config_override(war_config_context* config);

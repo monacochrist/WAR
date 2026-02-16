@@ -56,22 +56,15 @@
 
 static inline int war_load_lua_config(war_lua_context* ctx_lua,
                                       const char* lua_file) {
-    if (luaL_dofile(ctx_lua->L, lua_file) != LUA_OK) {
-        call_king_terry("Lua error: %s", lua_tostring(ctx_lua->L, -1));
-        return -1;
-    }
+    if (luaL_dofile(ctx_lua->L, lua_file) != LUA_OK) { return -1; }
 
     lua_getglobal(ctx_lua->L, "ctx_lua");
-    if (!lua_istable(ctx_lua->L, -1)) {
-        call_king_terry("ctx_lua not a table");
-        return -1;
-    }
+    if (!lua_istable(ctx_lua->L, -1)) { return -1; }
 
 #define LOAD_INT(field)                                                        \
     lua_getfield(ctx_lua->L, -1, #field);                                      \
     if (lua_type(ctx_lua->L, -1) == LUA_TNUMBER) {                             \
         ctx_lua->field = (int)lua_tointeger(ctx_lua->L, -1);                   \
-        call_king_terry("ctx_lua: %s = %d", #field, ctx_lua->field);           \
     }                                                                          \
     lua_pop(ctx_lua->L, 1);
 
@@ -220,7 +213,6 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     lua_getfield(ctx_lua->L, -1, #field);                                      \
     if (lua_type(ctx_lua->L, -1) == LUA_TNUMBER) {                             \
         ctx_lua->field = (float)lua_tonumber(ctx_lua->L, -1);                  \
-        call_king_terry("ctx_lua: %s = %f", #field, ctx_lua->field);           \
     }                                                                          \
     lua_pop(ctx_lua->L, 1);
 
@@ -254,7 +246,6 @@ static inline int war_load_lua_config(war_lua_context* ctx_lua,
     lua_getfield(ctx_lua->L, -1, #field);                                      \
     if (lua_type(ctx_lua->L, -1) == LUA_TNUMBER) {                             \
         ctx_lua->field = (double)lua_tonumber(ctx_lua->L, -1);                 \
-        call_king_terry("ctx_lua: %s = %f", #field, ctx_lua->field);           \
     }                                                                          \
     lua_pop(ctx_lua->L, 1);
 
@@ -357,7 +348,7 @@ static inline size_t war_get_pool_a_size(war_pool* pool,
             else if (strcmp(type, "bool") == 0) {
                 type_size = sizeof(bool);
             } else {
-                call_king_terry("Unknown pool_a type: %s", type);
+                // call_king_terry("Unknown pool_a type: %s", type);
                 type_size = 0;
             }
 
@@ -369,7 +360,7 @@ static inline size_t war_get_pool_a_size(war_pool* pool,
     // align total_size to pool alignment
     size_t alignment = atomic_load(&ctx_lua->POOL_ALIGNMENT);
     total_size = (total_size + alignment - 1) & ~(alignment - 1);
-    call_king_terry("pool_a size: %zu", total_size);
+    // call_king_terry("pool_a size: %zu", total_size);
     return total_size;
 }
 
@@ -614,7 +605,7 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
                 type_size = sizeof(void**);
 
             else {
-                call_king_terry("Unknown pool_wr type: %s", type);
+                // call_king_terry("Unknown pool_wr type: %s", type);
                 type_size = 0;
             }
 
@@ -626,7 +617,7 @@ static inline size_t war_get_pool_wr_size(war_pool* pool,
     // align total_size to pool alignment
     size_t alignment = atomic_load(&ctx_lua->POOL_ALIGNMENT);
     total_size = (total_size + alignment - 1) & ~(alignment - 1);
-    call_king_terry("pool_wr size: %zu", total_size);
+    // call_king_terry("pool_wr size: %zu", total_size);
     return total_size;
 }
 
@@ -652,6 +643,15 @@ static inline void* war_pool_alloc_new(war_pool_context* ctx_pool,
     }
     call_king_terry("no pool id found");
     return NULL;
+}
+
+static inline uint64_t war_pool_size(war_pool_context* ctx_pool,
+                                     war_pool_id id) {
+    for (uint32_t i = 0; i < ctx_pool->count; i++) {
+        if (ctx_pool->id[i] == id) { return ctx_pool->size[i]; }
+    }
+    call_king_terry("no pool size found");
+    return 0;
 }
 
 // --------------------------
@@ -1639,7 +1639,7 @@ static inline void war_override(uint32_t count, war_hot_id* id, war_env* env) {
                     if (!handle) continue;
 
                     dlerror();
-                    void* fn = dlsym(handle, hot->name[idx]);
+                    void* fn = dlsym(handle, hot->name[id[idx]]);
                     char* err = dlerror();
                     if (err) {
                         dlclose(handle);
@@ -1672,6 +1672,7 @@ static inline void war_override(uint32_t count, war_hot_id* id, war_env* env) {
                 ((void (*)(war_env*))hot->function[id[idx]])(env);
                 break;
             case WAR_HOT_ID_POOL:
+                call_king_terry("hi");
                 ((void (*)(war_pool_context*,
                            war_config_context*))hot->function[id[idx]])(pool,
                                                                         config);

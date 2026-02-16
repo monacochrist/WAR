@@ -17,8 +17,6 @@
 
 #include "war_data.h"
 
-#include <stdint.h>
-
 // sets defaults, no need to call during override since it's called at init
 static inline void war_color_default(war_color_context* color) {
     color->version = WAR_COLOR_H_VERSION;

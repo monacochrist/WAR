@@ -213,6 +213,7 @@ INCLUDEDIR := $(PREFIX)/include/war
 
 install-devel:
 	@echo "Installing WAR development files..."
+	@rm -f $(DESTDIR)$(INCLUDEDIR)/*.h  # remove old headers
 	@mkdir -p $(DESTDIR)$(INCLUDEDIR)
 	@cp -r src/h/* $(DESTDIR)$(INCLUDEDIR)
 

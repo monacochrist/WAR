@@ -43,7 +43,6 @@
 
 static inline uint8_t war_new_vulkan_get_shader_module(
     VkDevice device, VkShaderModule* shader_module, const char* path) {
-    call_king_terry("war_vulkan_get_shader_module");
     FILE* file = fopen(path, "rb");
     if (!file) {
         call_king_terry("failed to open file: %s", path);
@@ -937,18 +936,18 @@ static inline void war_new_vulkan_init(war_new_vulkan_context* ctx_new_vulkan,
     VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     uint32_t memory_type = 0;
     uint8_t found_memory_type = 0;
-    call_king_terry(
-        "Looking for ctx_new_vulkan->memory type with properties: 0x%x",
-        properties);
-    call_king_terry("Available ctx_new_vulkan->memory types:");
+    // call_king_terry(
+    //     "Looking for ctx_new_vulkan->memory type with properties: 0x%x",
+    //     properties);
+    // call_king_terry("Available ctx_new_vulkan->memory types:");
     for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
         VkMemoryPropertyFlags flags =
             mem_properties.memoryTypes[i].propertyFlags;
-        call_king_terry("Type %u: flags=0x%x", i, flags);
+        // call_king_terry("Type %u: flags=0x%x", i, flags);
 
         if ((mem_reqs.memoryTypeBits & (1 << i)) &&
             (flags & properties) == properties) {
-            call_king_terry("-> Selected ctx_new_vulkan->memory type %u", i);
+            // call_king_terry("-> Selected ctx_new_vulkan->memory type %u", i);
             memory_type = i;
             found_memory_type = 1;
             break;
@@ -3747,7 +3746,7 @@ static inline void war_new_vulkan_init(war_new_vulkan_context* ctx_new_vulkan,
     for (int c = 0; c < (int)ctx_new_vulkan->glyph_count; c++) {
         FT_Load_Char(ft_regular, c, FT_LOAD_RENDER);
         if (c == 'M') {
-            call_king_terry("for monospaced fonts");
+            // call_king_terry("for monospaced fonts");
             ctx_new_vulkan->cell_width = ft_regular->glyph->advance.x / 64.0f;
         }
         FT_Bitmap* bmp = &ft_regular->glyph->bitmap;
