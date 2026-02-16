@@ -18,15 +18,16 @@
 #include "war_build_keymap_functions.h"
 #include "war_data.h"
 
-static inline void war_keymap_set(war_keymap_context* keymap,
-                                  war_config_context* config,
-                                  uint32_t mode_count,
-                                  war_mode_id* modes,
-                                  uint32_t sequence_count,
-                                  char** sequences,
-                                  void (*function)(war_env* env),
-                                  war_keymap_flags flags) {
-    if (!keymap || !modes || !sequences || !function) return;
+void war_keymap_set(war_keymap_context* keymap,
+                    war_config_context* config,
+                    uint32_t mode_count,
+                    war_mode_id* modes,
+                    uint32_t sequence_count,
+                    char** sequences,
+                    war_function_id function_id,
+                    void (*function)(war_env* env),
+                    war_keymap_flags flags) {
+    if (!keymap || !modes || !sequences) return;
 
     for (uint32_t m_idx = 0; m_idx < mode_count; m_idx++) {
         war_mode_id mode = modes[m_idx];
@@ -126,7 +127,6 @@ static inline void war_keymap_set(war_keymap_context* keymap,
                             (*count)++;
                         }
                     } else {
-
                         if (*count > 0) {
                             call_king_terry("war_keymap_set: replacing "
                                             "previous mapping for "
@@ -135,8 +135,16 @@ static inline void war_keymap_set(war_keymap_context* keymap,
                                             mode);
                         }
 
-                        keymap->function[func_base + 0] = function;
-                        *count = 1;
+                        if (!function) {
+                            keymap->function_id[func_base + 0] = function_id;
+                            keymap->function[func_base + 0] = NULL;
+                            *count = 1;
+                        } else {
+                            keymap->function[func_base + 0] = function;
+                            keymap->function_id[func_base + 0] =
+                                WAR_FUNCTION_ID_NONE;
+                            *count = 1;
+                        }
                     }
 
                     keymap->flags[mode * config->KEYMAP_STATE_CAPACITY +
@@ -148,7 +156,6 @@ static inline void war_keymap_set(war_keymap_context* keymap,
             }
         }
     }
-    call_king_terry("end of function");
 }
 
 // sets defaults, no need to call during override since it's called at init
@@ -162,7 +169,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    2,
                    (char*[]){"j", "<Down>"},
-                   war_move_cursor_down,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_DOWN,
+                   0,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -170,7 +178,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    2,
                    (char*[]){"h", "<Left>"},
-                   war_move_cursor_left,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_LEFT,
+                   0,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -178,7 +187,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    2,
                    (char*[]){"k", "<Up>"},
-                   war_move_cursor_up,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_UP,
+                   0,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -186,7 +196,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    2,
                    (char*[]){"l", "<Right>"},
-                   war_move_cursor_right,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT,
+                   0,
                    0);
     // move leap
     war_keymap_set(keymap,
@@ -195,7 +206,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    2,
                    (char*[]){"<A-j>", "<A-Down>"},
-                   war_move_cursor_down_leap,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_DOWN_LEAP,
+                   0,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -203,7 +215,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    2,
                    (char*[]){"<A-h>", "<A-Left>"},
-                   war_move_cursor_left_leap,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_LEFT_LEAP,
+                   0,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -211,7 +224,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    2,
                    (char*[]){"<A-k>", "<A-Up>"},
-                   war_move_cursor_up_leap,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_UP_LEAP,
+                   0,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -219,7 +233,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    2,
                    (char*[]){"<A-l>", "<A-Right>"},
-                   war_move_cursor_right_leap,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT_LEAP,
+                   0,
                    0);
 }
 

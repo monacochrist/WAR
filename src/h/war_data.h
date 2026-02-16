@@ -1857,6 +1857,20 @@ typedef struct war_text_context {
     uint32_t buffer_count;
 } war_text_context;
 
+typedef uint32_t war_function_id;
+typedef enum war_function_id_enum {
+    WAR_FUNCTION_ID_NONE,
+    WAR_FUNCTION_ID_MOVE_CURSOR_DOWN,
+    WAR_FUNCTION_ID_MOVE_CURSOR_LEFT,
+    WAR_FUNCTION_ID_MOVE_CURSOR_UP,
+    WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT,
+    WAR_FUNCTION_ID_MOVE_CURSOR_DOWN_LEAP,
+    WAR_FUNCTION_ID_MOVE_CURSOR_LEFT_LEAP,
+    WAR_FUNCTION_ID_MOVE_CURSOR_UP_LEAP,
+    WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT_LEAP,
+    //
+    WAR_FUNCTION_COUNT,
+} war_function_id_enum;
 typedef uint32_t war_mode_id;
 typedef enum war_mode_id_enum {
     WAR_MODE_ID_ROLL,
@@ -1892,12 +1906,12 @@ typedef enum war_keymap_flags_bits {
     WAR_KEYMAP_NO_REPEAT = 1ULL << 2,
     WAR_KEYMAP_NO_TIMEOUT = 1ULL << 3,
     //
-    WAR_KEYMAP_SHARED_LIBRARY = 1ULL << 4,
     WAR_KEYMAP_PREFIX = 1ULL << 5,
 } war_keymap_flags_bits;
 typedef struct war_keymap_context {
     uint32_t version;
     //
+    war_function_id* function_id;
     void (**function)(war_env* env);
     uint8_t* function_count;
     war_keymap_flags* flags;
@@ -2733,6 +2747,7 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_COLOR_CONTEXT,
     // keymap context
     WAR_POOL_ID_KEYMAP_CONTEXT,
+    WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION_ID,
     WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION,
     WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION_COUNT,
     WAR_POOL_ID_KEYMAP_CONTEXT_FLAGS,

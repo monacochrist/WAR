@@ -1888,6 +1888,13 @@ static inline void war_pool_default(war_pool_context* pool,
                  32);
     war_pool_set(pool,
                  config,
+                 WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION_ID,
+                 sizeof(war_function_id) * config->KEYMAP_MODE_CAPACITY *
+                     config->KEYMAP_STATE_CAPACITY *
+                     config->KEYMAP_FUNCTION_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
                  WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION,
                  sizeof(void*) * config->KEYMAP_MODE_CAPACITY *
                      config->KEYMAP_STATE_CAPACITY *

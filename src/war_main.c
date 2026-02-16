@@ -182,6 +182,8 @@ int main() {
 
     war_keymap_context* ctx_keymap =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT);
+    ctx_keymap->function_id =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION_ID);
     ctx_keymap->function =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT_FUNCTION);
     ctx_keymap->function_count =
