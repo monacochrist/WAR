@@ -148,6 +148,7 @@ static inline void war_keymap_set(war_keymap_context* keymap,
             }
         }
     }
+    call_king_terry("end of function");
 }
 
 // sets defaults, no need to call during override since it's called at init
