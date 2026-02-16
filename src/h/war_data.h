@@ -13,7 +13,7 @@
 
 #define _XOPEN_SOURCE 700
 #define _POSIX_C_SOURCE 200809L
-#include "h/war_debug_macros.h"
+#include "war_debug_macros.h"
 #include <ft2build.h>
 #include <locale.h>
 #include <luajit-2.1/lauxlib.h>
