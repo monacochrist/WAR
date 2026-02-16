@@ -1678,7 +1678,9 @@ static inline void war_override(uint32_t count, war_hot_id* id, war_env* env) {
                                                                         config);
                 break;
             case WAR_HOT_ID_KEYMAP:
-                ((void (*)(war_keymap_context*))hot->function[id[idx]])(keymap);
+                ((void (*)(war_keymap_context*,
+                           war_config_context*))hot->function[id[idx]])(keymap,
+                                                                        config);
                 break;
             }
         }

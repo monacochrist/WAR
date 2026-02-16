@@ -18,16 +18,15 @@
 #include "war_build_keymap_functions.h"
 #include "war_data.h"
 
-// test
-void war_keymap_set(war_keymap_context* keymap,
-                    war_config_context* config,
-                    uint32_t mode_count,
-                    war_mode_id* modes,
-                    uint32_t sequence_count,
-                    char** sequences,
-                    war_function_id function_id,
-                    void (*function)(war_env* env),
-                    war_keymap_flags flags) {
+static inline void war_keymap_set(war_keymap_context* keymap,
+                                  war_config_context* config,
+                                  uint32_t mode_count,
+                                  war_mode_id* modes,
+                                  uint32_t sequence_count,
+                                  char** sequences,
+                                  war_function_id function_id,
+                                  void (*function)(war_env* env),
+                                  war_keymap_flags flags) {
     if (!keymap || !modes || !sequences) return;
 
     for (uint32_t m_idx = 0; m_idx < mode_count; m_idx++) {
