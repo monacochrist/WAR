@@ -56,9 +56,8 @@
 int main() {
     CALL_KING_TERRY("war");
     //-------------------------------------------------------------------------
-    // NEW
+    // BOOTSTRAP
     //-------------------------------------------------------------------------
-    // bootstrap
     war_config_context* tmp_ctx_config = calloc(1, sizeof(war_config_context));
     war_config_default(tmp_ctx_config);
     war_pool_context* tmp_ctx_pool = calloc(1, sizeof(war_pool_context));
@@ -176,10 +175,12 @@ int main() {
     }
     free(tmp_ctx_pool);
     tmp_ctx_pool = NULL;
+    //------------------------------------------------------------------------
+    // INIT
+    //------------------------------------------------------------------------
     war_color_context* ctx_color =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COLOR_CONTEXT);
     war_color_default(ctx_color);
-
     war_keymap_context* ctx_keymap =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_KEYMAP_CONTEXT);
     ctx_keymap->function_id =
@@ -198,9 +199,10 @@ int main() {
         ctx_keymap->state_count[i] = 1;
     }
     war_keymap_default(ctx_keymap, ctx_config);
-
     war_command_context* ctx_command =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT);
+    ctx_command->function_id =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION_ID);
     ctx_command->function =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION);
     ctx_command->function_count = war_pool_alloc_new(
@@ -211,7 +213,6 @@ int main() {
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_COMMAND_CONTEXT_NEXT_STATE);
     ctx_command->state_count = 1;
     war_command_default(ctx_command, ctx_config);
-
     war_hook_context* ctx_hook =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOOK_CONTEXT);
     ctx_hook->mode_flags =
@@ -220,7 +221,6 @@ int main() {
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOOK_CONTEXT_EVENT_FLAGS);
     ctx_hook->function =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_HOOK_CONTEXT_FUNCTION);
-
     war_env* env = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_ENV);
     env->ctx_color = ctx_color;
     env->ctx_keymap = ctx_keymap;

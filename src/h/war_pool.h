@@ -1857,6 +1857,13 @@ static inline void war_pool_default(war_pool_context* pool,
                  32);
     war_pool_set(pool,
                  config,
+                 WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION_ID,
+                 sizeof(war_function_id) *
+                     config->COMMAND_CONTEXT_STATE_CAPACITY *
+                     config->COMMAND_CONTEXT_FUNCTION_CAPACITY,
+                 32);
+    war_pool_set(pool,
+                 config,
                  WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION,
                  sizeof(void*) * config->COMMAND_CONTEXT_STATE_CAPACITY *
                      config->COMMAND_CONTEXT_FUNCTION_CAPACITY,

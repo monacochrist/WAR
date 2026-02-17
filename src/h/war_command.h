@@ -23,6 +23,7 @@ static inline void war_command_set(war_command_context* command,
                                    war_config_context* config,
                                    uint32_t sequence_count,
                                    char** sequences,
+                                   war_function_id function_id,
                                    void (*function)(war_env* env),
                                    war_command_flags flags) {
     if (!command || !sequences || !function) return;
@@ -66,6 +67,10 @@ static inline void war_command_set(war_command_context* command,
 
                 if (flags & WAR_COMMAND_EXTEND) {
                     if (func_idx < config->COMMAND_CONTEXT_FUNCTION_CAPACITY) {
+                        call_king_terry("war_command_set: extending "
+                                        "previous mapping for "
+                                        "(seq): %s",
+                                        seq);
                         command->function
                             [next_state *
                                  config->COMMAND_CONTEXT_FUNCTION_CAPACITY +
@@ -73,11 +78,31 @@ static inline void war_command_set(war_command_context* command,
                         command->function_count[next_state]++;
                     } // else overflow ignored
                 } else {
-                    command->function
-                        [next_state *
-                             config->COMMAND_CONTEXT_FUNCTION_CAPACITY +
-                         0] = function;
-                    command->function_count[next_state] = 1;
+                    call_king_terry("war_command_set: replacing "
+                                    "previous mapping for "
+                                    "(seq): %s",
+                                    seq);
+                    if (!function) {
+                        command->function_id
+                            [next_state *
+                                 config->COMMAND_CONTEXT_FUNCTION_CAPACITY +
+                             0] = function_id;
+                        command->function
+                            [next_state *
+                                 config->COMMAND_CONTEXT_FUNCTION_CAPACITY +
+                             0] = NULL;
+                        command->function_count[next_state] = 1;
+                    } else {
+                        command->function
+                            [next_state *
+                                 config->COMMAND_CONTEXT_FUNCTION_CAPACITY +
+                             0] = function;
+                        command->function_id
+                            [next_state *
+                                 config->COMMAND_CONTEXT_FUNCTION_CAPACITY +
+                             0] = WAR_FUNCTION_ID_NONE;
+                        command->function_count[next_state] = 1;
+                    }
                 }
 
                 // set extra flags
@@ -92,9 +117,13 @@ static inline void war_command_set(war_command_context* command,
 
 static inline void war_command_default(war_command_context* command,
                                        war_config_context* config) {
-    // war_command_set(
-    //     command, config, 3, (char*[]){"a", "b", "aa"}, war_command_example,
-    //     0);
+    //war_command_set(command,
+    //                config,
+    //                3,
+    //                (char*[]){"a", "b", "aa"},
+    //                WAR_FUNCTION_ID_NONE,
+    //                0,
+    //                0);
 }
 
 void war_command_override(war_command_context* command,

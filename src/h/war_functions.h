@@ -1662,8 +1662,9 @@ static inline void war_override(uint32_t count, war_hot_id* id, war_env* env) {
                 ((void (*)(war_config_context*))hot->function[id[idx]])(config);
                 break;
             case WAR_HOT_ID_COMMAND:
-                ((void (*)(war_command_context*))hot->function[id[idx]])(
-                    command);
+                ((void (*)(war_command_context*,
+                           war_config_context*))hot->function[id[idx]])(command,
+                                                                        config);
                 break;
             case WAR_HOT_ID_COLOR:
                 ((void (*)(war_color_context*))hot->function[id[idx]])(color);
@@ -1672,7 +1673,6 @@ static inline void war_override(uint32_t count, war_hot_id* id, war_env* env) {
                 ((void (*)(war_env*))hot->function[id[idx]])(env);
                 break;
             case WAR_HOT_ID_POOL:
-                call_king_terry("hi");
                 ((void (*)(war_pool_context*,
                            war_config_context*))hot->function[id[idx]])(pool,
                                                                         config);

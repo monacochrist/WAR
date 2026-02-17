@@ -2062,6 +2062,7 @@ typedef struct war_color_context {
     uint32_t piano_black_key;
     uint32_t piano_line;
     uint32_t playhead;
+    uint32_t playhead_outline;
 } war_color_context;
 
 // typedef struct war_keymap_context {
@@ -2091,6 +2092,7 @@ typedef enum war_command_flags_bits {
 typedef struct war_command_context {
     uint32_t version;
     //
+    war_function_id* function_id;
     void (**function)(war_env* env);
     uint8_t* function_count;
     war_command_flags* flags;
@@ -2739,6 +2741,7 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_HOOK_CONTEXT_FUNCTION,
     // command context
     WAR_POOL_ID_COMMAND_CONTEXT,
+    WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION_ID,
     WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION,
     WAR_POOL_ID_COMMAND_CONTEXT_FUNCTION_COUNT,
     WAR_POOL_ID_COMMAND_CONTEXT_FLAGS,
