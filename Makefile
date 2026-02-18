@@ -191,7 +191,7 @@ gcc_check:
 
 # war
 
-.PHONY: war_pkgbuild
+.PHONY: war_pkgbuild war_devel war_devel_pkgbuild pkgbuild
 
 define WAR_PKGBUILD_TEMPLATE
 pkgname=war
@@ -202,7 +202,7 @@ arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
 depends=('pipewire')
-makedepends=('git' 'pkgconf')
+makedepends=('git' 'pkgconf' 'make')
 source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
@@ -234,11 +234,9 @@ package() {
 endef
 
 war_pkgbuild:
-	$(file >war/PKGBUILD,$(WAR_PKGBUILD_TEMPLATE))
+	@$(file >war/PKGBUILD,$(WAR_PKGBUILD_TEMPLATE))
 
 # war-devel
-
-.PHONY: war_devel war_devel_pkgbuild
 
 WAR_DEVEL_PC_DESTDIR ?= .
 
@@ -254,10 +252,10 @@ Cflags: -I\$${includedir}
 endef
 
 war_devel:
-	install -dm755 $(WAR_DEVEL_PC_DESTDIR)/usr/include/war
-	install -m644 src/h/* $(WAR_DEVEL_PC_DESTDIR)/usr/include/war/
-	install -dm755 $(WAR_DEVEL_PC_DESTDIR)/usr/lib/pkgconfig
-	$(file >$(WAR_DEVEL_PC_DESTDIR)/usr/lib/pkgconfig/war-devel.pc,$(WAR_DEVEL_PC_TEMPLATE))
+	@install -dm755 $(WAR_DEVEL_PC_DESTDIR)/usr/include/war
+	@install -m644 src/h/* $(WAR_DEVEL_PC_DESTDIR)/usr/include/war/
+	@install -dm755 $(WAR_DEVEL_PC_DESTDIR)/usr/lib/pkgconfig
+	@$(file >$(WAR_DEVEL_PC_DESTDIR)/usr/lib/pkgconfig/war-devel.pc,$(WAR_DEVEL_PC_TEMPLATE))
 
 define WAR_DEVEL_PKGBUILD_TEMPLATE
 pkgname=war-devel
@@ -268,7 +266,7 @@ arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
 depends=('pipewire')
-makedepends=('git' 'pkgconf')
+makedepends=('git' 'pkgconf' 'make')
 source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
@@ -288,4 +286,6 @@ package() {
 endef
 
 war_devel_pkgbuild:
-	$(file >war-devel/PKGBUILD,$(WAR_DEVEL_PKGBUILD_TEMPLATE))
+	@$(file >war-devel/PKGBUILD,$(WAR_DEVEL_PKGBUILD_TEMPLATE))
+
+pkgbuild: war_pkgbuild war_devel_pkgbuild
