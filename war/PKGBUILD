@@ -1,36 +1,37 @@
 pkgname=war
-pkgver=0.0.0
+pkgver=r585.5b46a72
 pkgrel=1
-pkgdesc="WAR runtime binary"
+pkgdesc="WAR runtime files"
 arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
-depends=('pipewire')    # runtime deps
-makedepends=('git' 'pkgconf' 'vulkan-headers' 'freetype2' 'lua')  # for building
+depends=('pipewire')
+makedepends=('git' 'pkgconf')
 source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
+pkgver() {
+    cd "$srcdir/WAR"
+    if [ -d .git ]; then
+        printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+	else
+		date +%Y%m%d    
+	fi
+}
+
 build() {
-    cd "$srcdir/WAR" || exit 1
-    make clean all DEBUG=0
+	cd "$srcdir/WAR" || exit 1
+	make all
 }
 
 package() {
-    cd "$srcdir/WAR" || exit 1
+	cd "$srcdir/WAR" || exit 1
+	# Install runtime binary
+	install -Dm755 build/WAR "$pkgdir/usr/bin/war"
 
-    # Install the binary
-    install -Dm755 WAR "$pkgdir/usr/bin/war"
+	# Install any runtime shared libs (if any)
+	# install -Dm755 build/libwar.so "$pkgdir/usr/lib/libwar.so"
 
-    # Optionally install assets
-    if [ -d "assets" ]; then
-        mkdir -p "$pkgdir/usr/share/war/assets"
-        cp -r assets/* "$pkgdir/usr/share/war/assets/"
-    fi
-
-    # Optional documentation
-    if [ -f "README.md" ]; then
-        mkdir -p "$pkgdir/usr/share/doc/war"
-        cp README.md "$pkgdir/usr/share/doc/war/"
-    fi
+	# Optionally, install docs
+	# install -Dm644 README.md "$pkgdir/usr/share/doc/war/README.md"
 }
-

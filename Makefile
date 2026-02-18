@@ -195,6 +195,7 @@ gcc_check:
 
 define WAR_PKGBUILD_TEMPLATE
 pkgname=war
+pkgver=0
 pkgrel=1
 pkgdesc="WAR runtime files"
 arch=('x86_64')
@@ -206,10 +207,12 @@ source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
 pkgver() {
-	cd "$$srcdir/WAR"
-	timestamp=$$(date '+%H.%M.%S')
-	datestamp=$$(date '+%m-%d-%Y')
-	echo "$${timestamp}_$${datestamp}"
+    cd "$$srcdir/WAR"
+    if [ -d .git ]; then
+        printf "r%s.%s" "$$(git rev-list --count HEAD)" "$$(git rev-parse --short=7 HEAD)"
+	else
+		date +%Y%m%d    
+	fi
 }
 
 build() {
@@ -258,6 +261,7 @@ war_devel:
 
 define WAR_DEVEL_PKGBUILD_TEMPLATE
 pkgname=war-devel
+pkgver=0
 pkgrel=1
 pkgdesc="WAR development files"
 arch=('x86_64')
@@ -269,10 +273,12 @@ source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
 pkgver() {
-	cd "$$srcdir/WAR"
-	timestamp=$$(date '+%H.%M.%S')
-	datestamp=$$(date '+%m-%d-%Y')
-	echo "$${timestamp}_$${datestamp}"
+    cd "$$srcdir/WAR"
+    if [ -d .git ]; then
+        printf "r%s.%s" "$$(git rev-list --count HEAD)" "$$(git rev-parse --short=7 HEAD)"
+	else
+		date +%Y%m%d    
+	fi
 }
 
 package() {
