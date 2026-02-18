@@ -203,7 +203,7 @@ url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
 depends=('pipewire')
 makedepends=('git' 'pkgconf')
-source=("WAR::git+https://github.com/monacochrist/WAR.git")
+source=("git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
 pkgver() {
@@ -269,7 +269,7 @@ url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
 depends=('pipewire')
 makedepends=('git' 'pkgconf')
-source=("WAR::git+https://github.com/monacochrist/WAR.git")
+source=("git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
 pkgver() {
