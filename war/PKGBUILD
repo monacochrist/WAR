@@ -1,0 +1,36 @@
+pkgname=war
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="WAR runtime binary"
+arch=('x86_64')
+url="https://github.com/monacochrist/WAR"
+license=('custom:WAR')
+depends=('pipewire')    # runtime deps
+makedepends=('git' 'pkgconf' 'vulkan-headers' 'freetype2' 'lua')  # for building
+source=("WAR::git+https://github.com/monacochrist/WAR.git")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/WAR" || exit 1
+    make clean all DEBUG=0
+}
+
+package() {
+    cd "$srcdir/WAR" || exit 1
+
+    # Install the binary
+    install -Dm755 WAR "$pkgdir/usr/bin/war"
+
+    # Optionally install assets
+    if [ -d "assets" ]; then
+        mkdir -p "$pkgdir/usr/share/war/assets"
+        cp -r assets/* "$pkgdir/usr/share/war/assets/"
+    fi
+
+    # Optional documentation
+    if [ -f "README.md" ]; then
+        mkdir -p "$pkgdir/usr/share/doc/war"
+        cp README.md "$pkgdir/usr/share/doc/war/"
+    fi
+}
+

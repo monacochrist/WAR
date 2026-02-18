@@ -53,8 +53,6 @@
 #define YEAR_CHAR3 (__DATE__[9])
 #define YEAR_CHAR4 (__DATE__[10])
 
-#if DEBUG
-
 #define PRINT_DATE_NUMERIC()                                                   \
     fprintf(stderr,                                                            \
             "%02d-%c%c-%c%c%c%c",                                              \
@@ -66,7 +64,7 @@
             YEAR_CHAR3,                                                        \
             YEAR_CHAR4)
 
-#define CALL_KING_TERRY(fmt, ...)                                             \
+#define CALL_KING_TERRY(fmt, ...)                                              \
     do {                                                                       \
         fprintf(stderr, "# " fmt, ##__VA_ARGS__);                              \
         if ((fmt)[sizeof(fmt) - 2] == '\n')                                    \
@@ -101,17 +99,13 @@
 
 #define call_king_terry(fmt, ...) fprintf(stderr, "- " fmt "\n", ##__VA_ARGS__)
 
-#else // DEBUG not defined
-
-#define CALL_KING_TERRY(fmt, ...) ((void)0)
-#define header(fmt, ...) ((void)0)
-#define end(fmt, ...) ((void)0)
-#define END(fmt, ...) ((void)0)
-#define sub_header(fmt, ...) ((void)0)
-#define call_king_terry(fmt, ...) ((void)0)
-#define PRINT_DATE_NUMERIC() ((void)0)
-#define dump_bytes(label, arr, len) ((void)0)
-
-#endif // DEBUG
+// #define CALL_KING_TERRY(fmt, ...) ((void)0)
+// #define header(fmt, ...) ((void)0)
+// #define end(fmt, ...) ((void)0)
+// #define END(fmt, ...) ((void)0)
+// #define sub_header(fmt, ...) ((void)0)
+// #define call_king_terry(fmt, ...) ((void)0)
+// #define PRINT_DATE_NUMERIC() ((void)0)
+// #define dump_bytes(label, arr, len) ((void)0)
 
 #endif // WAR_DEBUG_MACROS_H

@@ -1,40 +1,26 @@
 CC := gcc
-DEBUG ?= 0
-VERBOSE ?= 0
+TEST ?= 0
 
-WL_SHM ?= 0
-DMABUF ?= 0
-
-PIPEWIRE_CFLAGS := $(shell pkg-config --cflags libpipewire-0.3)
-PIPEWIRE_LIBS   := $(shell pkg-config --libs libpipewire-0.3)
-
-ifeq ($(WL_SHM),1)
-	DMABUF := 0
-else ifeq ($(DMABUF),1)
-	WL_SHM := 0
+ifeq ($(TEST), 1)
+	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O0 -g -march=x86-64 -std=c99 -MMD -DDEBUG -I src
 else
-	DMABUF := 1
+	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O3 -march=x86-64 -std=c99 -MMD -DNDEBUG -I src
 endif
 
-ifeq ($(VERBOSE), 1)
-    Q :=
-else
-    Q := @
-    MAKEFLAGS += --no-print-directory
-endif
+PKG_CONFIG_CFLAGS_PACKAGES := \
+freetype2 \
+xkbcommon \
+libpipewire-0.3 \
+luajit
+PKG_CONFIG_CFLAGS_PACKAGES_STR := $(subst \, ,$(PKG_CONFIG_CFLAGS_PACKAGES))
+PKG_CONFIG_CFLAGS := $(shell pkg-config --cflags $(PKG_CONFIG_CFLAGS_PACKAGES))
+EXPLICIT_CFLAGS_PACKAGES :=
+EXPLICIT_CFLAGS :=
 
-ifeq ($(DEBUG), 1)
-	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O3 -g -march=native -std=c99 -MMD -I src -I include -I /usr/include/libdrm -I /usr/include/freetype2 $(PIPEWIRE_CFLAGS)
-else ifeq ($(DEBUG), 2)
-	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O0 -g -march=native -std=c99 -MMD -DDEBUG -I src -I include -I /usr/include/libdrm -I /usr/include/freetype2 $(PIPEWIRE_CFLAGS) 
-else
-	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O3 -march=native -std=c99 -MMD -DNDEBUG -I src -I include -I /usr/include/libdrm -I /usr/include/freetype2 $(PIPEWIRE_CFLAGS)
-endif
-
-CFLAGS += -DWL_SHM=$(WL_SHM)
-CFLAGS += -DDMABUF=$(DMABUF)
-
-LDFLAGS := -lvulkan -ldrm -lm -lluajit-5.1 -lxkbcommon -lasound -lpthread -lfreetype $(PIPEWIRE_LIBS)
+PKG_CONFIG_LIBS_PACKAGES := freetype2 xkbcommon libpipewire-0.3 luajit vulkan
+PKG_CONFIG_LIBS := $(shell pkg-config --libs $(PKG_CONFIG_LIBS_PACKAGES))
+EXPLICIT_LIBS_PACKAGES :=
+EXPLICIT_LIBS := -lm -lpthread -lasound
 
 SRC_DIR := src
 BUILD_DIR := build
@@ -190,33 +176,110 @@ $(NEW_VULKAN_VERTEX_HUD_TEXT_SHADER_SPV): $(NEW_VULKAN_VERTEX_HUD_TEXT_SHADER_SR
 
 $(UNITY_O): $(UNITY_C)
 	$(Q)mkdir -p $(dir $@)
-	$(Q)$(CC) $(CFLAGS) -c $(UNITY_C) -o $@
+	$(Q)$(CC) $(CFLAGS) $(PKG_CONFIG_CFLAGS) $(EXPLICIT_CFLAGS) -c $(UNITY_C) -o $@
 
 $(TARGET): $(UNITY_O) $(H_BUILD_FILES) $(SPV_BUILD_FILES)
-	$(Q)$(CC) $(CFLAGS) -o $@ $(UNITY_O) $(LDFLAGS)
+	$(Q)$(CC) -o $@ $(UNITY_O) $(PKG_CONFIG_LIBS) $(EXPLICIT_LIBS)
 
 clean:
 	$(Q)rm -rf $(BUILD_DIR) $(TARGET) 
 
 gcc_check:
-	$(Q)$(CC) $(CFLAGS) -fsyntax-only $(SRC)
+	$(Q)$(CC) $(CFLAGS) $(PKG_CONFIG_CFLAGS) $(EXPLICIT_CFLAGS) -fsyntax-only $(SRC)
 
 -include $(DEP)
 
-#-----------------------------------------------------------------------------
+# war
+
+.PHONY: war_pkgbuild
+
+define WAR_PKGBUILD_TEMPLATE
+pkgname=war
+pkgrel=1
+pkgdesc="WAR runtime files"
+arch=('x86_64')
+url="https://github.com/monacochrist/WAR"
+license=('custom:WAR')
+depends=('pipewire')
+makedepends=('git' 'pkgconf')
+source=("WAR::git+https://github.com/monacochrist/WAR.git")
+sha256sums=('SKIP')
+
+pkgver() {
+	cd "$$srcdir/WAR"
+	timestamp=$$(date '+%H.%M.%S')
+	datestamp=$$(date '+%m-%d-%Y')
+	echo "$${timestamp}_$${datestamp}"
+}
+
+build() {
+	cd "$$srcdir/WAR" || exit 1
+	make all
+}
+
+package() {
+	cd "$$srcdir/WAR" || exit 1
+	# Install runtime binary
+	install -Dm755 build/WAR "$$pkgdir/usr/bin/war"
+
+	# Install any runtime shared libs (if any)
+	# install -Dm755 build/libwar.so "$$pkgdir/usr/lib/libwar.so"
+
+	# Optionally, install docs
+	# install -Dm644 README.md "$$pkgdir/usr/share/doc/war/README.md"
+}
+endef
+
+war_pkgbuild:
+	$(file >war/PKGBUILD,$(WAR_PKGBUILD_TEMPLATE))
+
 # war-devel
-#-----------------------------------------------------------------------------
-PREFIX ?= /usr
-INCLUDEDIR := $(PREFIX)/include/war
 
-.PHONY: install-devel clean-devel
+.PHONY: war_devel war_devel_pkgbuild
 
-install-devel:
-	@echo "Installing WAR development files..."
-	@rm -f $(DESTDIR)$(INCLUDEDIR)/*.h  # remove old headers
-	@mkdir -p $(DESTDIR)$(INCLUDEDIR)
-	@cp -r src/h/* $(DESTDIR)$(INCLUDEDIR)
+WAR_DEVEL_PC_DESTDIR ?= .
 
-clean-devel:
-	@echo "Cleaning WAR development install..."
-	@rm -rf $(DESTDIR)$(INCLUDEDIR)
+define WAR_DEVEL_PC_TEMPLATE
+prefix=/usr
+includedir=\$${prefix}/include/war
+
+Name: war-devel
+Description: WAR development files
+Version: $$pkgver
+Requires: $(PKG_CONFIG_CFLAGS_PACKAGES_STR)
+Cflags: -I\$${includedir}
+endef
+
+war_devel:
+	install -dm755 $(WAR_DEVEL_PC_DESTDIR)/usr/include/war
+	install -m644 src/h/* $(WAR_DEVEL_PC_DESTDIR)/usr/include/war/
+	install -dm755 $(WAR_DEVEL_PC_DESTDIR)/usr/lib/pkgconfig
+	$(file >$(WAR_DEVEL_PC_DESTDIR)/usr/lib/pkgconfig/war-devel.pc,$(WAR_DEVEL_PC_TEMPLATE))
+
+define WAR_DEVEL_PKGBUILD_TEMPLATE
+pkgname=war-devel
+pkgrel=1
+pkgdesc="WAR development files"
+arch=('x86_64')
+url="https://github.com/monacochrist/WAR"
+license=('custom:WAR')
+depends=('pipewire')
+makedepends=('git' 'pkgconf')
+source=("WAR::git+https://github.com/monacochrist/WAR.git")
+sha256sums=('SKIP')
+
+pkgver() {
+	cd "$$srcdir/WAR"
+	timestamp=$$(date '+%H.%M.%S')
+	datestamp=$$(date '+%m-%d-%Y')
+	echo "$${timestamp}_$${datestamp}"
+}
+
+package() {
+	cd "$$srcdir/WAR" || exit 1
+	make WAR_DEVEL_PC_DESTDIR="$$pkgdir" war_devel
+}
+endef
+
+war_devel_pkgbuild:
+	$(file >war-devel/PKGBUILD,$(WAR_DEVEL_PKGBUILD_TEMPLATE))

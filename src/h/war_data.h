@@ -14,6 +14,7 @@
 #define _XOPEN_SOURCE 700
 #define _POSIX_C_SOURCE 200809L
 #include "war_debug_macros.h"
+#include <freetype/freetype.h>
 #include <ft2build.h>
 #include <locale.h>
 #include <luajit-2.1/lauxlib.h>
@@ -30,9 +31,6 @@
 #include <sys/types.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
-#include <xf86drm.h>
-#include <xf86drmMode.h>
-#include FT_FREETYPE_H
 
 enum war_mods {
     MOD_NONE = 0,
@@ -2275,6 +2273,10 @@ typedef struct war_config_context {
     char* DIR_OVERRIDE;
     char* DIR_JUMPLIST;
     char* DIR_WARPOON;
+    char* DIR_LOG;
+    // log
+    uint32_t LOG_HISTORY_LENGTH;
+    uint32_t LOG_PER_FILE_LENGTH;
     // hot context
     uint32_t HOT_CONTEXT_NAME_LIMIT;
     uint32_t HOT_CONTEXT_CMD_LIMIT;

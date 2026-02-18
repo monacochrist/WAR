@@ -1,38 +1,22 @@
 pkgname=war-devel
-pkgver=0.0.0
-pkgrel=31
-pkgdesc="WAR development files (headers)"
+pkgrel=1
+pkgdesc="WAR development files"
 arch=('x86_64')
 url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
-
 depends=('pipewire')
 makedepends=('git' 'pkgconf')
-
 source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
+pkgver() {
+	cd "$srcdir/WAR"
+	timestamp=$(date '+%H.%M.%S')
+	datestamp=$(date '+%m-%d-%Y')
+	echo "${timestamp}_${datestamp}"
+}
+
 package() {
-    cd "$srcdir/WAR" || exit 1
-
-    # Make sure the destination is clean
-    rm -rf "$pkgdir/usr/include/war"
-    mkdir -p "$pkgdir/usr/include/war"
-
-    # Copy all headers from your src/h/ directory
-    cp -r src/h/* "$pkgdir/usr/include/war"
-
-    # Optional: pkgconfig file
-    mkdir -p "$pkgdir/usr/lib/pkgconfig"
-    version="$(git log -1 --format=%cd --date=format:%Y%m%d%H%M)-$(git rev-parse --short HEAD)"
-    cat > "$pkgdir/usr/lib/pkgconfig/war-devel.pc" <<EOF
-prefix=/usr
-includedir=\${prefix}/include/war
-
-Name: war-devel
-Description: WAR development files
-Version: $version
-Requires: libpipewire-0.3
-Cflags: -I\${includedir}
-EOF
+	cd "$srcdir/WAR" || exit 1
+	make WAR_DEVEL_PC_DESTDIR="$pkgdir" war_devel_pc
 }

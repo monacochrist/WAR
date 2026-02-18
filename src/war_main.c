@@ -53,7 +53,7 @@
 #include <time.h>
 #include <unistd.h>
 
-int main() {
+int main(int argc, char** argv) {
     CALL_KING_TERRY("war");
     //-------------------------------------------------------------------------
     // BOOTSTRAP
@@ -109,6 +109,7 @@ int main() {
     war_mkdir(tmp_ctx_config->DIR_UNDO, 0755);
     war_mkdir(tmp_ctx_config->DIR_WARPOON, 0755);
     war_mkdir(tmp_ctx_config->DIR_JUMPLIST, 0755);
+    war_mkdir(tmp_ctx_config->DIR_LOG, 0755);
     tmp_ctx_hot->fn_id[0] = WAR_HOT_ID_CONFIG;
     tmp_ctx_hot->fn_count = 1;
     war_override(tmp_ctx_hot->fn_count, tmp_ctx_hot->fn_id, tmp_env);

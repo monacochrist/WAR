@@ -207,6 +207,10 @@ static inline void war_config_default(war_config_context* config) {
     config->DIR_OVERRIDE = "$HOME/.cache/war/override"; // global
     config->DIR_JUMPLIST = "$HOME/.cache/war/jumplist"; // global
     config->DIR_WARPOON = "$HOME/.cache/war/warpoon";   // per project
+    config->DIR_LOG = "$HOME/.cache/war/log";
+    // log
+    config->LOG_HISTORY_LENGTH = 30;
+    config->LOG_PER_FILE_LENGTH = 1000; // newest lines
     // hot context
     config->HOT_CONTEXT_NAME_LIMIT = 256;
     config->HOT_CONTEXT_CMD_LIMIT = 256;

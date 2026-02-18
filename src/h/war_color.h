@@ -152,7 +152,7 @@ static inline void war_color_default(war_color_context* color) {
     color->piano_black_key = 0x000000FF;
     color->piano_line = 0x504944FF;
     color->playhead = 0xDE0000FF;
-    color->playhead_outline = 0x000000FF;
+    color->playhead_outline = 0xEBDAB0FF;
 }
 
 void war_color_override(war_color_context* color);
