@@ -203,7 +203,7 @@ url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
 depends=('pipewire')
 makedepends=('git' 'pkgconf')
-source=("git+https://github.com/monacochrist/WAR.git")
+source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
 pkgver() {
@@ -223,7 +223,7 @@ build() {
 package() {
 	cd "$$srcdir/WAR" || exit 1
 	# Install runtime binary
-	install -Dm755 build/WAR "$$pkgdir/usr/bin/war"
+	install -Dm755 WAR "$$pkgdir/usr/bin/war"
 
 	# Install any runtime shared libs (if any)
 	# install -Dm755 build/libwar.so "$$pkgdir/usr/lib/libwar.so"
@@ -269,7 +269,7 @@ url="https://github.com/monacochrist/WAR"
 license=('custom:WAR')
 depends=('pipewire')
 makedepends=('git' 'pkgconf')
-source=("git+https://github.com/monacochrist/WAR.git")
+source=("WAR::git+https://github.com/monacochrist/WAR.git")
 sha256sums=('SKIP')
 
 pkgver() {
