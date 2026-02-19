@@ -206,6 +206,19 @@ key_gen:
 	./key/gen_key
 	rm -f key/gen_key
 
+# user key
+
+WAR_USER_KEY_C := $(WAR_KEY_DIR)/user_key.c
+WAR_USER_KEY := $(WAR_KEY_DIR)/war-key
+WAR_USER_KEY_SIG := $(WAR_KEY_DIR)/war-key.sig
+WAR_USER_KEY_EMAIL := none
+WAR_USER_KEY_TIMESTAMP := $(shell grep "Timestamp:" key/key.h | awk '{print $$3}')
+
+user_key_gen:
+	$(CC) -I$(LIBSODIUM_DIR)/include $(WAR_USER_KEY_C) -o key/gen_user_key -L$(LIBSODIUM_DIR)/.libs -lsodium
+	./key/gen_user_key $(WAR_USER_KEY) $(WAR_USER_KEY_SIG) $(WAR_USER_KEY_EMAIL) $(WAR_USER_KEY_TIMESTAMP)
+	rm -f key/gen_user_key
+
 # war
 
 .PHONY: war_pkgbuild war_devel war_devel_pkgbuild pkgbuild

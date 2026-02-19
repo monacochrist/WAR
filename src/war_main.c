@@ -56,11 +56,76 @@
 #include <unistd.h>
 
 int main(int argc, char** argv) {
+    CALL_KING_TERRY("war");
     if (sodium_init() < 0) {
         call_king_terry("sodium couldn't be initialized");
         return 1;
     }
-    CALL_KING_TERRY("war");
+    char* key_dir = getenv("WAR_KEY_DIR");
+    if (!key_dir || key_dir[0] == '\0') {
+        call_king_terry("WAR_KEY_DIR not set");
+        return 1;
+    }
+    char* key_name = getenv("WAR_KEY_NAME");
+    if (!key_name || key_name[0] == '\0') {
+        // default fallback if unset
+        key_name = "war-key";
+    }
+    char* key_sig_name = getenv("WAR_KEY_SIG_NAME");
+    if (!key_sig_name || key_sig_name[0] == '\0') {
+        // default fallback if unset
+        key_sig_name = "war-key.sig";
+    }
+    char key_path[512];
+    char sig_path[512];
+    snprintf(key_path, sizeof(key_path), "%s/%s", key_dir, key_name);
+    snprintf(sig_path, sizeof(sig_path), "%s/%s", key_dir, key_sig_name);
+    // Read license content
+    FILE* f = fopen(key_path, "rb");
+    if (!f) {
+        call_king_terry("cannot open license file");
+        return 1;
+    }
+    fseek(f, 0, SEEK_END);
+    size_t key_len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char* key_content = malloc(key_len);
+    if (!key_content) {
+        call_king_terry("malloc failed");
+        fclose(f);
+        return 1;
+    }
+    if (fread(key_content, 1, key_len, f) != key_len) {
+        call_king_terry("failed to read license file");
+        free(key_content);
+        fclose(f);
+        return 1;
+    }
+    fclose(f);
+
+    // Read signature
+    f = fopen(sig_path, "rb");
+    if (!f) {
+        call_king_terry("cannot open signature file");
+        free(key_content);
+        return 1;
+    }
+    unsigned char sig[crypto_sign_BYTES];
+    size_t sig_len = fread(sig, 1, sizeof(sig), f);
+    fclose(f);
+    if (sig_len != crypto_sign_BYTES) {
+        call_king_terry("signature file size incorrect");
+        free(key_content);
+        return 1;
+    }
+    if (crypto_sign_verify_detached(
+            sig, key_content, key_len, WAR_PUBLIC_KEY) != 0) {
+        call_king_terry("invalid license signature");
+        free(key_content);
+        return 1;
+    }
+    free(key_content);
+
     //-------------------------------------------------------------------------
     // BOOTSTRAP
     //-------------------------------------------------------------------------
