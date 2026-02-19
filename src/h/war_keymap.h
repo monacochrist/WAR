@@ -16,6 +16,7 @@
 #endif // WAR_KEYMAP_H_VERSION
 
 #include "war_build_keymap_functions.h"
+#include "war_functions.h"
 #include "war_data.h"
 
 static inline void war_keymap_set(war_keymap_context* keymap,
@@ -161,6 +162,7 @@ static inline void war_keymap_set(war_keymap_context* keymap,
 // sets defaults, no need to call during override since it's called at init
 static inline void war_keymap_default(war_keymap_context* keymap,
                                       war_config_context* config) {
+    war_key();
     keymap->version = WAR_KEYMAP_H_VERSION;
     // move
     war_keymap_set(keymap,

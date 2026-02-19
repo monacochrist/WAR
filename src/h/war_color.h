@@ -16,9 +16,11 @@
 #endif // WAR_COLOR_H_VERSION
 
 #include "war_data.h"
+#include "war_functions.h"
 
 // sets defaults, no need to call during override since it's called at init
 static inline void war_color_default(war_color_context* color) {
+    war_key();
     color->version = WAR_COLOR_H_VERSION;
     //
     color->top_status_bar = 0x504944FF;        // light gray

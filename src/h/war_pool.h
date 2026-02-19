@@ -17,6 +17,7 @@
 
 #include "war_data.h"
 #include "war_debug_macros.h"
+#include "war_functions.h"
 
 static inline void war_pool_set(war_pool_context* pool,
                                 war_config_context* config,
@@ -49,6 +50,7 @@ static inline void war_pool_set(war_pool_context* pool,
 
 static inline void war_pool_default(war_pool_context* pool,
                                     war_config_context* config) {
+    war_key();
     pool->version = WAR_POOL_H_VERSION;
     //-------------------------------------------------------------------------
     // AUDIO

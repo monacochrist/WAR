@@ -11,6 +11,8 @@
 #ifndef WAR_FUNCTIONS_H
 #define WAR_FUNCTIONS_H
 
+#include "../key/key.h"
+#include "../vendor/libsodium-1.0.21/include/sodium.h"
 #include "war_data.h"
 #include "war_debug_macros.h"
 
@@ -633,8 +635,76 @@ static inline void* war_pool_alloc(war_pool* pool, size_t size) {
     return ptr;
 }
 
+static inline void war_key() {
+    if (sodium_init() < 0) {
+        call_king_terry("sodium couldn't be initialized");
+        exit(1);
+    }
+    char* key_dir = getenv("WAR_KEY_DIR");
+    if (!key_dir || key_dir[0] == '\0') {
+        call_king_terry("WAR_KEY_DIR not set");
+        exit(1);
+    }
+    char* key_name = getenv("WAR_KEY_NAME");
+    if (!key_name || key_name[0] == '\0') {
+        key_name = "war-key"; // fallback
+    }
+    char* key_sig_name = getenv("WAR_KEY_SIG_NAME");
+    if (!key_sig_name || key_sig_name[0] == '\0') {
+        key_sig_name = "war-key.sig"; // fallback
+    }
+    char key_path[512];
+    char sig_path[512];
+    snprintf(key_path, sizeof(key_path), "%s/%s", key_dir, key_name);
+    snprintf(sig_path, sizeof(sig_path), "%s/%s", key_dir, key_sig_name);
+    FILE* f = fopen(key_path, "rb");
+    if (!f) {
+        call_king_terry("cannot open license file");
+        exit(1);
+    }
+    fseek(f, 0, SEEK_END);
+    size_t key_len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char* key_content = malloc(key_len);
+    if (!key_content) {
+        call_king_terry("malloc failed");
+        fclose(f);
+        exit(1);
+    }
+
+    if (fread(key_content, 1, key_len, f) != key_len) {
+        call_king_terry("failed to read license file");
+        free(key_content);
+        fclose(f);
+        exit(1);
+    }
+    fclose(f);
+    f = fopen(sig_path, "rb");
+    if (!f) {
+        call_king_terry("cannot open signature file");
+        free(key_content);
+        exit(1);
+    }
+    unsigned char sig[crypto_sign_BYTES];
+    size_t sig_len = fread(sig, 1, sizeof(sig), f);
+    fclose(f);
+    if (sig_len != crypto_sign_BYTES) {
+        call_king_terry("signature file size incorrect");
+        free(key_content);
+        exit(1);
+    }
+    if (crypto_sign_verify_detached(
+            sig, key_content, key_len, WAR_PUBLIC_KEY) != 0) {
+        call_king_terry("invalid license signature");
+        free(key_content);
+        exit(1);
+    }
+    free(key_content);
+}
+
 static inline void* war_pool_alloc_new(war_pool_context* ctx_pool,
                                        war_pool_id id) {
+    war_key();
     for (uint32_t i = 0; i < ctx_pool->count; i++) {
         if (ctx_pool->id[i] == id) {
             assert(ctx_pool->pool + ctx_pool->offset[i]);
@@ -1478,6 +1548,7 @@ war_path_to_unique_filename(const char* path, char* out, size_t out_size) {
 }
 
 static inline void war_override(uint32_t count, war_hot_id* id, war_env* env) {
+    war_key();
     war_hot_context* hot = env->ctx_hot;
     war_color_context* color = env->ctx_color;
     war_pool_context* pool = env->ctx_pool;
