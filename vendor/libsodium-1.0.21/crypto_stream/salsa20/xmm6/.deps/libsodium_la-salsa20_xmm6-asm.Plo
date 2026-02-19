@@ -1,0 +1,7 @@
+crypto_stream/salsa20/xmm6/libsodium_la-salsa20_xmm6-asm.lo: \
+ crypto_stream/salsa20/xmm6/salsa20_xmm6-asm.S /usr/include/stdc-predef.h \
+ include/sodium/private/asm_cet.h \
+ /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/include/cet.h
+/usr/include/stdc-predef.h:
+include/sodium/private/asm_cet.h:
+/usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/include/cet.h:

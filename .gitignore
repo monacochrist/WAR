@@ -9,6 +9,10 @@
 zig-out/
 build.zig
 
+# keys
+/key/
+/key/*
+
 # c
 /WAR
 /build/
@@ -19,7 +23,6 @@ build.zig
 /war-devel/*
 !/war/PKGBUILD
 !/war-devel/PKGBUILD
-
 
 # todo or markdown
 *.md

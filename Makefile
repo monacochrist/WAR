@@ -7,6 +7,8 @@ else
 	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O3 -march=x86-64 -std=c99 -MMD -DNDEBUG -I src
 endif
 
+LIBSODIUM_DIR := vendor/libsodium-1.0.21
+
 PKG_CONFIG_CFLAGS_PACKAGES := \
 freetype2 \
 xkbcommon \
@@ -15,12 +17,17 @@ luajit
 PKG_CONFIG_CFLAGS_PACKAGES_STR := $(subst \, ,$(PKG_CONFIG_CFLAGS_PACKAGES))
 PKG_CONFIG_CFLAGS := $(shell pkg-config --cflags $(PKG_CONFIG_CFLAGS_PACKAGES))
 EXPLICIT_CFLAGS_PACKAGES :=
-EXPLICIT_CFLAGS :=
+EXPLICIT_CFLAGS := -I$(LIBSODIUM_DIR)/include
 
-PKG_CONFIG_LIBS_PACKAGES := freetype2 xkbcommon libpipewire-0.3 luajit vulkan
+PKG_CONFIG_LIBS_PACKAGES := \
+freetype2 \
+xkbcommon \
+libpipewire-0.3 \
+luajit \
+vulkan
 PKG_CONFIG_LIBS := $(shell pkg-config --libs $(PKG_CONFIG_LIBS_PACKAGES))
 EXPLICIT_LIBS_PACKAGES :=
-EXPLICIT_LIBS := -lm -lpthread -lasound
+EXPLICIT_LIBS := -lm -lpthread -lasound -L$(LIBSODIUM_DIR)/.libs -lsodium
 
 SRC_DIR := src
 BUILD_DIR := build
@@ -105,8 +112,6 @@ BUILD_KEYMAP_FUNCTIONS_H := $(SRC_DIR)/lua/war_build_keymap_functions.lua
 H_BUILD_FILES := \
 	$(BUILD_KEYMAP_FUNCTIONS_H) \
 
-SRC := $(shell find $(SRC_DIR) -type f -name '*.c')
-
 UNITY_C := $(SRC_DIR)/war_main.c
 UNITY_O := $(BUILD_DIR)/war_main.o
 DEP := $(UNITY_O:.o=.d)
@@ -189,6 +194,18 @@ gcc_check:
 
 -include $(DEP)
 
+# key
+
+.PHONY: 
+
+WAR_KEY_DIR := key
+WAR_KEY_C := $(WAR_KEY_DIR)/key.c
+
+key_gen:
+	$(CC) -I$(LIBSODIUM_DIR)/include $(WAR_KEY_C) -o key/gen_key -L$(LIBSODIUM_DIR)/.libs -lsodium
+	./key/gen_key
+	rm -f key/gen_key
+
 # war
 
 .PHONY: war_pkgbuild war_devel war_devel_pkgbuild pkgbuild
@@ -238,7 +255,7 @@ war_pkgbuild:
 
 # war-devel
 
-WAR_DEVEL_PC_DESTDIR ?= .
+DESTDIR ?=
 
 define WAR_DEVEL_PC_TEMPLATE
 prefix=/usr
@@ -252,10 +269,10 @@ Cflags: -I\$${includedir}
 endef
 
 war_devel:
-	@install -dm755 $(WAR_DEVEL_PC_DESTDIR)/usr/include/war
-	@install -m644 src/h/* $(WAR_DEVEL_PC_DESTDIR)/usr/include/war/
-	@install -dm755 $(WAR_DEVEL_PC_DESTDIR)/usr/lib/pkgconfig
-	@$(file >$(WAR_DEVEL_PC_DESTDIR)/usr/lib/pkgconfig/war-devel.pc,$(WAR_DEVEL_PC_TEMPLATE))
+	@install -dm755 $(DESTDIR)/usr/include/war
+	@install -m644 src/h/* $(DESTDIR)/usr/include/war/
+	@install -dm755 $(DESTDIR)/usr/lib/pkgconfig
+	@$(file >$(DESTDIR)/usr/lib/pkgconfig/war-devel.pc,$(WAR_DEVEL_PC_TEMPLATE))
 
 define WAR_DEVEL_PKGBUILD_TEMPLATE
 pkgname=war-devel
@@ -281,7 +298,7 @@ pkgver() {
 
 package() {
 	cd "$$srcdir/WAR" || exit 1
-	make WAR_DEVEL_PC_DESTDIR="$$pkgdir" war_devel
+	make DESTDIR="$$pkgdir" war_devel
 }
 endef
 

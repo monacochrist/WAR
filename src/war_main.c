@@ -9,6 +9,8 @@
 //-----------------------------------------------------------------------------
 
 #include "h/war_main.h"
+#include "../key/key.h"
+#include "../vendor/libsodium-1.0.21/include/sodium.h"
 #include "h/war_build_keymap_functions.h"
 #include "h/war_color.h"
 #include "h/war_command.h"
@@ -54,6 +56,10 @@
 #include <unistd.h>
 
 int main(int argc, char** argv) {
+    if (sodium_init() < 0) {
+        call_king_terry("sodium couldn't be initialized");
+        return 1;
+    }
     CALL_KING_TERRY("war");
     //-------------------------------------------------------------------------
     // BOOTSTRAP
