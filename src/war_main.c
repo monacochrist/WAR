@@ -505,8 +505,8 @@ int main(int argc, char** argv) {
     //-------------------------------------------------------------------------
     // WAYLAND SETUP
     //-------------------------------------------------------------------------
-    ctx_wayland->width = 1280;
-    ctx_wayland->height = 720;
+    ctx_wayland->width = 1920;
+    ctx_wayland->height = 1080;
     ctx_wayland->display = wl_display_connect_to_fd(war_wayland_make_fd());
     WASSERT(ctx_wayland->display);
     ctx_wayland->registry = wl_display_get_registry(ctx_wayland->display);
