@@ -159,10 +159,6 @@ static inline void war_keymap_set(war_keymap_context* keymap,
     }
 }
 
-static inline void war_test_input(war_env* env) {
-    printf("testttt\n");
-}
-
 // sets defaults, no need to call during override since it's called at init
 static inline void war_keymap_default(war_keymap_context* keymap,
                                       war_config_context* config) {
@@ -176,7 +172,7 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    2,
                    (char*[]){"j", "<Down>"},
                    WAR_FUNCTION_ID_MOVE_CURSOR_DOWN,
-                   war_test_input,
+                   war_move_cursor_down,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -185,7 +181,7 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    2,
                    (char*[]){"h", "<Left>"},
                    WAR_FUNCTION_ID_MOVE_CURSOR_LEFT,
-                   war_test_input,
+                   war_move_cursor_left,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -194,7 +190,7 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    2,
                    (char*[]){"k", "<Up>"},
                    WAR_FUNCTION_ID_MOVE_CURSOR_UP,
-                   0,
+                   war_move_cursor_up,
                    0);
     war_keymap_set(keymap,
                    config,
@@ -203,7 +199,7 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    2,
                    (char*[]){"l", "<Right>"},
                    WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT,
-                   0,
+                   war_move_cursor_right,
                    0);
     // move leap
     war_keymap_set(keymap,

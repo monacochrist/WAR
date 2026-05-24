@@ -22,10 +22,6 @@ if (strcmp(name, "war_move_cursor_right") == 0) { return war_move_cursor_right; 
 else if (strcmp(name, "war_move_cursor_left") == 0) { return war_move_cursor_left; }
 else if (strcmp(name, "war_move_cursor_up") == 0) { return war_move_cursor_up; }
 else if (strcmp(name, "war_move_cursor_down") == 0) { return war_move_cursor_down; }
-else if (strcmp(name, "war_move_cursor_right_leap") == 0) { return war_move_cursor_right_leap; }
-else if (strcmp(name, "war_move_cursor_left_leap") == 0) { return war_move_cursor_left_leap; }
-else if (strcmp(name, "war_move_cursor_up_leap") == 0) { return war_move_cursor_up_leap; }
-else if (strcmp(name, "war_move_cursor_down_leap") == 0) { return war_move_cursor_down_leap; }
 return NULL; }
 
 #endif //WAR_BUILD_KEYMAP_FUNCTIONS_H

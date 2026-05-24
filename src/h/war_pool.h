@@ -259,58 +259,24 @@ static inline void war_pool_default(war_pool_context* pool,
                  32);
     war_pool_set(pool,
                  config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_PTRS,
-                 sizeof(void*) * (config->CURSOR_COUNT),
+                 WAR_POOL_ID_MAIN_CTX_CURSOR_DRAW,
+                 sizeof(uint8_t) * (uint32_t)config->CURSOR_DEFAULT_INSTANCE_MAX,
                  32);
     war_pool_set(pool,
                  config,
                  WAR_POOL_ID_MAIN_CTX_CURSOR_X_SECONDS,
-                 sizeof(double) * (config->CURSOR_DEFAULT_INSTANCE_MAX),
+                 sizeof(double) * (uint32_t)config->CURSOR_DEFAULT_INSTANCE_MAX,
                  32);
     war_pool_set(pool,
                  config,
                  WAR_POOL_ID_MAIN_CTX_CURSOR_Y_CELLS,
-                 sizeof(double) * (config->CURSOR_DEFAULT_INSTANCE_MAX),
+                 sizeof(double) * (uint32_t)config->CURSOR_DEFAULT_INSTANCE_MAX,
                  32);
     war_pool_set(pool,
                  config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_WIDTH_SECONDS,
-                 sizeof(double) * (config->CURSOR_DEFAULT_INSTANCE_MAX),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_HEIGHT_CELLS,
-                 sizeof(double) * (config->CURSOR_DEFAULT_INSTANCE_MAX),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_X_SECONDS,
-                 sizeof(double) * (config->CURSOR_DEFAULT_INSTANCE_MAX),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_Y_CELLS,
-                 sizeof(double) * (config->CURSOR_DEFAULT_INSTANCE_MAX),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_WIDTH_SECONDS,
-                 sizeof(double) * (config->CURSOR_DEFAULT_INSTANCE_MAX),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_HEIGHT_CELLS,
-                 sizeof(double) * (config->CURSOR_DEFAULT_INSTANCE_MAX),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_CAPACITY,
-                 sizeof(uint32_t) * (config->CURSOR_COUNT),
-                 32);
-    war_pool_set(pool,
-                 config,
-                 WAR_POOL_ID_MAIN_CTX_CURSOR_STAGE,
-                 sizeof(void*) * (config->CURSOR_COUNT),
+                 WAR_POOL_ID_MAIN_CTX_CURSOR_INSTANCE,
+                 sizeof(war_vulkan_cursor_instance) *
+                     (uint32_t)config->CURSOR_DEFAULT_INSTANCE_MAX,
                  32);
     // ctx hud cursor
     war_pool_set(pool,

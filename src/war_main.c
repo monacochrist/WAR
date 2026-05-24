@@ -170,7 +170,9 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
     war_wayland_context* ctx_wayland = data;
     (void)time;
     wl_callback_destroy(callback);
-    if (ctx_wayland->rendering) {}
+    if (ctx_wayland->rendering) {
+        war_render_frame(ctx_wayland, ctx_wayland->vk);
+    }
     ctx_wayland->frame_callback = wl_surface_frame(ctx_wayland->surface);
     wl_callback_add_listener(
         ctx_wayland->frame_callback, &war_frame_listener, ctx_wayland);
@@ -275,9 +277,38 @@ static void war_keyboard_key(void* data,
     if (state != WL_KEYBOARD_KEY_STATE_PRESSED) return;
     xkb_keysym_t sym =
         xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
-    uint32_t fn_id = war_normalize_keysym(sym);
-    (void)fn_id;
-    printf("key=%u sym=%u\n", key, (unsigned)sym);
+    uint32_t keysym = war_normalize_keysym(sym);
+    if (keysym == XKB_KEY_NoSymbol) return;
+
+    war_env* env = ctx_wayland->env;
+    war_keymap_context* keymap = env->ctx_keymap;
+    war_config_context* config = env->ctx_config;
+
+    uint32_t mode = WAR_MODE_ID_ROLL;
+    uint64_t current_state = 0;
+    uint32_t mod = 0;
+
+    size_t trans_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
+                           config->KEYMAP_KEYSYM_CAPACITY *
+                           config->KEYMAP_MOD_CAPACITY +
+                       current_state * (size_t)config->KEYMAP_KEYSYM_CAPACITY *
+                           config->KEYMAP_MOD_CAPACITY +
+                       (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
+
+    uint64_t next = keymap->next_state[trans_idx];
+    if (!next) return;
+
+    size_t func_count_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + next;
+    uint8_t count = keymap->function_count[func_count_idx];
+    if (!count) return;
+
+    size_t func_base = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
+                           config->KEYMAP_FUNCTION_CAPACITY +
+                       next * (size_t)config->KEYMAP_FUNCTION_CAPACITY;
+    for (uint8_t i = 0; i < count; i++) {
+        void (*fn)(war_env*) = keymap->function[func_base + i];
+        if (fn) fn(env);
+    }
 }
 static void war_keyboard_modifiers(void* data,
                                    struct wl_keyboard* keyboard,
@@ -500,8 +531,10 @@ int main(int argc, char** argv) {
     war_override(ctx_hot->fn_count, ctx_hot->fn_id, env);
     war_wayland_context* ctx_wayland =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_WAYLAND_CONTEXT);
+    ctx_wayland->env = env;
     war_vulkan_context* ctx_vk =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_VULKAN);
+    ctx_wayland->vk = ctx_vk;
     //-------------------------------------------------------------------------
     // WAYLAND SETUP
     //-------------------------------------------------------------------------
@@ -535,6 +568,7 @@ int main(int argc, char** argv) {
     wl_keyboard_add_listener(
         ctx_wayland->keyboard, &war_keyboard_listener, ctx_wayland);
     ctx_wayland->running = 1;
+    ctx_wayland->rendering = 1;
 
     //-------------------------------------------------------------------------
     // VULKAN + DMABUF SETUP
@@ -556,11 +590,32 @@ int main(int argc, char** argv) {
                                                 ctx_wayland->height,
                                                 DRM_FORMAT_ARGB8888,
                                                 0);
+    //-------------------------------------------------------------------------
+    // FIRST FRAME RENDER SETUP (render pass, framebuffer)
+    //-------------------------------------------------------------------------
+    war_render_init(ctx_wayland, ctx_vk);
 
     //-------------------------------------------------------------------------
-    // FIRST FRAME RENDER (clear to black)
+    // CURSOR INIT (needs render pass to exist)
     //-------------------------------------------------------------------------
-    war_render_init_frame(ctx_wayland, ctx_vk);
+    war_cursor_context* ctx_cursor =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR);
+    env->ctx_cursor = ctx_cursor;
+    war_cursor_init(ctx_cursor, ctx_pool, ctx_config, ctx_vk);
+    ctx_cursor->instance_count = 1;
+    ctx_cursor->instance[0].pos[0] = 400;
+    ctx_cursor->instance[0].pos[1] = 300;
+    ctx_cursor->instance[0].size[0] = 100;
+    ctx_cursor->instance[0].size[1] = 50;
+    ctx_cursor->instance[0].color[0] = 1;
+    ctx_cursor->instance[0].color[1] = 0;
+    ctx_cursor->instance[0].color[2] = 0;
+    ctx_cursor->instance[0].color[3] = 1;
+
+    //-------------------------------------------------------------------------
+    // FIRST FRAME RENDER (record + submit)
+    //-------------------------------------------------------------------------
+    war_render_frame(ctx_wayland, ctx_vk);
     ctx_wayland->frame_callback = wl_surface_frame(ctx_wayland->surface);
     wl_callback_add_listener(
         ctx_wayland->frame_callback, &war_frame_listener, ctx_wayland);
@@ -573,17 +628,9 @@ int main(int argc, char** argv) {
     //-------------------------------------------------------------------------
     // MAIN LOOP
     //-------------------------------------------------------------------------
-    printf("entering main loop, buffer=%p\n", (void*)ctx_wayland->buffer);
-    fflush(stdout);
-    int loop_count = 0;
     while (ctx_wayland->running) {
-        loop_count++;
         wl_display_flush(ctx_wayland->display);
-        int ret = wl_display_dispatch(ctx_wayland->display);
-        printf("dispatch #%d returned %d\n", loop_count, ret);
-        fflush(stdout);
-        (void)ret;
-        (void)loop_count;
+        wl_display_dispatch(ctx_wayland->display);
     }
 
     //-------------------------------------------------------------------------

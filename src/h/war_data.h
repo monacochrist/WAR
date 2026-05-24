@@ -414,6 +414,7 @@ typedef struct war_vulkan_line_instance {
     float foreground_outline_color[4];
     war_vulkan_flags flags;
 } war_vulkan_line_instance;
+// cursor
 typedef struct war_vulkan_cursor_instance {
     float pos[3];
     float size[2];
@@ -423,6 +424,24 @@ typedef struct war_vulkan_cursor_instance {
     float foreground_outline_color[4];
     war_vulkan_flags flags;
 } war_vulkan_cursor_instance;
+typedef struct war_cursor_context {
+    uint8_t* draw;
+    double* x_seconds;
+    double* y_cells;
+    war_vulkan_cursor_instance* instance;
+    uint32_t instance_count;
+    // Vulkan objects
+    VkShaderModule vert_module;
+    VkShaderModule frag_module;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+    VkBuffer quad_vbo;
+    VkDeviceMemory quad_vbo_memory;
+    VkBuffer instance_vbo;
+    VkDeviceMemory instance_vbo_memory;
+    void* instance_mapped;
+} war_cursor_context;
+
 typedef struct war_vulkan_hud_instance {
     float pos[3];
     float size[2];
@@ -1570,38 +1589,6 @@ typedef struct war_hud_cursor_context {
     uint32_t buffer_count;
 } war_hud_cursor_context;
 
-typedef struct war_cursor_context {
-    uint32_t idx_cursor_default;
-    uint32_t chord_idx_current;
-    double** x_seconds;
-    double** y_cells;
-    double** width_seconds;
-    double** height_cells;
-    double** visual_x_seconds;
-    double** visual_y_cells;
-    double** visual_width_seconds;
-    double** visual_height_cells;
-    double top_bound_cells;
-    double bottom_bound_cells;
-    double right_bound_seconds;
-    double left_bound_seconds;
-    double max_cells_y;
-    double max_seconds_x;
-    double move_factor;
-    double leap_cells;
-    war_vulkan_cursor_instance** stage;
-    war_vulkan_cursor_push_constant* push_constant;
-    VkViewport* viewport;
-    VkRect2D* rect_2d;
-    //
-    uint32_t* capacity;
-    uint8_t* dirty;
-    uint8_t* draw;
-    uint32_t* count;
-    uint32_t* first;
-    uint32_t buffer_count;
-} war_cursor_context;
-
 typedef struct war_line_context {
     uint32_t idx_cell_grid;
     uint32_t idx_bpm_grid;
@@ -2166,17 +2153,10 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_HUD_LINE_STAGE,
     // ctx cursor
     WAR_POOL_ID_MAIN_CTX_CURSOR,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_PTRS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_DRAW,
     WAR_POOL_ID_MAIN_CTX_CURSOR_X_SECONDS,
     WAR_POOL_ID_MAIN_CTX_CURSOR_Y_CELLS,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_WIDTH_SECONDS,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_HEIGHT_CELLS,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_X_SECONDS,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_Y_CELLS,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_WIDTH_SECONDS,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_VISUAL_HEIGHT_CELLS,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_CAPACITY,
-    WAR_POOL_ID_MAIN_CTX_CURSOR_STAGE,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_INSTANCE,
     // ctx hud cursor
     WAR_POOL_ID_MAIN_CTX_HUD_CURSOR,
     WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_PTRS,
@@ -2528,6 +2508,8 @@ typedef struct war_wayland_context {
     uint8_t configured;
     uint8_t running;
     uint8_t rendering;
+    war_env* env;
+    war_vulkan_context* vk;
     // input
     struct wl_keyboard* keyboard;
     struct xkb_context* xkb_ctx;
