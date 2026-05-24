@@ -14,8 +14,6 @@
 #include "war_data.h"
 #include "war_debug_macros.h"
 #include "war_functions.h"
-#include "war_new_vulkan.h"
-#include "war_nsgt.h"
 
 #include <assert.h>
 #include <ctype.h>

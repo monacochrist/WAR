@@ -32,6 +32,15 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
+#define WASSERT(x)                                                             \
+    do {                                                                       \
+        if (!(x)) {                                                            \
+            call_king_terry("assert: %s", #x);                                 \
+            exit(1);                                                           \
+        }                                                                      \
+    } while (0)
+
+
 enum war_mods {
     MOD_NONE = 0,
     MOD_SHIFT = (1 << 0),
@@ -363,24 +372,24 @@ typedef struct war_glyph_info {
     float norm_descent;
 } war_glyph_info;
 
-typedef uint32_t war_new_vulkan_flags;
-typedef enum war_new_vulkan_flags_bits {
+typedef uint32_t war_vulkan_flags;
+typedef enum war_vulkan_flags_bits {
     WAR_NEW_VULKAN_FLAGS_HIDDEN = 1 << 0,
     WAR_NEW_VULKAN_FLAGS_OUTLINE = 1 << 1,
     WAR_NEW_VULKAN_FLAGS_FOREGROUND = 1 << 2,
-} war_new_vulkan_flags_bits;
+} war_vulkan_flags_bits;
 
-typedef struct war_new_vulkan_vertex {
+typedef struct war_vulkan_vertex {
     float pos[2];
-} war_new_vulkan_vertex;
-typedef struct war_new_vulkan_note_instance {
+} war_vulkan_vertex;
+typedef struct war_vulkan_note_instance {
     float pos[3];
     float size[2];
     float color[4];
     float outline_color[4];
     float foreground_color[4];
     float foreground_outline_color[4];
-    war_new_vulkan_flags flags;
+    war_vulkan_flags flags;
 } war_new_vulkan_note_instance;
 typedef struct war_new_vulkan_text_instance {
     float pos[3];
@@ -394,9 +403,9 @@ typedef struct war_new_vulkan_text_instance {
     float outline_color[4];
     float foreground_color[4];
     float foreground_outline_color[4];
-    war_new_vulkan_flags flags;
-} war_new_vulkan_text_instance;
-typedef struct war_new_vulkan_line_instance {
+    war_vulkan_flags flags;
+} war_vulkan_text_instance;
+typedef struct war_vulkan_line_instance {
     float pos[3];
     float size[2];
     float width;
@@ -404,27 +413,27 @@ typedef struct war_new_vulkan_line_instance {
     float outline_color[4];
     float foreground_color[4];
     float foreground_outline_color[4];
-    war_new_vulkan_flags flags;
-} war_new_vulkan_line_instance;
-typedef struct war_new_vulkan_cursor_instance {
+    war_vulkan_flags flags;
+} war_vulkan_line_instance;
+typedef struct war_vulkan_cursor_instance {
     float pos[3];
     float size[2];
     float color[4];
     float outline_color[4];
     float foreground_color[4];
     float foreground_outline_color[4];
-    war_new_vulkan_flags flags;
-} war_new_vulkan_cursor_instance;
-typedef struct war_new_vulkan_hud_instance {
+    war_vulkan_flags flags;
+} war_vulkan_cursor_instance;
+typedef struct war_vulkan_hud_instance {
     float pos[3];
     float size[2];
     float color[4];
     float outline_color[4];
     float foreground_color[4];
     float foreground_outline_color[4];
-    war_new_vulkan_flags flags;
-} war_new_vulkan_hud_instance;
-typedef struct war_new_vulkan_hud_text_instance {
+    war_vulkan_flags flags;
+} war_vulkan_hud_instance;
+typedef struct war_vulkan_hud_text_instance {
     float pos[3];
     float size[2];
     float uv[4];
@@ -436,9 +445,9 @@ typedef struct war_new_vulkan_hud_text_instance {
     float outline_color[4];
     float foreground_color[4];
     float foreground_outline_color[4];
-    war_new_vulkan_flags flags;
-} war_new_vulkan_hud_text_instance;
-typedef struct war_new_vulkan_hud_line_instance {
+    war_vulkan_flags flags;
+} war_vulkan_hud_text_instance;
+typedef struct war_vulkan_hud_line_instance {
     float pos[3];
     float size[2];
     float width;
@@ -446,313 +455,99 @@ typedef struct war_new_vulkan_hud_line_instance {
     float outline_color[4];
     float foreground_color[4];
     float foreground_outline_color[4];
-    war_new_vulkan_flags flags;
-} war_new_vulkan_hud_line_instance;
-typedef struct war_new_vulkan_hud_cursor_instance {
+    war_vulkan_flags flags;
+} war_vulkan_hud_line_instance;
+typedef struct war_vulkan_hud_cursor_instance {
     float pos[3];
     float size[2];
     float color[4];
     float outline_color[4];
     float foreground_color[4];
     float foreground_outline_color[4];
-    war_new_vulkan_flags flags;
-} war_new_vulkan_hud_cursor_instance;
+    war_vulkan_flags flags;
+} war_vulkan_hud_cursor_instance;
 
-typedef struct war_new_vulkan_note_push_constant {
+typedef struct war_vulkan_note_push_constant {
     float cell_size[2];
     float panning[2];
     float zoom;
     uint32_t _pad1;
     float screen_size[2];
     float cell_offset[2];
-} war_new_vulkan_note_push_constant;
-typedef struct war_new_vulkan_text_push_constant {
+} war_vulkan_note_push_constant;
+typedef struct war_vulkan_text_push_constant {
     float cell_size[2];
     float panning[2];
     float zoom;
     uint32_t _pad1;
     float screen_size[2];
     float cell_offset[2];
-} war_new_vulkan_text_push_constant;
-typedef struct war_new_vulkan_line_push_constant {
+} war_vulkan_text_push_constant;
+typedef struct war_vulkan_line_push_constant {
     float cell_size[2];
     float panning[2];
     float zoom;
     uint32_t _pad1;
     float screen_size[2];
     float cell_offset[2];
-} war_new_vulkan_line_push_constant;
-typedef struct war_new_vulkan_cursor_push_constant {
+} war_vulkan_line_push_constant;
+typedef struct war_vulkan_cursor_push_constant {
     float cell_size[2];
     float panning[2];
     float zoom;
     uint32_t _pad1;
     float screen_size[2];
     float cell_offset[2];
-} war_new_vulkan_cursor_push_constant;
-typedef struct war_new_vulkan_hud_push_constant {
+} war_vulkan_cursor_push_constant;
+typedef struct war_vulkan_hud_push_constant {
     float cell_size[2];
     float panning[2];
     float zoom;
     uint32_t _pad1;
     float screen_size[2];
     float cell_offset[2];
-} war_new_vulkan_hud_push_constant;
-typedef struct war_new_vulkan_hud_cursor_push_constant {
+} war_vulkan_hud_push_constant;
+typedef struct war_vulkan_hud_cursor_push_constant {
     float cell_size[2];
     float panning[2];
     float zoom;
     uint32_t _pad1;
     float screen_size[2];
     float cell_offset[2];
-} war_new_vulkan_hud_cursor_push_constant;
-typedef struct war_new_vulkan_hud_text_push_constant {
+} war_vulkan_hud_cursor_push_constant;
+typedef struct war_vulkan_hud_text_push_constant {
     float cell_size[2];
     float panning[2];
     float zoom;
     uint32_t _pad1;
     float screen_size[2];
     float cell_offset[2];
-} war_new_vulkan_hud_text_push_constant;
-typedef struct war_new_vulkan_hud_line_push_constant {
+} war_vulkan_hud_text_push_constant;
+typedef struct war_vulkan_hud_line_push_constant {
     float cell_size[2];
     float panning[2];
     float zoom;
     uint32_t _pad1;
     float screen_size[2];
     float cell_offset[2];
-} war_new_vulkan_hud_line_push_constant;
+} war_vulkan_hud_line_push_constant;
 
-typedef struct war_new_vulkan_context {
-    // core
-    int dmabuf_fd;
-    double physical_width;
-    double physical_height;
+typedef struct war_vulkan_context {
     VkInstance instance;
     VkPhysicalDevice physical_device;
     VkDevice device;
-    uint32_t queue_family_index;
     VkQueue queue;
+    VkImage image;
+    VkDeviceMemory memory;
     VkCommandPool cmd_pool;
-    VkCommandBuffer cmd_buffer;
-    VkImage depth_image;
-    VkDeviceMemory depth_image_memory;
-    VkImageView depth_image_view;
+    VkCommandBuffer cmd;
     VkRenderPass render_pass;
-    VkImage color_image;
-    VkDeviceMemory color_image_memory;
-    VkFramebuffer frame_buffer;
-    VkFence fence;
-    VkImage color_linear_image;
-    VkDeviceMemory color_linear_memory;
-    VkDeviceMemory core_memory;
-    VkImage core_image;
-    VkImageView core_image_view;
-    // pipeline
-    uint32_t pipeline_idx_note;
-    uint32_t pipeline_idx_text;
-    uint32_t pipeline_idx_line;
-    uint32_t pipeline_idx_cursor;
-    uint32_t pipeline_idx_hud;
-    uint32_t pipeline_idx_hud_cursor;
-    uint32_t pipeline_idx_hud_text;
-    uint32_t pipeline_idx_hud_line;
-    VkPipeline* pipeline;
-    VkPipelineLayout* pipeline_layout;
-    VkStructureType* structure_type;
-    VkPipelineShaderStageCreateInfo* pipeline_shader_stage_create_info;
-    void** pipeline_push_constant;
-    uint32_t* pipeline_set_idx;
-    uint32_t* pipeline_shader_idx;
-    uint32_t* pipeline_dispatch_group;
-    uint32_t* pipeline_local_size;
-    uint32_t* pipeline_instance_stage_idx;
-    VkPipelineDepthStencilStateCreateInfo*
-        pipeline_depth_stencil_state_create_info;
-    VkPipelineColorBlendStateCreateInfo* pipeline_color_blend_state_create_info;
-    VkPipelineColorBlendAttachmentState* pipeline_color_blend_attachment_state;
-    VkPipelineBindPoint* pipeline_bind_point;
-    war_new_vulkan_note_push_constant push_constant_note;
-    war_new_vulkan_text_push_constant push_constant_text;
-    war_new_vulkan_line_push_constant push_constant_line;
-    war_new_vulkan_cursor_push_constant push_constant_cursor;
-    war_new_vulkan_hud_push_constant push_constant_hud;
-    war_new_vulkan_hud_cursor_push_constant push_constant_hud_cursor;
-    war_new_vulkan_hud_text_push_constant push_constant_hud_text;
-    war_new_vulkan_hud_line_push_constant push_constant_hud_line;
-    uint32_t* push_constant_size;
-    VkShaderStageFlags* push_constant_shader_stage_flags;
-    VkViewport* viewport;
-    VkRect2D* rect_2d;
-    VkDeviceSize pipeline_count;
-    // shaders
-    uint32_t shader_idx_vertex_note;
-    uint32_t shader_idx_vertex_text;
-    uint32_t shader_idx_vertex_line;
-    uint32_t shader_idx_vertex_cursor;
-    uint32_t shader_idx_vertex_hud;
-    uint32_t shader_idx_vertex_hud_cursor;
-    uint32_t shader_idx_vertex_hud_text;
-    uint32_t shader_idx_vertex_hud_line;
-    uint32_t shader_idx_fragment_note;
-    uint32_t shader_idx_fragment_text;
-    uint32_t shader_idx_fragment_line;
-    uint32_t shader_idx_fragment_cursor;
-    uint32_t shader_idx_fragment_hud;
-    uint32_t shader_idx_fragment_hud_cursor;
-    uint32_t shader_idx_fragment_hud_text;
-    uint32_t shader_idx_fragment_hud_line;
-    VkShaderModule* shader_module;
-    VkShaderStageFlagBits* shader_stage_flag_bits;
-    char* shader_path;
-    VkDeviceSize shader_count;
-    // resources
-    uint32_t idx_vertex;
-    uint32_t idx_note;
-    uint32_t idx_text;
-    uint32_t idx_image_text;
-    uint32_t idx_line;
-    uint32_t idx_cursor;
-    uint32_t idx_hud;
-    uint32_t idx_hud_cursor;
-    uint32_t idx_hud_text;
-    uint32_t idx_hud_line;
-    uint32_t idx_vertex_stage;
-    uint32_t idx_note_stage;
-    uint32_t idx_text_stage;
-    uint32_t idx_line_stage;
-    uint32_t idx_cursor_stage;
-    uint32_t idx_hud_stage;
-    uint32_t idx_hud_cursor_stage;
-    uint32_t idx_hud_text_stage;
-    uint32_t idx_hud_line_stage;
-    uint32_t idx_image_text_stage;
-    VkDeviceSize* capacity;
-    VkMemoryRequirements* memory_requirements;
-    void** map;
-    VkDeviceMemory* device_memory;
-    uint32_t* size;
-    VkMemoryPropertyFlags* memory_property_flags;
-    VkBufferUsageFlags* usage_flags;
-    VkBuffer* buffer;
-    VkImage* image;
-    uint32_t sampler_idx_text; // sampler
-    VkSampler sampler;
-    VkImageView* image_view;
-    VkFormat* format;
-    VkExtent3D* extent_3d;
-    VkImageUsageFlags* image_usage_flags;
-    VkDeviceSize resource_count;
-    // descriptor set
-    uint8_t* in_descriptor_set;
-    uint32_t set_idx_text;
-    VkShaderStageFlags* shader_stage_flags;
-    VkDescriptorBufferInfo* descriptor_buffer_info;
-    VkDescriptorImageInfo* descriptor_image_info;
-    VkDescriptorSetLayoutBinding* descriptor_set_layout_binding;
-    VkWriteDescriptorSet* write_descriptor_set;
-    VkDescriptorSet* descriptor_set;
-    VkDescriptorSetLayout* descriptor_set_layout;
-    VkDescriptorType* image_descriptor_type;
-    VkDescriptorPool* descriptor_pool;
-    VkImageLayout* descriptor_image_layout;
-    VkDeviceSize descriptor_count;
-    VkDeviceSize descriptor_image_count;
-    VkDeviceSize descriptor_set_count;
-    // vertex input
-    VkVertexInputBindingDescription* vertex_input_binding_description;
-    VkVertexInputAttributeDescription** vertex_input_attribute_description;
-    VkVertexInputRate* vertex_input_rate;
-    uint32_t* stride;
-    uint32_t* attribute_count;
-    uint32_t* pipeline_vertex_input_binding_idx;
-    // logic
-    float* z_layer;
-    VkMappedMemoryRange* mapped_memory_range;
-    VkBufferMemoryBarrier* buffer_memory_barrier;
-    VkImageMemoryBarrier* image_memory_barrier;
-    VkImageLayout* image_layout;
-    VkImageLayout* fn_image_layout;
-    VkAccessFlags* access_flags;
-    VkAccessFlags* fn_access_flags;
-    VkPipelineStageFlags* pipeline_stage_flags;
-    VkPipelineStageFlags* fn_pipeline_stage_flags;
-    uint32_t* fn_src_idx;
-    uint32_t* fn_dst_idx;
-    VkDeviceSize* fn_size;
-    VkDeviceSize* fn_size_2;
-    VkDeviceSize* fn_src_offset;
-    VkDeviceSize* fn_dst_offset;
-    uint32_t* fn_data;
-    uint32_t* fn_data_2;
-    uint32_t fn_idx_count;
-    war_glyph_info* glyph_info;
-    float ascent;
-    float descent;
-    float line_gap;
-    float baseline;
-    float cell_height;
-    float cell_width;
-    // misc
-    VkPhysicalDeviceProperties physical_device_properties;
-    VkDeviceSize max_image_dimension_2d;
-    VkDeviceSize optimal_buffer_copy_row_pitch_alignment;
-    VkDeviceSize image_count;
-    uint32_t groups;
-    VkDeviceSize config_path_max;
-    VkDeviceSize note_instance_max;
-    VkDeviceSize text_instance_max;
-    VkDeviceSize line_instance_max;
-    VkDeviceSize cursor_instance_max;
-    VkDeviceSize hud_instance_max;
-    VkDeviceSize hud_cursor_instance_max;
-    VkDeviceSize hud_text_instance_max;
-    VkDeviceSize hud_line_instance_max;
-    VkDeviceSize note_capacity;
-    VkDeviceSize text_capacity;
-    VkDeviceSize line_capacity;
-    VkDeviceSize cursor_capacity;
-    VkDeviceSize hud_capacity;
-    VkDeviceSize hud_cursor_capacity;
-    VkDeviceSize hud_text_capacity;
-    VkDeviceSize hud_line_capacity;
-    VkDeviceSize atlas_width;
-    VkDeviceSize atlas_height;
-    VkDeviceSize font_pixel_height;
-    VkDeviceSize glyph_count;
-    VkDeviceSize sdf_scale;
-    VkDeviceSize sdf_padding;
-    float sdf_range;
-    float sdf_large;
-    PFN_vkGetSemaphoreFdKHR get_semaphore_fd_khr;
-    PFN_vkImportSemaphoreFdKHR import_semaphore_fd_khr;
-    uint32_t* fn_pipeline_idx;
-    double* fn_pan_x;
-    double* fn_pan_y;
-    double* fn_pan_factor_x;
-    double* fn_pan_factor_y;
-    // instance buffers
-    uint8_t* dirty_buffer;
-    uint8_t* draw_buffer;
-    VkRect2D** buffer_rect_2d;
-    VkViewport** buffer_viewport;
-    void** buffer_push_constant;
-    uint32_t* buffer_instance_count;
-    uint32_t* buffer_first_instance;
-    uint32_t* fn_buffer_pipeline_idx;
-    uint32_t* fn_buffer_idx;
-    uint32_t* fn_buffer_src_resource_idx;
-    uint32_t* fn_buffer_dst_resource_idx;
-    uint32_t* fn_buffer_first_instance;
-    uint32_t* fn_buffer_instance_count;
-    VkDeviceSize* fn_buffer_size;
-    VkDeviceSize* fn_buffer_src_offset;
-    VkAccessFlags* fn_buffer_access_flags;
-    VkPipelineStageFlags* fn_buffer_pipeline_stage_flags;
-    VkImageLayout* fn_buffer_image_layout;
-    uint32_t fn_buffer_idx_count;
-    uint32_t buffer_max;
-} war_new_vulkan_context;
+    VkFramebuffer framebuffer;
+    VkImageView image_view;
+    int dmabuf_fd;
+    VkSubresourceLayout img_layout;
+    VkCommandBufferAllocateInfo cbai;
+} war_vulkan_context;
 
 typedef struct war_producer_consumer {
     uint8_t* to_a;
@@ -923,8 +718,8 @@ typedef struct war_sequence_context {
     //
     uint32_t idx_grid;
     war_sequence_entry** sequence;
-    war_new_vulkan_note_instance** stage;
-    war_new_vulkan_note_push_constant* push_constant;
+    struct war_vulkan_note_instance** stage;
+    struct war_vulkan_note_push_constant* push_constant;
     VkViewport* viewport;
     VkRect2D* rect_2d;
     //
@@ -1685,8 +1480,8 @@ typedef struct war_hud_context {
     double** y_cells;
     double** width_seconds;
     double** height_cells;
-    war_new_vulkan_hud_instance** stage;
-    war_new_vulkan_hud_push_constant* push_constant;
+    war_vulkan_hud_instance** stage;
+    war_vulkan_hud_push_constant* push_constant;
     VkViewport* viewport;
     VkRect2D* rect_2d;
     //
@@ -1705,8 +1500,8 @@ typedef struct war_hud_line_context {
     double** width_seconds;
     double** height_cells;
     double** line_width_seconds;
-    war_new_vulkan_hud_line_instance** stage;
-    war_new_vulkan_hud_line_push_constant* push_constant;
+    war_vulkan_hud_line_instance** stage;
+    war_vulkan_hud_line_push_constant* push_constant;
     VkViewport* viewport;
     VkRect2D* rect_2d;
     //
@@ -1731,8 +1526,8 @@ typedef struct war_hud_text_context {
     double** y_cells;
     double** width_seconds;
     double** height_cells;
-    war_new_vulkan_hud_text_instance** stage;
-    war_new_vulkan_hud_text_push_constant* push_constant;
+    war_vulkan_hud_text_instance** stage;
+    war_vulkan_hud_text_push_constant* push_constant;
     VkViewport* viewport;
     VkRect2D* rect_2d;
     //
@@ -1763,8 +1558,8 @@ typedef struct war_hud_cursor_context {
     double max_seconds_x;
     double move_factor;
     double leap_cells;
-    war_new_vulkan_hud_cursor_instance** stage;
-    war_new_vulkan_hud_cursor_push_constant* push_constant;
+    war_vulkan_hud_cursor_instance** stage;
+    war_vulkan_hud_cursor_push_constant* push_constant;
     VkViewport* viewport;
     VkRect2D* rect_2d;
     //
@@ -1795,8 +1590,8 @@ typedef struct war_cursor_context {
     double max_seconds_x;
     double move_factor;
     double leap_cells;
-    war_new_vulkan_cursor_instance** stage;
-    war_new_vulkan_cursor_push_constant* push_constant;
+    war_vulkan_cursor_instance** stage;
+    war_vulkan_cursor_push_constant* push_constant;
     VkViewport* viewport;
     VkRect2D* rect_2d;
     //
@@ -1816,8 +1611,8 @@ typedef struct war_line_context {
     double** width_seconds;
     double** height_cells;
     double** line_width_seconds;
-    war_new_vulkan_line_instance** stage;
-    war_new_vulkan_line_push_constant* push_constant;
+    war_vulkan_line_instance** stage;
+    war_vulkan_line_push_constant* push_constant;
     VkViewport* viewport;
     VkRect2D* rect_2d;
     //
@@ -1842,8 +1637,8 @@ typedef struct war_text_context {
     double** y_cells;
     double** width_seconds;
     double** height_cells;
-    war_new_vulkan_text_instance** stage;
-    war_new_vulkan_text_push_constant* push_constant;
+    war_vulkan_text_instance** stage;
+    war_vulkan_text_push_constant* push_constant;
     VkViewport* viewport;
     VkRect2D* rect_2d;
     //
@@ -2492,114 +2287,8 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_NSGT_SIZE,
     WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_DISPATCH_GROUP,
     WAR_POOL_ID_MAIN_CTX_NSGT_PIPELINE_LOCAL_SIZE,
-    // new_vulkan context
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_MEMORY_PROPERTY_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_USAGE_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_MEMORY_REQUIREMENTS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DEVICE_MEMORY,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_MAP,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_CAPACITY,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_BUFFER_INFO,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_COMPUTE_DESCRIPTOR_IMAGE_INFO,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_GRAPHICS_DESCRIPTOR_IMAGE_INFO,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_VIEW,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FORMAT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_EXTENT_3D,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_USAGE_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SHADER_STAGE_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_SET_LAYOUT_BINDING,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_WRITE_DESCRIPTOR_SET,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_MAPPED_MEMORY_RANGE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_MEMORY_BARRIER,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_MEMORY_BARRIER,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_LAYOUT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_IMAGE_LAYOUT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_ACCESS_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_ACCESS_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_STAGE_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PIPELINE_STAGE_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_SRC_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_DST_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_SIZE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_SIZE_2,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_SRC_OFFSET,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_DST_OFFSET,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_DATA,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_DATA_2,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_SET,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_SET_LAYOUT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IMAGE_DESCRIPTOR_TYPE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_POOL,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DESCRIPTOR_IMAGE_LAYOUT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SHADER_MODULE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_SHADER_STAGE_CREATE_INFO,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SHADER_STAGE_FLAG_BITS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SHADER_PATH,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_LAYOUT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_SET_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_SHADER_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_STRUCTURE_TYPE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PUSH_CONSTANT_SHADER_STAGE_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PUSH_CONSTANT_SIZE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_BIND_POINT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_SIZE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_DISPATCH_GROUP,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_LOCAL_SIZE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VIEWPORT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_RECT_2D,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_IN_DESCRIPTOR_SET,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_INPUT_BINDING_DESCRIPTION,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_INPUT_RATE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_ATTRIBUTE_COUNT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_STRIDE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_OFFSETS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_VERTEX_FORMATS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_VERTEX_INPUT_BINDING_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_GLYPH_INFO,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_PUSH_CONSTANT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_COLOR_BLEND_ATTACHMENT_STATE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PIPELINE_INSTANCE_STAGE_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_Z_LAYER,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DIRTY_BUFFER,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_DRAW_BUFFER,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_INSTANCE_COUNT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_FIRST_INSTANCE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_PIPELINE_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_FIRST_INSTANCE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_INSTANCE_COUNT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_SIZE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_SRC_OFFSET,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_ACCESS_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_PIPELINE_STAGE_FLAGS,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_IMAGE_LAYOUT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_SRC_RESOURCE_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_BUFFER_DST_RESOURCE_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PIPELINE_IDX,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PAN_X,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PAN_Y,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PAN_FACTOR_X,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_FN_PAN_FACTOR_Y,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PTRS_BUFFER_PUSH_CONSTANT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_NOTE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_TEXT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_LINE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_CURSOR,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_HUD,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_HUD_CURSOR,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_HUD_TEXT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_PUSH_CONSTANT_HUD_LINE,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PTRS_BUFFER_VIEWPORT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_VIEWPORT,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_PTRS_BUFFER_RECT_2D,
-    WAR_POOL_ID_MAIN_CTX_NEW_VULKAN_BUFFER_RECT_2D,
+    // vulkan context
+    WAR_POOL_ID_MAIN_CTX_VULKAN,
     // status context
     WAR_POOL_ID_MAIN_CTX_STATUS,
     WAR_POOL_ID_MAIN_CTX_STATUS_TOP,
@@ -2808,7 +2497,7 @@ struct war_env {
     war_fsm_context* ctx_fsm;
     war_producer_consumer* pc_capture;
     war_nsgt_context* ctx_nsgt;
-    war_new_vulkan_context* ctx_new_vulkan;
+    war_vulkan_context* ctx_new_vulkan;
     war_cursor_context* ctx_cursor;
     war_misc_context* ctx_misc;
     // new
