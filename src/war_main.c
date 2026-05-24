@@ -58,10 +58,19 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <xkbcommon/xkbcommon.h>
 
 //---------------------------------------------------------------------------
 // WAYLAND LISTENERS
 //---------------------------------------------------------------------------
+
+#define WASSERT(x)                                                             \
+    do {                                                                       \
+        if (!(x)) {                                                            \
+            call_king_terry("assert: %s", #x);                                 \
+            exit(1);                                                           \
+        }                                                                      \
+    } while (0)
 
 static void war_wayland_registry_global(void* data,
                                         struct wl_registry* registry,
@@ -119,6 +128,8 @@ static void war_xdg_toplevel_configure(void* data,
                                        int32_t height,
                                        struct wl_array* states) {
     war_wayland_context* ctx_wayland = data;
+    (void)toplevel;
+    (void)states;
     if (width > 0) ctx_wayland->width = (uint32_t)width;
     if (height > 0) ctx_wayland->height = (uint32_t)height;
 }
@@ -140,6 +151,7 @@ static void war_xdg_toplevel_wm_capabilities(void* data,
 }
 static void war_xdg_toplevel_close(void* data, struct xdg_toplevel* toplevel) {
     war_wayland_context* ctx_wayland = data;
+    (void)toplevel;
     ctx_wayland->running = 0;
 }
 static const struct xdg_toplevel_listener war_xdg_toplevel_listener = {
@@ -148,23 +160,20 @@ static const struct xdg_toplevel_listener war_xdg_toplevel_listener = {
     .wm_capabilities = war_xdg_toplevel_wm_capabilities,
     .close = war_xdg_toplevel_close,
 };
-static const struct wl_callback_listener war_frame_listener;
+static void
+war_frame_done(void* data, struct wl_callback* callback, uint32_t time);
+static const struct wl_callback_listener war_frame_listener = {
+    .done = war_frame_done,
+};
 static void
 war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
     war_wayland_context* ctx_wayland = data;
+    (void)time;
     wl_callback_destroy(callback);
-    //-----------------------------------------------------------------
-    // PER-FRAME RENDER
-    //
-    // This fires at vsync. Put your per-frame drawing code here.
-    //
-    //   Steps:
-    //     1. vkQueueSubmit(queue, 1, &si, VK_NULL_HANDLE);
-    //     2. vkQueueWaitIdle(queue);
-    //
-    //   The VkCommandBuffer was allocated with SIMULTANEOUS_USE
-    //   so you can re-submit it without re-recording.
-    //-----------------------------------------------------------------
+    if (ctx_wayland->rendering) {}
+    ctx_wayland->frame_callback = wl_surface_frame(ctx_wayland->surface);
+    wl_callback_add_listener(
+        ctx_wayland->frame_callback, &war_frame_listener, ctx_wayland);
     wl_surface_attach(ctx_wayland->surface, ctx_wayland->buffer, 0, 0);
     wl_surface_damage_buffer(ctx_wayland->surface,
                              0,
@@ -172,15 +181,135 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
                              (int32_t)ctx_wayland->width,
                              (int32_t)ctx_wayland->height);
     wl_surface_commit(ctx_wayland->surface);
-    ctx_wayland->frame_callback = wl_surface_frame(ctx_wayland->surface);
-    wl_callback_add_listener(
-        ctx_wayland->frame_callback, &war_frame_listener, ctx_wayland);
 }
-static const struct wl_callback_listener war_frame_listener = {
-    .done = war_frame_done,
+
+static void war_keyboard_keymap(void* data,
+                                struct wl_keyboard* keyboard,
+                                uint32_t format,
+                                int fd,
+                                uint32_t size);
+static void war_keyboard_enter(void* data,
+                               struct wl_keyboard* keyboard,
+                               uint32_t serial,
+                               struct wl_surface* surface,
+                               struct wl_array* keys);
+static void war_keyboard_leave(void* data,
+                               struct wl_keyboard* keyboard,
+                               uint32_t serial,
+                               struct wl_surface* surface);
+static void war_keyboard_key(void* data,
+                             struct wl_keyboard* keyboard,
+                             uint32_t serial,
+                             uint32_t time,
+                             uint32_t key,
+                             uint32_t state);
+static void war_keyboard_modifiers(void* data,
+                                   struct wl_keyboard* keyboard,
+                                   uint32_t serial,
+                                   uint32_t mods_depressed,
+                                   uint32_t mods_latched,
+                                   uint32_t mods_grp,
+                                   uint32_t mods_locked);
+static void war_keyboard_repeat_info(void* data,
+                                     struct wl_keyboard* keyboard,
+                                     int32_t rate,
+                                     int32_t delay);
+static const struct wl_keyboard_listener war_keyboard_listener = {
+    .keymap = war_keyboard_keymap,
+    .enter = war_keyboard_enter,
+    .leave = war_keyboard_leave,
+    .key = war_keyboard_key,
+    .modifiers = war_keyboard_modifiers,
+    .repeat_info = war_keyboard_repeat_info,
 };
+static void war_keyboard_keymap(void* data,
+                                struct wl_keyboard* keyboard,
+                                uint32_t format,
+                                int fd,
+                                uint32_t size) {
+    war_wayland_context* ctx_wayland = data;
+    (void)keyboard;
+    (void)format;
+    char* map_str = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    WASSERT(map_str != MAP_FAILED);
+    ctx_wayland->xkb_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    ctx_wayland->xkb_keymap =
+        xkb_keymap_new_from_string(ctx_wayland->xkb_ctx,
+                                   map_str,
+                                   XKB_KEYMAP_FORMAT_TEXT_V1,
+                                   XKB_KEYMAP_COMPILE_NO_FLAGS);
+    ctx_wayland->xkb_state = xkb_state_new(ctx_wayland->xkb_keymap);
+    munmap(map_str, size);
+    close(fd);
+}
+static void war_keyboard_enter(void* data,
+                               struct wl_keyboard* keyboard,
+                               uint32_t serial,
+                               struct wl_surface* surface,
+                               struct wl_array* keys) {
+    (void)data;
+    (void)keyboard;
+    (void)serial;
+    (void)surface;
+    (void)keys;
+}
+static void war_keyboard_leave(void* data,
+                               struct wl_keyboard* keyboard,
+                               uint32_t serial,
+                               struct wl_surface* surface) {
+    (void)data;
+    (void)keyboard;
+    (void)serial;
+    (void)surface;
+}
+static void war_keyboard_key(void* data,
+                             struct wl_keyboard* keyboard,
+                             uint32_t serial,
+                             uint32_t time,
+                             uint32_t key,
+                             uint32_t state) {
+    war_wayland_context* ctx_wayland = data;
+    (void)keyboard;
+    (void)serial;
+    (void)time;
+    if (state != WL_KEYBOARD_KEY_STATE_PRESSED) return;
+    xkb_keysym_t sym =
+        xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
+    uint32_t fn_id = war_normalize_keysym(sym);
+    (void)fn_id;
+    printf("key=%u sym=%u\n", key, (unsigned)sym);
+}
+static void war_keyboard_modifiers(void* data,
+                                   struct wl_keyboard* keyboard,
+                                   uint32_t serial,
+                                   uint32_t mods_depressed,
+                                   uint32_t mods_latched,
+                                   uint32_t mods_grp,
+                                   uint32_t mods_locked) {
+    war_wayland_context* ctx_wayland = data;
+    (void)keyboard;
+    (void)serial;
+    xkb_state_update_mask(ctx_wayland->xkb_state,
+                          mods_depressed,
+                          mods_latched,
+                          mods_grp,
+                          0,
+                          0,
+                          mods_locked);
+}
+static void war_keyboard_repeat_info(void* data,
+                                     struct wl_keyboard* keyboard,
+                                     int32_t rate,
+                                     int32_t delay) {
+    (void)data;
+    (void)keyboard;
+    (void)rate;
+    (void)delay;
+}
 
 int main(int argc, char** argv) {
+    (void)argc;
+    (void)argv;
     CALL_KING_TERRY("war");
     //--------------------------------------------------------------------
     // KEY CHECK
@@ -212,7 +341,7 @@ int main(int argc, char** argv) {
                               0);
     if (tmp_ctx_pool->pool == MAP_FAILED) {
         call_king_terry("tmp pool map failed, total_size: %llu",
-                        tmp_ctx_pool->total_size);
+                        (unsigned long long)tmp_ctx_pool->total_size);
         exit(1);
     }
     memset(tmp_ctx_pool->pool, 0, tmp_ctx_pool->total_size);
@@ -270,7 +399,7 @@ int main(int argc, char** argv) {
                           0);
     if (ctx_pool->pool == MAP_FAILED) {
         call_king_terry("pool map failed, total_size: %llu",
-                        ctx_pool->total_size);
+                        (unsigned long long)ctx_pool->total_size);
         exit(1);
     }
     memset(ctx_pool->pool, 0, ctx_pool->total_size);
@@ -402,12 +531,16 @@ int main(int argc, char** argv) {
     wl_surface_commit(ctx_wayland->surface);
     wl_display_roundtrip(ctx_wayland->display);
     WASSERT(ctx_wayland->configured);
+    ctx_wayland->keyboard = wl_seat_get_keyboard(ctx_wayland->seat);
+    wl_keyboard_add_listener(
+        ctx_wayland->keyboard, &war_keyboard_listener, ctx_wayland);
     ctx_wayland->running = 1;
 
     //-------------------------------------------------------------------------
     // VULKAN + DMABUF SETUP
     //-------------------------------------------------------------------------
     war_vulkan_init(ctx_wayland, ctx_vk);
+
     struct zwp_linux_buffer_params_v1* params =
         zwp_linux_dmabuf_v1_create_params(ctx_wayland->dmabuf);
     zwp_linux_buffer_params_v1_add(params,
@@ -428,24 +561,30 @@ int main(int argc, char** argv) {
     // FIRST FRAME RENDER (clear to black)
     //-------------------------------------------------------------------------
     war_render_init_frame(ctx_wayland, ctx_vk);
+    ctx_wayland->frame_callback = wl_surface_frame(ctx_wayland->surface);
+    wl_callback_add_listener(
+        ctx_wayland->frame_callback, &war_frame_listener, ctx_wayland);
+
     wl_surface_attach(ctx_wayland->surface, ctx_wayland->buffer, 0, 0);
     wl_surface_damage_buffer(
         ctx_wayland->surface, 0, 0, ctx_wayland->width, ctx_wayland->height);
     wl_surface_commit(ctx_wayland->surface);
 
-    ctx_wayland->frame_callback = wl_surface_frame(ctx_wayland->surface);
-    wl_callback_add_listener(
-        ctx_wayland->frame_callback, &war_frame_listener, ctx_wayland);
-
-    //-------------------------------------------------------------------------
-    // INPUT (insert input handling code here)
-    //-------------------------------------------------------------------------
-    printf("test");
-
     //-------------------------------------------------------------------------
     // MAIN LOOP
     //-------------------------------------------------------------------------
-    while (ctx_wayland->running) { wl_display_dispatch(ctx_wayland->display); }
+    printf("entering main loop, buffer=%p\n", (void*)ctx_wayland->buffer);
+    fflush(stdout);
+    int loop_count = 0;
+    while (ctx_wayland->running) {
+        loop_count++;
+        wl_display_flush(ctx_wayland->display);
+        int ret = wl_display_dispatch(ctx_wayland->display);
+        printf("dispatch #%d returned %d\n", loop_count, ret);
+        fflush(stdout);
+        (void)ret;
+        (void)loop_count;
+    }
 
     //-------------------------------------------------------------------------
     // CLEANUP
@@ -460,5 +599,9 @@ int main(int argc, char** argv) {
     vkDestroyDevice(ctx_vk->device, NULL);
     vkDestroyInstance(ctx_vk->instance, NULL);
     wl_buffer_destroy(ctx_wayland->buffer);
+    xkb_state_unref(ctx_wayland->xkb_state);
+    xkb_keymap_unref(ctx_wayland->xkb_keymap);
+    xkb_context_unref(ctx_wayland->xkb_ctx);
+    wl_keyboard_destroy(ctx_wayland->keyboard);
     wl_display_disconnect(ctx_wayland->display);
 }

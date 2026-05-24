@@ -40,7 +40,6 @@
         }                                                                      \
     } while (0)
 
-
 enum war_mods {
     MOD_NONE = 0,
     MOD_SHIFT = (1 << 0),
@@ -2528,6 +2527,12 @@ typedef struct war_wayland_context {
     uint32_t height;
     uint8_t configured;
     uint8_t running;
+    uint8_t rendering;
+    // input
+    struct wl_keyboard* keyboard;
+    struct xkb_context* xkb_ctx;
+    struct xkb_keymap* xkb_keymap;
+    struct xkb_state* xkb_state;
 } war_wayland_context;
 
 #endif // WAR_DATA_H
