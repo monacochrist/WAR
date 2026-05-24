@@ -13,21 +13,26 @@ PKG_CONFIG_CFLAGS_PACKAGES := \
 freetype2 \
 xkbcommon \
 libpipewire-0.3 \
-luajit
+luajit \
+wayland-client
 PKG_CONFIG_CFLAGS_PACKAGES_STR := $(subst \, ,$(PKG_CONFIG_CFLAGS_PACKAGES))
 PKG_CONFIG_CFLAGS := $(shell pkg-config --cflags $(PKG_CONFIG_CFLAGS_PACKAGES))
 EXPLICIT_CFLAGS_PACKAGES :=
-EXPLICIT_CFLAGS := -I$(LIBSODIUM_DIR)/include
+EXPLICIT_CFLAGS := -I$(LIBSODIUM_DIR)/include \
+-D_GNU_SOURCE \
+-D_XOPEN_SOURCE=700 \
+-D_POSIX_C_SOURCE=200809L
 
 PKG_CONFIG_LIBS_PACKAGES := \
 freetype2 \
 xkbcommon \
 libpipewire-0.3 \
 luajit \
-vulkan
+vulkan \
+wayland-client
 PKG_CONFIG_LIBS := $(shell pkg-config --libs $(PKG_CONFIG_LIBS_PACKAGES))
 EXPLICIT_LIBS_PACKAGES :=
-EXPLICIT_LIBS := -lm -lpthread -lasound -L$(LIBSODIUM_DIR)/.libs -lsodium
+EXPLICIT_LIBS := -lpthread -lasound -L$(LIBSODIUM_DIR)/.libs -lsodium
 
 SRC_DIR := src
 BUILD_DIR := build
@@ -82,6 +87,10 @@ NEW_VULKAN_VERTEX_HUD_TEXT_SHADER_SRC := $(SHADER_SRC_DIR)/war_new_vulkan_vertex
 NEW_VULKAN_VERTEX_HUD_TEXT_SHADER_SPV := $(SHADER_BUILD_DIR)/war_new_vulkan_vertex_hud_text.spv
 NEW_VULKAN_FRAGMENT_HUD_TEXT_SHADER_SRC := $(SHADER_SRC_DIR)/war_new_vulkan_fragment_hud_text.glsl
 NEW_VULKAN_FRAGMENT_HUD_TEXT_SHADER_SPV := $(SHADER_BUILD_DIR)/war_new_vulkan_fragment_hud_text.spv
+RED_QUAD_VERTEX_SHADER_SRC := $(SHADER_SRC_DIR)/war_red_quad_vertex.glsl
+RED_QUAD_VERTEX_SHADER_SPV := $(SHADER_BUILD_DIR)/war_red_quad_vertex.spv
+RED_QUAD_FRAGMENT_SHADER_SRC := $(SHADER_SRC_DIR)/war_red_quad_fragment.glsl
+RED_QUAD_FRAGMENT_SHADER_SPV := $(SHADER_BUILD_DIR)/war_red_quad_fragment.spv
 SPV_BUILD_FILES := \
 	$(NSGT_VERT_SHADER_SPV) \
 	$(NSGT_FRAG_SHADER_SPV) \
@@ -106,6 +115,8 @@ SPV_BUILD_FILES := \
 	$(NEW_VULKAN_VERTEX_HUD_CURSOR_SHADER_SPV) \
 	$(NEW_VULKAN_VERTEX_HUD_LINE_SHADER_SPV) \
 	$(NEW_VULKAN_VERTEX_HUD_TEXT_SHADER_SPV) \
+	$(RED_QUAD_VERTEX_SHADER_SPV) \
+	$(RED_QUAD_FRAGMENT_SHADER_SPV) \
 
 H_BUILD_DIR := $(SRC_DIR)/h
 BUILD_KEYMAP_FUNCTIONS_H := $(SRC_DIR)/lua/war_build_keymap_functions.lua
@@ -178,6 +189,10 @@ $(NEW_VULKAN_VERTEX_HUD_LINE_SHADER_SPV): $(NEW_VULKAN_VERTEX_HUD_LINE_SHADER_SR
 	$(Q)$(GLSLC) -V -S vert $< -o $@
 $(NEW_VULKAN_VERTEX_HUD_TEXT_SHADER_SPV): $(NEW_VULKAN_VERTEX_HUD_TEXT_SHADER_SRC) | $(SHADER_BUILD_DIR)
 	$(Q)$(GLSLC) -V -S vert $< -o $@
+$(RED_QUAD_VERTEX_SHADER_SPV): $(RED_QUAD_VERTEX_SHADER_SRC) | $(SHADER_BUILD_DIR)
+	$(Q)$(GLSLC) -V -S vert $< -o $@
+$(RED_QUAD_FRAGMENT_SHADER_SPV): $(RED_QUAD_FRAGMENT_SHADER_SRC) | $(SHADER_BUILD_DIR)
+	$(Q)$(GLSLC) -V -S frag $< -o $@
 
 $(UNITY_O): $(UNITY_C)
 	$(Q)mkdir -p $(dir $@)

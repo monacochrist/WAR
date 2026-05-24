@@ -2758,6 +2758,8 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_KEYMAP_CONTEXT_FLAGS,
     WAR_POOL_ID_KEYMAP_CONTEXT_NEXT_STATE,
     WAR_POOL_ID_KEYMAP_CONTEXT_STATE_COUNT,
+    // wayland context
+    WAR_POOL_ID_WAYLAND_CONTEXT,
     //
     WAR_POOL_ID_COUNT,
 } war_pool_id_enum;
@@ -2818,5 +2820,25 @@ struct war_env {
     war_color_context* ctx_color;
     war_hot_context* ctx_hot;
 };
+
+typedef struct war_wayland_context {
+    struct wl_display* display;
+    struct wl_registry* registry;
+    struct wl_compositor* compositor;
+    struct zwp_linux_dmabuf_v1* dmabuf;
+    struct wl_shm* shm;
+    struct wl_surface* surface;
+    struct xdg_surface* xdg_surface;
+    struct xdg_toplevel* toplevel;
+    struct wl_seat* seat;
+    struct wl_output* output;
+    struct xdg_wm_base* xdg_wm_base;
+    struct wl_buffer* buffer;
+    struct wl_callback* frame_callback;
+    uint32_t width;
+    uint32_t height;
+    uint8_t configured;
+    uint8_t running;
+} war_wayland_context;
 
 #endif // WAR_DATA_H

@@ -1934,6 +1934,12 @@ static inline void war_pool_default(war_pool_context* pool,
                  WAR_POOL_ID_KEYMAP_CONTEXT_STATE_COUNT,
                  sizeof(uint32_t) * config->KEYMAP_MODE_CAPACITY,
                  32);
+    // wayland context
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_WAYLAND_CONTEXT,
+                 sizeof(war_wayland_context),
+                 32);
 }
 
 void war_pool_override(war_pool_context* pool, war_config_context* config);
