@@ -22,6 +22,9 @@ if (strcmp(name, "war_move_cursor_right") == 0) { return war_move_cursor_right; 
 else if (strcmp(name, "war_move_cursor_left") == 0) { return war_move_cursor_left; }
 else if (strcmp(name, "war_move_cursor_up") == 0) { return war_move_cursor_up; }
 else if (strcmp(name, "war_move_cursor_down") == 0) { return war_move_cursor_down; }
+else if (strcmp(name, "war_zoom_in") == 0) { return war_zoom_in; }
+else if (strcmp(name, "war_zoom_out") == 0) { return war_zoom_out; }
+else if (strcmp(name, "war_zoom_reset") == 0) { return war_zoom_reset; }
 return NULL; }
 
 #endif //WAR_BUILD_KEYMAP_FUNCTIONS_H

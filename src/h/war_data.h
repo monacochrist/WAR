@@ -1407,6 +1407,7 @@ typedef struct war_nsgt_context {
 } war_nsgt_context;
 
 typedef struct war_env war_env;
+typedef struct war_wayland_context war_wayland_context;
 
 typedef union war_function_union {
     void (*c)(war_env* env);
@@ -2491,6 +2492,7 @@ struct war_env {
     war_hook_context* ctx_hook;
     war_color_context* ctx_color;
     war_hot_context* ctx_hot;
+    war_wayland_context* ctx_wayland;
 };
 
 typedef struct war_wayland_context {
@@ -2512,6 +2514,7 @@ typedef struct war_wayland_context {
     uint8_t configured;
     uint8_t running;
     uint8_t rendering;
+    float zoom;
     war_env* env;
     war_vulkan_context* vk;
     // input

@@ -16,8 +16,8 @@
 #endif // WAR_KEYMAP_H_VERSION
 
 #include "war_build_keymap_functions.h"
-#include "war_functions.h"
 #include "war_data.h"
+#include "war_functions.h"
 
 static inline void war_keymap_set(war_keymap_context* keymap,
                                   war_config_context* config,
@@ -237,6 +237,34 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"<A-l>", "<A-Right>"},
                    WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT_LEAP,
                    0,
+                   0);
+    // zoom
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   2,
+                   (char*[]){"+", "="},
+                   WAR_FUNCTION_ID_NONE,
+                   war_zoom_in,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   2,
+                   (char*[]){"_", "-"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_zoom_out,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"0"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_zoom_reset,
                    0);
 }
 

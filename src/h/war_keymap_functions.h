@@ -52,4 +52,16 @@ static inline void war_move_cursor_down(war_env* env) {
     if (cursor->instance_count) cursor->instance[0].pos[1] -= 1;
 }
 
+static inline void war_zoom_in(war_env* env) {
+    env->ctx_wayland->zoom *= 1.25f;
+}
+
+static inline void war_zoom_out(war_env* env) {
+    env->ctx_wayland->zoom *= 0.80f;
+}
+
+static inline void war_zoom_reset(war_env* env) {
+    env->ctx_wayland->zoom = 1.0f;
+}
+
 #endif // WAR_KEYMAP_FUNCTIONS_H

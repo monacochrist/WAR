@@ -532,6 +532,7 @@ int main(int argc, char** argv) {
     war_wayland_context* ctx_wayland =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_WAYLAND_CONTEXT);
     ctx_wayland->env = env;
+    env->ctx_wayland = ctx_wayland;
     war_vulkan_context* ctx_vk =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_VULKAN);
     ctx_wayland->vk = ctx_vk;
@@ -569,6 +570,7 @@ int main(int argc, char** argv) {
         ctx_wayland->keyboard, &war_keyboard_listener, ctx_wayland);
     ctx_wayland->running = 1;
     ctx_wayland->rendering = 1;
+    ctx_wayland->zoom = 1.0f;
 
     //-------------------------------------------------------------------------
     // VULKAN + DMABUF SETUP
@@ -603,12 +605,13 @@ int main(int argc, char** argv) {
     env->ctx_cursor = ctx_cursor;
     ctx_cursor->cell_width = 10;
     ctx_cursor->cell_height = 20;
-    ctx_cursor->x_width = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR_X_WIDTH);
+    ctx_cursor->x_width =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR_X_WIDTH);
     ctx_cursor->x_width[0] = 1;
     war_cursor_init(ctx_cursor, ctx_pool, ctx_config, ctx_vk);
     ctx_cursor->instance_count = 1;
-    ctx_cursor->instance[0].pos[0] = 5;
-    ctx_cursor->instance[0].pos[1] = 5;
+    ctx_cursor->instance[0].pos[0] = 3;
+    ctx_cursor->instance[0].pos[1] = 3;
     ctx_cursor->instance[0].size[0] = 1;
     ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->instance[0].color[0] = 1;

@@ -268,6 +268,7 @@ static inline void war_cursor_init(war_cursor_context* ctx_cursor,
 
 static inline void war_cursor_render(VkCommandBuffer cmd,
                                      war_cursor_context* ctx_cursor,
+                                     war_wayland_context* ctx_wayland,
                                      float screen_w,
                                      float screen_h) {
     if (!ctx_cursor || !ctx_cursor->instance_count) return;
@@ -279,12 +280,12 @@ static inline void war_cursor_render(VkCommandBuffer cmd,
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_cursor->pipeline);
     float pc_data[] = {
-        (float)ctx_cursor->cell_width, (float)ctx_cursor->cell_height, // cell_size (offset 0)
-        0, 0,              // panning (offset 8)
-        1,                 // zoom (offset 16)
-        0,                 // padding (offset 20, aligns vec2)
-        screen_w, screen_h, // screen_size (offset 24)
-        0, 0,              // cell_offset (offset 32)
+         (float)ctx_cursor->cell_width, (float)ctx_cursor->cell_height, // cell_size (offset 0)
+         0, 0,              // panning (offset 8)
+         ctx_wayland->zoom, // zoom (offset 16)
+         0,                 // padding (offset 20, aligns vec2)
+         screen_w, screen_h, // screen_size (offset 24)
+         0, 0,              // cell_offset (offset 32)
     };
     vkCmdPushConstants(cmd, ctx_cursor->pipeline_layout,
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
@@ -362,7 +363,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         .pClearValues = &clear,
     };
     vkCmdBeginRenderPass(cmd, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-    war_cursor_render(cmd, ctx_wayland->env->ctx_cursor,
+    war_cursor_render(cmd, ctx_wayland->env->ctx_cursor, ctx_wayland,
                       (float)ctx_wayland->width, (float)ctx_wayland->height);
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
