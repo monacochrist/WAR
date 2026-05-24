@@ -138,8 +138,10 @@ static void war_xdg_toplevel_configure(void* data,
         double cw = ctx_wayland->env->ctx_cursor->cell_width;
         double ch = ctx_wayland->env->ctx_cursor->cell_height;
         if (cw > 0 && ch > 0) {
-            ctx_wayland->num_cols = (uint32_t)((double)width / cw) - ctx_wayland->gutter_cols;
-            ctx_wayland->num_rows = (uint32_t)((double)height / ch) - ctx_wayland->gutter_rows;
+            ctx_wayland->num_cols =
+                (uint32_t)((double)width / cw) - ctx_wayland->gutter_cols;
+            ctx_wayland->num_rows =
+                (uint32_t)((double)height / ch) - ctx_wayland->gutter_rows;
         }
     }
 }
@@ -602,7 +604,8 @@ int main(int argc, char** argv) {
         ctx_wayland->keyboard, &war_keyboard_listener, ctx_wayland);
     ctx_wayland->running = 1;
     ctx_wayland->rendering = 1;
-    ctx_wayland->zoom = 1.0f;
+    ctx_wayland->zoom = 2.0f;
+    ctx_wayland->initial_zoom = ctx_wayland->zoom;
     ctx_wayland->panning[0] = 0;
     ctx_wayland->panning[1] = 0;
     ctx_wayland->right_bound = 1000000.0;
@@ -648,7 +651,7 @@ int main(int argc, char** argv) {
     ctx_cursor->cell_width = 10;
     ctx_cursor->cell_height = 20;
     ctx_wayland->gutter_rows = 3;
-    ctx_wayland->gutter_cols = 3;
+    ctx_wayland->gutter_cols = 4;
     ctx_wayland->num_cols = ctx_wayland->width / ctx_cursor->cell_width;
     ctx_wayland->num_rows = ctx_wayland->height / ctx_cursor->cell_height;
     ctx_cursor->x_width =
@@ -664,7 +667,14 @@ int main(int argc, char** argv) {
     ctx_cursor->instance[0].color[1] = 0;
     ctx_cursor->instance[0].color[2] = 0;
     ctx_cursor->instance[0].color[3] = 1;
-
+    //-------------------------------------------------------------------------
+    // PIANO GUTTER INIT
+    //-------------------------------------------------------------------------
+    war_piano_gutter_context* ctx_pg =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER);
+    war_piano_gutter_init(ctx_pg, ctx_pool, ctx_config, ctx_vk);
+    war_piano_gutter_generate(ctx_pg);
+    env->ctx_piano_gutter = ctx_pg;
     //-------------------------------------------------------------------------
     // FIRST FRAME RENDER (record + submit)
     //-------------------------------------------------------------------------

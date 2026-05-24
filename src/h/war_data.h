@@ -444,6 +444,33 @@ typedef struct war_cursor_context {
     VkDeviceMemory instance_vbo_memory;
     void* instance_mapped;
 } war_cursor_context;
+typedef struct war_vulkan_piano_gutter_instance {
+    float pos[3];
+    float size[2];
+    float color[4];
+    float outline_color[4];
+    float foreground_color[4];
+    float foreground_outline_color[4];
+    war_vulkan_flags flags;
+} war_vulkan_piano_gutter_instance;
+typedef struct war_piano_gutter_context {
+    uint8_t* draw;
+    double* x_cells;
+    double* y_cells;
+    double* x_width;
+    war_vulkan_piano_gutter_instance* instance;
+    uint32_t instance_count;
+    // Vulkan objects
+    VkShaderModule vert_module;
+    VkShaderModule frag_module;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+    VkBuffer quad_vbo;
+    VkDeviceMemory quad_vbo_memory;
+    VkBuffer instance_vbo;
+    VkDeviceMemory instance_vbo_memory;
+    void* instance_mapped;
+} war_piano_gutter_context;
 
 typedef struct war_vulkan_hud_instance {
     float pos[3];
@@ -2162,6 +2189,13 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_CURSOR_Y_CELLS,
     WAR_POOL_ID_MAIN_CTX_CURSOR_X_WIDTH,
     WAR_POOL_ID_MAIN_CTX_CURSOR_INSTANCE,
+    // ctx piano_gutter
+    WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER,
+    WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_DRAW,
+    WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_X_CELLS,
+    WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_X_WIDTH,
+    WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_INSTANCE,
     // ctx hud cursor
     WAR_POOL_ID_MAIN_CTX_HUD_CURSOR,
     WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_PTRS,
@@ -2492,6 +2526,7 @@ struct war_env {
     war_hook_context* ctx_hook;
     war_color_context* ctx_color;
     war_hot_context* ctx_hot;
+    war_piano_gutter_context* ctx_piano_gutter;
     war_wayland_context* ctx_wayland;
 };
 
@@ -2517,6 +2552,7 @@ typedef struct war_wayland_context {
     uint32_t width;
     uint32_t height;
     uint8_t rendering;
+    float initial_zoom;
     float zoom;
     uint32_t gutter_rows;
     uint32_t gutter_cols;

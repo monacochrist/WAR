@@ -46,9 +46,9 @@ static inline void war_pan_follow(war_env* env) {
     double cx = cur->instance[0].pos[0];
     double cy = cur->instance[0].pos[1];
     float* p = wl->panning;
-    if (cx < p[0]) p[0] = (float)cx;
+    if (cx < p[0]) p[0] = (float)(cx - wl->gutter_cols - 0.5);
     if (cx >= p[0] + vis_cols) p[0] = (float)(cx - vis_cols + 1);
-    if (cy < p[1]) p[1] = (float)cy;
+    if (cy < p[1]) p[1] = (float)(cy - wl->gutter_rows - 0.5);
     if (cy >= p[1] + vis_rows) p[1] = (float)(cy - vis_rows + 1);
     if (p[0] < 0) p[0] = 0;
     if (p[1] < 0) p[1] = 0;
@@ -64,7 +64,7 @@ static inline void war_move_cursor_right(war_env* env) {
 
 static inline void war_move_cursor_left(war_env* env) {
     war_cursor_context* cursor = env->ctx_cursor;
-    double bound = env->ctx_wayland->panning[0] + env->ctx_wayland->gutter_cols;
+    double bound = env->ctx_wayland->gutter_cols + 0.5;
     if (cursor->instance_count && cursor->instance[0].pos[0] > bound)
         cursor->instance[0].pos[0] -= 1;
     war_pan_follow(env);
@@ -80,7 +80,7 @@ static inline void war_move_cursor_up(war_env* env) {
 
 static inline void war_move_cursor_down(war_env* env) {
     war_cursor_context* cursor = env->ctx_cursor;
-    double bound = env->ctx_wayland->panning[1] + env->ctx_wayland->gutter_rows;
+    double bound = env->ctx_wayland->gutter_rows + 0.5;
     if (cursor->instance_count && cursor->instance[0].pos[1] > bound)
         cursor->instance[0].pos[1] -= 1;
     war_pan_follow(env);
@@ -99,7 +99,7 @@ static inline void war_zoom_out(war_env* env) {
 }
 
 static inline void war_zoom_reset(war_env* env) {
-    env->ctx_wayland->zoom = 1.0f;
+    env->ctx_wayland->zoom = env->ctx_wayland->initial_zoom;
 }
 
 #endif // WAR_KEYMAP_FUNCTIONS_H

@@ -283,6 +283,38 @@ static inline void war_pool_default(war_pool_context* pool,
                  sizeof(war_vulkan_cursor_instance) *
                      (uint32_t)config->CURSOR_DEFAULT_INSTANCE_MAX,
                  32);
+    // ctx piano_gutter
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER,
+                 sizeof(war_piano_gutter_context) * (1),
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_DRAW,
+                 sizeof(uint8_t) * (uint32_t)config->HUD_PIANO_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_X_CELLS,
+                 sizeof(double) * (uint32_t)config->HUD_PIANO_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_Y_CELLS,
+                 sizeof(double) * (uint32_t)config->HUD_PIANO_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_X_WIDTH,
+                 sizeof(double) * (uint32_t)config->HUD_PIANO_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_INSTANCE,
+                 sizeof(war_vulkan_piano_gutter_instance) *
+                     (uint32_t)config->HUD_PIANO_INSTANCE_MAX,
+                 32);
     // ctx hud cursor
     war_pool_set(pool,
                  config,
