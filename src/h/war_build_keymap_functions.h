@@ -18,7 +18,8 @@
 #include <string.h>
 
 static inline void (*war_build_keymap_functions(const char* name))(war_env*) {
-if (strcmp(name, "war_move_cursor_right") == 0) { return war_move_cursor_right; }
+if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
+else if (strcmp(name, "war_move_cursor_right") == 0) { return war_move_cursor_right; }
 else if (strcmp(name, "war_move_cursor_left") == 0) { return war_move_cursor_left; }
 else if (strcmp(name, "war_move_cursor_up") == 0) { return war_move_cursor_up; }
 else if (strcmp(name, "war_move_cursor_down") == 0) { return war_move_cursor_down; }

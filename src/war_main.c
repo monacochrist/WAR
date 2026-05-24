@@ -38,6 +38,7 @@
 #include <pipewire-0.3/pipewire/core.h>
 #include <pipewire-0.3/pipewire/pipewire.h>
 #include <pipewire-0.3/pipewire/stream.h>
+#include <poll.h>
 #include <pthread.h>
 #include <sched.h>
 #include <spa-0.2/spa/param/audio/format-utils.h>
@@ -52,12 +53,11 @@
 #include <spa-0.2/spa/utils/string.h>
 #include <stdint.h>
 #include <strings.h>
-#include <poll.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/sendfile.h>
-#include <sys/timerfd.h>
 #include <sys/stat.h>
+#include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
@@ -134,6 +134,14 @@ static void war_xdg_toplevel_configure(void* data,
     (void)states;
     if (width > 0) ctx_wayland->width = (uint32_t)width;
     if (height > 0) ctx_wayland->height = (uint32_t)height;
+    if (ctx_wayland->env && ctx_wayland->env->ctx_cursor) {
+        double cw = ctx_wayland->env->ctx_cursor->cell_width;
+        double ch = ctx_wayland->env->ctx_cursor->cell_height;
+        if (cw > 0 && ch > 0) {
+            ctx_wayland->num_cols = (uint32_t)((double)width / cw) - ctx_wayland->gutter_cols;
+            ctx_wayland->num_rows = (uint32_t)((double)height / ch) - ctx_wayland->gutter_rows;
+        }
+    }
 }
 static void war_xdg_toplevel_configure_bounds(void* data,
                                               struct xdg_toplevel* toplevel,
@@ -595,10 +603,15 @@ int main(int argc, char** argv) {
     ctx_wayland->running = 1;
     ctx_wayland->rendering = 1;
     ctx_wayland->zoom = 1.0f;
+    ctx_wayland->panning[0] = 0;
+    ctx_wayland->panning[1] = 0;
+    ctx_wayland->right_bound = 1000000.0;
+    ctx_wayland->top_bound = 127.0;
     ctx_wayland->repeat_active = 0;
     ctx_wayland->repeat_rate = 20;
     ctx_wayland->repeat_delay = 200;
-    ctx_wayland->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    ctx_wayland->repeat_timer_fd =
+        timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     WASSERT(ctx_wayland->repeat_timer_fd >= 0);
 
     //-------------------------------------------------------------------------
@@ -636,6 +649,8 @@ int main(int argc, char** argv) {
     ctx_cursor->cell_height = 20;
     ctx_wayland->gutter_rows = 3;
     ctx_wayland->gutter_cols = 3;
+    ctx_wayland->num_cols = ctx_wayland->width / ctx_cursor->cell_width;
+    ctx_wayland->num_rows = ctx_wayland->height / ctx_cursor->cell_height;
     ctx_cursor->x_width =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR_X_WIDTH);
     ctx_cursor->x_width[0] = 1;
@@ -682,20 +697,24 @@ int main(int argc, char** argv) {
         }
         wl_display_dispatch_pending(ctx_wayland->display);
         // drain timerfd (periodic, no re-arm needed)
-        struct pollfd tfd = {.fd = ctx_wayland->repeat_timer_fd, .events = POLLIN};
+        struct pollfd tfd = {.fd = ctx_wayland->repeat_timer_fd,
+                             .events = POLLIN};
         if (poll(&tfd, 1, 0) > 0) {
             uint64_t exp;
             read(ctx_wayland->repeat_timer_fd, &exp, sizeof(exp));
-            if (ctx_wayland->repeat_active && ctx_wayland->repeat_sym != XKB_KEY_NoSymbol) {
+            if (ctx_wayland->repeat_active &&
+                ctx_wayland->repeat_sym != XKB_KEY_NoSymbol) {
                 for (uint64_t i = 0; i < exp; i++) {
                     war_env* env = ctx_wayland->env;
                     war_keymap_context* keymap = env->ctx_keymap;
                     war_config_context* config = env->ctx_config;
-                    size_t ti = (size_t)ctx_wayland->repeat_sym * config->KEYMAP_MOD_CAPACITY;
+                    size_t ti = (size_t)ctx_wayland->repeat_sym *
+                                config->KEYMAP_MOD_CAPACITY;
                     uint64_t next = keymap->next_state[ti];
                     if (next) {
                         uint8_t cnt = keymap->function_count[next];
-                        size_t fb = next * (size_t)config->KEYMAP_FUNCTION_CAPACITY;
+                        size_t fb =
+                            next * (size_t)config->KEYMAP_FUNCTION_CAPACITY;
                         for (uint8_t j = 0; j < cnt; j++) {
                             void (*fn)(war_env*) = keymap->function[fb + j];
                             if (fn) fn(env);
@@ -718,8 +737,7 @@ int main(int argc, char** argv) {
     vkDestroyImage(ctx_vk->device, ctx_vk->image, NULL);
     vkDestroyDevice(ctx_vk->device, NULL);
     vkDestroyInstance(ctx_vk->instance, NULL);
-    if (ctx_wayland->repeat_timer_fd >= 0)
-        close(ctx_wayland->repeat_timer_fd);
+    if (ctx_wayland->repeat_timer_fd >= 0) close(ctx_wayland->repeat_timer_fd);
     wl_buffer_destroy(ctx_wayland->buffer);
     xkb_state_unref(ctx_wayland->xkb_state);
     xkb_keymap_unref(ctx_wayland->xkb_keymap);

@@ -2520,6 +2520,11 @@ typedef struct war_wayland_context {
     float zoom;
     uint32_t gutter_rows;
     uint32_t gutter_cols;
+    uint32_t num_rows;
+    uint32_t num_cols;
+    float panning[2];
+    double right_bound;
+    double top_bound;
     // input
     struct wl_keyboard* keyboard;
     struct xkb_context* xkb_ctx;
