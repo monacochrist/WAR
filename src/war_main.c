@@ -52,9 +52,11 @@
 #include <spa-0.2/spa/utils/string.h>
 #include <stdint.h>
 #include <strings.h>
+#include <poll.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/sendfile.h>
+#include <sys/timerfd.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -274,11 +276,32 @@ static void war_keyboard_key(void* data,
     (void)keyboard;
     (void)serial;
     (void)time;
-    if (state != WL_KEYBOARD_KEY_STATE_PRESSED) return;
+    if (state == WL_KEYBOARD_KEY_STATE_RELEASED) {
+        if (key == ctx_wayland->repeat_key) {
+            ctx_wayland->repeat_active = 0;
+            struct itimerspec off = {0};
+            timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &off, NULL);
+        }
+        return;
+    }
     xkb_keysym_t sym =
         xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
     uint32_t keysym = war_normalize_keysym(sym);
     if (keysym == XKB_KEY_NoSymbol) return;
+
+    if (ctx_wayland->repeat_rate > 0) {
+        ctx_wayland->repeat_key = key;
+        ctx_wayland->repeat_sym = keysym;
+        ctx_wayland->repeat_active = 1;
+        // arm timerfd: initial delay then periodic at repeat_rate
+        int32_t d = ctx_wayland->repeat_delay;
+        int32_t r = ctx_wayland->repeat_rate;
+        struct itimerspec its = {
+            .it_value = {d / 1000, (long)(d % 1000) * 1000000L},
+            .it_interval = {0, r > 0 ? 1000000000L / r : 0},
+        };
+        timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &its, NULL);
+    }
 
     war_env* env = ctx_wayland->env;
     war_keymap_context* keymap = env->ctx_keymap;
@@ -332,10 +355,11 @@ static void war_keyboard_repeat_info(void* data,
                                      struct wl_keyboard* keyboard,
                                      int32_t rate,
                                      int32_t delay) {
-    (void)data;
+    war_wayland_context* ctx_wayland = data;
     (void)keyboard;
     (void)rate;
     (void)delay;
+    // client-side repeat uses hardcoded defaults in bootstrap
 }
 
 int main(int argc, char** argv) {
@@ -571,6 +595,11 @@ int main(int argc, char** argv) {
     ctx_wayland->running = 1;
     ctx_wayland->rendering = 1;
     ctx_wayland->zoom = 1.0f;
+    ctx_wayland->repeat_active = 0;
+    ctx_wayland->repeat_rate = 20;
+    ctx_wayland->repeat_delay = 200;
+    ctx_wayland->repeat_timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    WASSERT(ctx_wayland->repeat_timer_fd >= 0);
 
     //-------------------------------------------------------------------------
     // VULKAN + DMABUF SETUP
@@ -605,13 +634,15 @@ int main(int argc, char** argv) {
     env->ctx_cursor = ctx_cursor;
     ctx_cursor->cell_width = 10;
     ctx_cursor->cell_height = 20;
+    ctx_wayland->gutter_rows = 3;
+    ctx_wayland->gutter_cols = 3;
     ctx_cursor->x_width =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR_X_WIDTH);
     ctx_cursor->x_width[0] = 1;
     war_cursor_init(ctx_cursor, ctx_pool, ctx_config, ctx_vk);
     ctx_cursor->instance_count = 1;
-    ctx_cursor->instance[0].pos[0] = 3;
-    ctx_cursor->instance[0].pos[1] = 3;
+    ctx_cursor->instance[0].pos[0] = ctx_wayland->gutter_cols;
+    ctx_cursor->instance[0].pos[1] = ctx_wayland->gutter_rows;
     ctx_cursor->instance[0].size[0] = 1;
     ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->instance[0].color[0] = 1;
@@ -635,9 +666,44 @@ int main(int argc, char** argv) {
     //-------------------------------------------------------------------------
     // MAIN LOOP
     //-------------------------------------------------------------------------
+    int wayland_fd = wl_display_get_fd(ctx_wayland->display);
+    struct pollfd pfds[2] = {
+        {.fd = wayland_fd, .events = POLLIN},
+        {.fd = ctx_wayland->repeat_timer_fd, .events = POLLIN},
+    };
     while (ctx_wayland->running) {
         wl_display_flush(ctx_wayland->display);
-        wl_display_dispatch(ctx_wayland->display);
+        if (wl_display_prepare_read(ctx_wayland->display) == 0) {
+            poll(pfds, 2, -1);
+            if (pfds[0].revents & POLLIN)
+                wl_display_read_events(ctx_wayland->display);
+            else
+                wl_display_cancel_read(ctx_wayland->display);
+        }
+        wl_display_dispatch_pending(ctx_wayland->display);
+        // drain timerfd (periodic, no re-arm needed)
+        struct pollfd tfd = {.fd = ctx_wayland->repeat_timer_fd, .events = POLLIN};
+        if (poll(&tfd, 1, 0) > 0) {
+            uint64_t exp;
+            read(ctx_wayland->repeat_timer_fd, &exp, sizeof(exp));
+            if (ctx_wayland->repeat_active && ctx_wayland->repeat_sym != XKB_KEY_NoSymbol) {
+                for (uint64_t i = 0; i < exp; i++) {
+                    war_env* env = ctx_wayland->env;
+                    war_keymap_context* keymap = env->ctx_keymap;
+                    war_config_context* config = env->ctx_config;
+                    size_t ti = (size_t)ctx_wayland->repeat_sym * config->KEYMAP_MOD_CAPACITY;
+                    uint64_t next = keymap->next_state[ti];
+                    if (next) {
+                        uint8_t cnt = keymap->function_count[next];
+                        size_t fb = next * (size_t)config->KEYMAP_FUNCTION_CAPACITY;
+                        for (uint8_t j = 0; j < cnt; j++) {
+                            void (*fn)(war_env*) = keymap->function[fb + j];
+                            if (fn) fn(env);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     //-------------------------------------------------------------------------
@@ -652,6 +718,8 @@ int main(int argc, char** argv) {
     vkDestroyImage(ctx_vk->device, ctx_vk->image, NULL);
     vkDestroyDevice(ctx_vk->device, NULL);
     vkDestroyInstance(ctx_vk->instance, NULL);
+    if (ctx_wayland->repeat_timer_fd >= 0)
+        close(ctx_wayland->repeat_timer_fd);
     wl_buffer_destroy(ctx_wayland->buffer);
     xkb_state_unref(ctx_wayland->xkb_state);
     xkb_keymap_unref(ctx_wayland->xkb_keymap);

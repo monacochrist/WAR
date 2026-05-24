@@ -39,7 +39,9 @@ static inline void war_move_cursor_right(war_env* env) {
 
 static inline void war_move_cursor_left(war_env* env) {
     war_cursor_context* cursor = env->ctx_cursor;
-    if (cursor->instance_count) cursor->instance[0].pos[0] -= 1;
+    uint32_t g = env->ctx_wayland->gutter_cols;
+    if (cursor->instance_count && cursor->instance[0].pos[0] > (double)g)
+        cursor->instance[0].pos[0] -= 1;
 }
 
 static inline void war_move_cursor_up(war_env* env) {
@@ -49,7 +51,9 @@ static inline void war_move_cursor_up(war_env* env) {
 
 static inline void war_move_cursor_down(war_env* env) {
     war_cursor_context* cursor = env->ctx_cursor;
-    if (cursor->instance_count) cursor->instance[0].pos[1] -= 1;
+    uint32_t g = env->ctx_wayland->gutter_rows;
+    if (cursor->instance_count && cursor->instance[0].pos[1] > (double)g)
+        cursor->instance[0].pos[1] -= 1;
 }
 
 static inline void war_zoom_in(war_env* env) {

@@ -2509,19 +2509,30 @@ typedef struct war_wayland_context {
     struct xdg_wm_base* xdg_wm_base;
     struct wl_buffer* buffer;
     struct wl_callback* frame_callback;
-    uint32_t width;
-    uint32_t height;
-    uint8_t configured;
-    uint8_t running;
-    uint8_t rendering;
-    float zoom;
     war_env* env;
     war_vulkan_context* vk;
+    uint8_t configured;
+    uint8_t running;
+    // rendering
+    uint32_t width;
+    uint32_t height;
+    uint8_t rendering;
+    float zoom;
+    uint32_t gutter_rows;
+    uint32_t gutter_cols;
     // input
     struct wl_keyboard* keyboard;
     struct xkb_context* xkb_ctx;
     struct xkb_keymap* xkb_keymap;
     struct xkb_state* xkb_state;
+    // key repeat
+    int32_t repeat_rate;
+    int32_t repeat_delay;
+    uint32_t repeat_key;
+    uint32_t repeat_sym;
+    uint8_t repeat_active;
+    struct timespec repeat_time;
+    int repeat_timer_fd;
 } war_wayland_context;
 
 #endif // WAR_DATA_H
