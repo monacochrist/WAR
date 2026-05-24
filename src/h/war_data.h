@@ -428,6 +428,9 @@ typedef struct war_cursor_context {
     uint8_t* draw;
     double* x_seconds;
     double* y_cells;
+    double* x_width;
+    double cell_width;
+    double cell_height;
     war_vulkan_cursor_instance* instance;
     uint32_t instance_count;
     // Vulkan objects
@@ -2156,6 +2159,7 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_CURSOR_DRAW,
     WAR_POOL_ID_MAIN_CTX_CURSOR_X_SECONDS,
     WAR_POOL_ID_MAIN_CTX_CURSOR_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_CURSOR_X_WIDTH,
     WAR_POOL_ID_MAIN_CTX_CURSOR_INSTANCE,
     // ctx hud cursor
     WAR_POOL_ID_MAIN_CTX_HUD_CURSOR,

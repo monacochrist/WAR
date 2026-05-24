@@ -274,6 +274,11 @@ static inline void war_pool_default(war_pool_context* pool,
                  32);
     war_pool_set(pool,
                  config,
+                 WAR_POOL_ID_MAIN_CTX_CURSOR_X_WIDTH,
+                 sizeof(double) * (uint32_t)config->CURSOR_DEFAULT_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
                  WAR_POOL_ID_MAIN_CTX_CURSOR_INSTANCE,
                  sizeof(war_vulkan_cursor_instance) *
                      (uint32_t)config->CURSOR_DEFAULT_INSTANCE_MAX,

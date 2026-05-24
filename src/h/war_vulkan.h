@@ -279,7 +279,7 @@ static inline void war_cursor_render(VkCommandBuffer cmd,
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_cursor->pipeline);
     float pc_data[] = {
-        1, 1,              // cell_size (offset 0)
+        (float)ctx_cursor->cell_width, (float)ctx_cursor->cell_height, // cell_size (offset 0)
         0, 0,              // panning (offset 8)
         1,                 // zoom (offset 16)
         0,                 // padding (offset 20, aligns vec2)

@@ -601,12 +601,16 @@ int main(int argc, char** argv) {
     war_cursor_context* ctx_cursor =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR);
     env->ctx_cursor = ctx_cursor;
+    ctx_cursor->cell_width = 10;
+    ctx_cursor->cell_height = 20;
+    ctx_cursor->x_width = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR_X_WIDTH);
+    ctx_cursor->x_width[0] = 1;
     war_cursor_init(ctx_cursor, ctx_pool, ctx_config, ctx_vk);
     ctx_cursor->instance_count = 1;
-    ctx_cursor->instance[0].pos[0] = 400;
-    ctx_cursor->instance[0].pos[1] = 300;
-    ctx_cursor->instance[0].size[0] = 100;
-    ctx_cursor->instance[0].size[1] = 50;
+    ctx_cursor->instance[0].pos[0] = 5;
+    ctx_cursor->instance[0].pos[1] = 5;
+    ctx_cursor->instance[0].size[0] = 1;
+    ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->instance[0].color[0] = 1;
     ctx_cursor->instance[0].color[1] = 0;
     ctx_cursor->instance[0].color[2] = 0;
