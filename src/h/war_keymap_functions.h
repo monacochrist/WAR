@@ -38,6 +38,7 @@ static inline void war_pan_follow(war_env* env) {
     if (!cur->instance_count) return;
     double cw = cur->cell_width, ch = cur->cell_height;
     float z = wl->zoom;
+    if (z < 0.001f) z = 0.001f;
     double vis_cols = (double)wl->width / (cw * z) - wl->gutter_cols;
     double vis_rows = (double)wl->height / (ch * z) - wl->gutter_rows;
     if (vis_cols < 1) vis_cols = 1;
@@ -86,13 +87,15 @@ static inline void war_move_cursor_down(war_env* env) {
 }
 
 static inline void war_zoom_in(war_env* env) {
-    env->ctx_wayland->zoom *= 1.25f;
-    war_pan_follow(env);
+    float z = env->ctx_wayland->zoom * 1.25f;
+    if (z > 100.0f) z = 100.0f;
+    env->ctx_wayland->zoom = z;
 }
 
 static inline void war_zoom_out(war_env* env) {
-    env->ctx_wayland->zoom *= 0.80f;
-    war_pan_follow(env);
+    float z = env->ctx_wayland->zoom * 0.80f;
+    if (z < 0.01f) z = 0.01f;
+    env->ctx_wayland->zoom = z;
 }
 
 static inline void war_zoom_reset(war_env* env) {
