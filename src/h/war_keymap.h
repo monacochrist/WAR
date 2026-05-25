@@ -357,6 +357,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_layer_0,
                    0);
+    // capture audio toggle
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<C-c>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_capture_audio,
+                   0);
 }
 
 void war_keymap_override(war_keymap_context* keymap,

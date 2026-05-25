@@ -36,6 +36,7 @@ else if (strcmp(name, "war_move_cursor_down") == 0) { return war_move_cursor_dow
 else if (strcmp(name, "war_zoom_in") == 0) { return war_zoom_in; }
 else if (strcmp(name, "war_zoom_out") == 0) { return war_zoom_out; }
 else if (strcmp(name, "war_zoom_reset") == 0) { return war_zoom_reset; }
+else if (strcmp(name, "war_capture_audio") == 0) { return war_capture_audio; }
 return NULL; }
 
 #endif //WAR_BUILD_KEYMAP_FUNCTIONS_H

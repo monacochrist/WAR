@@ -324,8 +324,10 @@ typedef struct war_atomics {
     _Atomic uint64_t play_clock;
     _Atomic uint64_t play_frames;
     _Atomic uint64_t capture_frames;
+    _Atomic uint64_t loopback_frames;     // ADD: frames captured from laptop speaker loopback
     _Atomic float capture_threshold;
     _Atomic uint8_t capture;
+    _Atomic uint8_t capture_loopback;     // ADD: enable/disable loopback capture
     _Atomic uint8_t play;
     _Atomic double play_reader_rate;
     _Atomic double play_writer_rate;
@@ -1127,9 +1129,11 @@ typedef struct __attribute__((packed)) war_color_body {
 // } war_color_context;
 
 typedef struct war_pipewire_context {
+    struct pw_main_loop* main_loop;   // ADD: for pw_main_loop_run/quit from audio thread
     struct pw_loop* loop;
     struct pw_stream* play_stream;
     struct pw_stream* capture_stream;
+    struct pw_stream* loopback_capture_stream; // ADD: laptop speaker loopback
     const struct spa_pod* play_params;
     const struct spa_pod* capture_params;
     struct spa_audio_info_raw play_info;
@@ -2515,6 +2519,8 @@ struct war_env {
     war_file* capture_wav;
     war_fsm_context* ctx_fsm;
     war_producer_consumer* pc_capture;
+    war_producer_consumer* pc_loopback;    // ADD: ring buffer, audio thread writes loopback samples
+    war_producer_consumer* pc_play;      // ADD: ring buffer, main writes play data → audio reads
     war_nsgt_context* ctx_nsgt;
     war_vulkan_context* ctx_new_vulkan;
     war_cursor_context* ctx_cursor;
@@ -2528,6 +2534,7 @@ struct war_env {
     war_color_context* ctx_color;
     war_hot_context* ctx_hot;
     war_piano_gutter_context* ctx_piano_gutter;
+    war_pipewire_context* ctx_pw;        // ADD: pipewire context, allocated from pool
     war_wayland_context* ctx_wayland;
 };
 

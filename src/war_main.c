@@ -399,6 +399,202 @@ static void war_keyboard_repeat_info(void* data,
     // client-side repeat uses hardcoded defaults in bootstrap
 }
 
+//---------------------------------------------------------------------------
+// PIPEWIRE AUDIO THREAD
+//---------------------------------------------------------------------------
+// Capture process callback: audio thread reads captured mic data,
+// writes it into pc_capture ring buffer (audio→main direction).
+static void on_pw_capture_process(void* userdata) {
+    war_env* env = (war_env*)userdata;
+    struct pw_buffer* b;
+    if (!(b = pw_stream_dequeue_buffer(env->ctx_pw->capture_stream))) return;
+    struct spa_buffer* spa = b->buffer;
+    void* src = spa->datas[0].data;
+    uint32_t n_bytes = spa->datas[0].chunk->size;
+    if (src && n_bytes > 0) {
+        // audio thread writes captured samples → main reads via war_pc_from_a
+        war_pc_to_wr(env->pc_capture, 0, n_bytes, src);
+        env->atomics->capture_frames++;
+    }
+    pw_stream_queue_buffer(env->ctx_pw->capture_stream, b);
+}
+
+// Loopback capture callback: audio thread reads laptop speaker output
+// (sink monitor), writes it into pc_loopback ring buffer.
+static void on_pw_loopback_process(void* userdata) {
+    war_env* env = (war_env*)userdata;
+    struct pw_buffer* b;
+    if (!(b = pw_stream_dequeue_buffer(
+              env->ctx_pw->loopback_capture_stream)))
+        return;
+    struct spa_buffer* spa = b->buffer;
+    void* src = spa->datas[0].data;
+    uint32_t n_bytes = spa->datas[0].chunk->size;
+    if (src && n_bytes > 0 && env->atomics->capture_loopback) {
+        war_pc_to_wr(env->pc_loopback, 0, n_bytes, src);
+        env->atomics->loopback_frames++;
+    }
+    pw_stream_queue_buffer(env->ctx_pw->loopback_capture_stream, b);
+}
+
+// Play process callback: audio thread reads from pc_play ring buffer
+// (main→audio direction) and fills the playback buffer.
+static void on_pw_play_process(void* userdata) {
+    war_env* env = (war_env*)userdata;
+    struct pw_buffer* b;
+    if (!(b = pw_stream_dequeue_buffer(env->ctx_pw->play_stream))) return;
+    struct spa_buffer* spa = b->buffer;
+    void* dst = spa->datas[0].data;
+    uint32_t max = spa->datas[0].maxsize;
+    uint32_t hdr, sz;
+    if (war_pc_from_wr(env->pc_play, &hdr, &sz, dst) && sz <= max) {
+        spa->datas[0].chunk->size = sz;
+        spa->datas[0].chunk->stride = 8; // 2ch × 4 bytes (F32)
+    } else {
+        // no data — silence
+        memset(dst, 0, max);
+        spa->datas[0].chunk->size = max;
+        spa->datas[0].chunk->stride = 8;
+    }
+    pw_stream_queue_buffer(env->ctx_pw->play_stream, b);
+}
+
+// Dedicated audio thread: runs Pipewire main loop at SCHED_FIFO.
+// Communicates with main thread only via lock-free ring buffers + atomics.
+void* war_pipewire(void* args) {
+    war_env* env = (war_env*)args;
+    // attempt real-time scheduling
+    struct sched_param sp = {.sched_priority = 80};
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
+
+    pw_init(NULL, NULL);
+
+    struct pw_main_loop* loop = pw_main_loop_new(NULL);
+    env->ctx_pw->main_loop = loop; // so main thread can pw_main_loop_quit
+
+    struct pw_context* ctx = pw_context_new(
+        pw_main_loop_get_loop(loop), NULL, 0);
+    struct pw_core* core = pw_context_connect(ctx, NULL, 0);
+    WASSERT(core);
+
+    // spa_hook listeners must live for entire thread lifetime (not inside {} blocks)
+    struct spa_hook capture_listener = {0};
+    struct spa_hook play_listener = {0};
+    struct spa_hook loopback_listener = {0};
+
+    // --- capture stream (mic in) ---
+    {
+        struct pw_properties* props =
+            pw_properties_new("media.name", "war-capture", NULL);
+        env->ctx_pw->capture_stream =
+            pw_stream_new(core, "war-capture", props);
+        // format: F32, 48000, mono
+        struct spa_audio_info_raw capture_info = {
+            .format = SPA_AUDIO_FORMAT_F32,
+            .rate = 48000,
+            .channels = 1,
+        };
+        uint8_t buf[1024];
+        struct spa_pod_builder bld =
+            SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+        const struct spa_pod* params[1];
+        params[0] = spa_format_audio_raw_build(
+            &bld, SPA_PARAM_EnumFormat, &capture_info);
+        // events
+        struct pw_stream_events events = {0};
+        events.version = PW_VERSION_STREAM_EVENTS;
+        events.process = on_pw_capture_process;
+        pw_stream_add_listener(
+            env->ctx_pw->capture_stream, &capture_listener, &events, env);
+        pw_stream_connect(env->ctx_pw->capture_stream,
+                          PW_DIRECTION_INPUT, PW_ID_ANY,
+                          PW_STREAM_FLAG_AUTOCONNECT |
+                              PW_STREAM_FLAG_MAP_BUFFERS,
+                          params, 1);
+    }
+
+    // --- play stream (speakers out) ---
+    {
+        struct pw_properties* props =
+            pw_properties_new("media.name", "war-play", NULL);
+        env->ctx_pw->play_stream =
+            pw_stream_new(core, "war-play", props);
+        // format: F32, 48000, stereo
+        struct spa_audio_info_raw play_info = {
+            .format = SPA_AUDIO_FORMAT_F32,
+            .rate = 48000,
+            .channels = 2,
+            .position = {SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR},
+        };
+        uint8_t buf[1024];
+        struct spa_pod_builder bld =
+            SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+        const struct spa_pod* params[1];
+        params[0] = spa_format_audio_raw_build(
+            &bld, SPA_PARAM_EnumFormat, &play_info);
+        struct pw_stream_events events = {0};
+        events.version = PW_VERSION_STREAM_EVENTS;
+        events.process = on_pw_play_process;
+        pw_stream_add_listener(
+            env->ctx_pw->play_stream, &play_listener, &events, env);
+        pw_stream_connect(env->ctx_pw->play_stream,
+                          PW_DIRECTION_OUTPUT, PW_ID_ANY,
+                          PW_STREAM_FLAG_AUTOCONNECT |
+                              PW_STREAM_FLAG_MAP_BUFFERS,
+                          params, 1);
+    }
+
+    // --- loopback capture stream (laptop speaker out → ring buffer) ---
+    {
+        struct pw_properties* props = pw_properties_new(
+            PW_KEY_TARGET_OBJECT, "@DEFAULT_MONITOR@",
+            "media.name", "war-loopback",
+            NULL);
+        env->ctx_pw->loopback_capture_stream =
+            pw_stream_new(core, "war-loopback", props);
+        // format: F32, 48000, stereo (matches whatever is playing through speakers)
+        struct spa_audio_info_raw loopback_info = {
+            .format = SPA_AUDIO_FORMAT_F32,
+            .rate = 48000,
+            .channels = 2,
+            .position = {SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR},
+        };
+        uint8_t buf[1024];
+        struct spa_pod_builder bld =
+            SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+        const struct spa_pod* params[1];
+        params[0] = spa_format_audio_raw_build(
+            &bld, SPA_PARAM_EnumFormat, &loopback_info);
+        struct pw_stream_events events = {0};
+        events.version = PW_VERSION_STREAM_EVENTS;
+        events.process = on_pw_loopback_process;
+        pw_stream_add_listener(
+            env->ctx_pw->loopback_capture_stream, &loopback_listener, &events, env);
+        pw_stream_connect(env->ctx_pw->loopback_capture_stream,
+                          PW_DIRECTION_INPUT, PW_ID_ANY,
+                          PW_STREAM_FLAG_AUTOCONNECT |
+                              PW_STREAM_FLAG_MAP_BUFFERS,
+                          params, 1);
+        env->atomics->capture_loopback = 1; // enabled by default
+    }
+
+    // blocks until pw_main_loop_quit is called
+    pw_main_loop_run(loop);
+
+    // cleanup (only reached after quit signal)
+    pw_stream_destroy(env->ctx_pw->capture_stream);
+    env->ctx_pw->capture_stream = NULL;
+    pw_stream_destroy(env->ctx_pw->loopback_capture_stream);
+    env->ctx_pw->loopback_capture_stream = NULL;
+    pw_stream_destroy(env->ctx_pw->play_stream);
+    env->ctx_pw->play_stream = NULL;
+    pw_context_destroy(ctx);
+    pw_main_loop_destroy(loop);
+    env->ctx_pw->main_loop = NULL;
+    pw_deinit();
+    return NULL;
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -698,6 +894,40 @@ int main(int argc, char** argv) {
                      (c & 0xFF) / 255.0f};
     memcpy(ctx_cursor->instance[0].color, rgba, sizeof(rgba));
     //-------------------------------------------------------------------------
+    // PIPEWIRE AUDIO THREAD
+    //-------------------------------------------------------------------------
+    // atomics: shared state between main thread and audio thread
+    env->atomics = calloc(1, sizeof(war_atomics));
+
+    // capture ring buffer: audio thread writes captured mic samples,
+    // main thread reads them via war_pc_from_a(pc_capture, ...)
+    env->pc_capture = calloc(1, sizeof(war_producer_consumer));
+    env->pc_capture->to_wr = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
+    env->pc_capture->to_a  = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
+    env->pc_capture->size  = ctx_config->PC_CAPTURE_BUFFER_SIZE;
+
+    // loopback ring buffer: audio thread writes laptop speaker samples,
+    // main thread reads them via war_pc_from_a(pc_loopback, ...)
+    env->pc_loopback = calloc(1, sizeof(war_producer_consumer));
+    env->pc_loopback->to_wr = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
+    env->pc_loopback->to_a  = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
+    env->pc_loopback->size  = ctx_config->PC_CAPTURE_BUFFER_SIZE;
+
+    // play ring buffer: main thread writes audio samples to play,
+    // audio thread reads them via war_pc_from_wr(pc_play, ...)
+    env->pc_play = calloc(1, sizeof(war_producer_consumer));
+    env->pc_play->to_a  = calloc(1, ctx_config->PC_PLAY_BUFFER_SIZE);
+    env->pc_play->to_wr = calloc(1, ctx_config->PC_PLAY_BUFFER_SIZE);
+    env->pc_play->size  = ctx_config->PC_PLAY_BUFFER_SIZE;
+
+    // pipewire context (struct allocated from pool, sub-fields filled in war_pipewire thread)
+    env->ctx_pw = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_AUDIO_CTX_PW);
+
+    // spawn dedicated audio thread (war_pipewire runs pw_main_loop_run internally)
+    pthread_t pw_thread;
+    WASSERT(pthread_create(&pw_thread, NULL, war_pipewire, env) == 0);
+
+    //-------------------------------------------------------------------------
     // PIANO GUTTER INIT
     //-------------------------------------------------------------------------
     war_piano_gutter_context* ctx_pg =
@@ -766,8 +996,35 @@ int main(int argc, char** argv) {
     }
 
     //-------------------------------------------------------------------------
-    // CLEANUP
+    // CLEANUP (audio thread first — needs to stop before Vulkan/wayland teardown)
     //-------------------------------------------------------------------------
+    // signal audio thread to stop and quit its main loop
+    if (env->atomics) env->atomics->capture = 0;
+    if (env->ctx_pw && env->ctx_pw->main_loop)
+        pw_main_loop_quit(env->ctx_pw->main_loop);
+    pthread_join(pw_thread, NULL);
+    // free ring buffer memory
+    if (env->pc_capture) {
+        free(env->pc_capture->to_wr);
+        free(env->pc_capture->to_a);
+        free(env->pc_capture);
+    }
+    if (env->pc_loopback) {
+        free(env->pc_loopback->to_wr);
+        free(env->pc_loopback->to_a);
+        free(env->pc_loopback);
+    }
+    if (env->pc_play) {
+        free(env->pc_play->to_a);
+        free(env->pc_play->to_wr);
+        free(env->pc_play);
+    }
+    free(env->atomics);
+    env->atomics = NULL;
+    env->pc_capture = NULL;
+    env->pc_loopback = NULL;
+    env->pc_play = NULL;
+
     vkDeviceWaitIdle(ctx_vk->device);
     vkDestroyCommandPool(ctx_vk->device, ctx_vk->cmd_pool, NULL);
     vkDestroyFramebuffer(ctx_vk->device, ctx_vk->framebuffer, NULL);

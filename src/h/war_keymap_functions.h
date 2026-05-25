@@ -192,4 +192,8 @@ static inline void war_zoom_reset(war_env* env) {
     env->ctx_wayland->zoom = env->ctx_wayland->initial_zoom;
 }
 
+static inline void war_capture_audio(war_env* env) {
+    env->atomics->capture = !env->atomics->capture;
+}
+
 #endif // WAR_KEYMAP_FUNCTIONS_H
