@@ -606,4 +606,25 @@ static inline void war_preview_toggle(war_env* env) {
                     env->capture_slots[idx].count);
 }
 
+static inline void war_set_width_to_duration(war_env* env) {
+    uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    float new_w;
+    if (env->capture_slots[idx].samples && env->capture_slots[idx].count > 0) {
+        double duration = (double)env->capture_slots[idx].count / 48000.0;
+        if (duration < 1.0) duration = 1.0;
+        new_w = (float)duration;
+        call_king_terry("WIDTH: note=%u layer=%u count=%lu duration=%.3f size=%.2f",
+                        note, layer, env->capture_slots[idx].count, duration, new_w);
+    } else {
+        new_w = 1.0f;
+        call_king_terry("WIDTH: no capture at note=%u layer=%u, default=1.0",
+                        note, layer);
+    }
+    env->ctx_cursor->instance[0].size[0] = new_w;
+}
+
 #endif // WAR_KEYMAP_FUNCTIONS_H

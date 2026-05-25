@@ -213,10 +213,10 @@ static inline void war_cursor_init(war_cursor_context* ctx_cursor,
     // QUAD VERTEX BUFFER
     //-------------------------------------------------------------------------
     float quad_verts[] = {
-        -0.5f, -0.5f,
-         0.5f, -0.5f,
-        -0.5f,  0.5f,
-         0.5f,  0.5f,
+         0.0f,  0.0f,
+         1.0f,  0.0f,
+         0.0f,  1.0f,
+         1.0f,  1.0f,
     };
     VkBufferCreateInfo bci = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,

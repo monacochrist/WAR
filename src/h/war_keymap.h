@@ -376,6 +376,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_preview_toggle,
                    0);
+    // set cursor width to slot duration (s)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"s"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_set_width_to_duration,
+                   0);
     // octaves
     war_keymap_set(keymap,
                    config,

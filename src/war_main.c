@@ -901,9 +901,13 @@ int main(int argc, char** argv) {
     ctx_cursor->instance[0].size[0] = 1;
     ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->layer = 1;
-    ctx_cursor->octave = 5;
-    double vis_cols = (double)ctx_wayland->width / (ctx_cursor->cell_width * ctx_wayland->zoom) - ctx_wayland->gutter_cols;
-    double vis_rows = (double)ctx_wayland->height / (ctx_cursor->cell_height * ctx_wayland->zoom) - ctx_wayland->gutter_rows;
+    ctx_cursor->octave = 4;
+    double vis_cols = (double)ctx_wayland->width /
+                          (ctx_cursor->cell_width * ctx_wayland->zoom) -
+                      ctx_wayland->gutter_cols;
+    double vis_rows = (double)ctx_wayland->height /
+                          (ctx_cursor->cell_height * ctx_wayland->zoom) -
+                      ctx_wayland->gutter_rows;
     if (vis_cols < 1) vis_cols = 1;
     if (vis_rows < 1) vis_rows = 1;
     ctx_wayland->panning[0] = ctx_cursor->instance[0].pos[0] - vis_cols / 2.0;
