@@ -178,6 +178,11 @@ static inline void war_layer_0(war_env* env) {
 // OCTAVES
 //-----------------------------------------------------------------------------
 
+static inline void war_octave_minus_1(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = -1;
+}
+
 static inline void war_octave_0(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     ctx_cursor->octave = 0;
@@ -237,14 +242,22 @@ static inline void war_octave_10(war_env* env) {
 // PLAYBACK
 //-----------------------------------------------------------------------------
 
+static inline int32_t war_octave_to_midi_base(int32_t octave) {
+    return (octave + 1) * 12;
+}
+
 static inline void war_play_q(war_env* env) {
-    uint32_t note = 0 + 12 * env->ctx_cursor->octave;
+    if (env->ctx_cursor->octave == 10) { return; }
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(0 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -256,13 +269,15 @@ static inline void war_play_q(war_env* env) {
 }
 
 static inline void war_play_w(war_env* env) {
-    uint32_t note = 1 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 1 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -274,13 +289,15 @@ static inline void war_play_w(war_env* env) {
 }
 
 static inline void war_play_e(war_env* env) {
-    uint32_t note = 2 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 2 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -292,13 +309,15 @@ static inline void war_play_e(war_env* env) {
 }
 
 static inline void war_play_r(war_env* env) {
-    uint32_t note = 3 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 3 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -310,13 +329,15 @@ static inline void war_play_r(war_env* env) {
 }
 
 static inline void war_play_t(war_env* env) {
-    uint32_t note = 4 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 4 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -328,13 +349,15 @@ static inline void war_play_t(war_env* env) {
 }
 
 static inline void war_play_y(war_env* env) {
-    uint32_t note = 5 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 5 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -346,13 +369,15 @@ static inline void war_play_y(war_env* env) {
 }
 
 static inline void war_play_u(war_env* env) {
-    uint32_t note = 6 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 6 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -364,13 +389,15 @@ static inline void war_play_u(war_env* env) {
 }
 
 static inline void war_play_i(war_env* env) {
-    uint32_t note = 7 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 7 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -383,13 +410,15 @@ static inline void war_play_i(war_env* env) {
 
 static inline void war_play_o(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
-    uint32_t note = 8 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 8 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -402,13 +431,15 @@ static inline void war_play_o(war_env* env) {
 
 static inline void war_play_p(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
-    uint32_t note = 9 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 9 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -421,13 +452,15 @@ static inline void war_play_p(war_env* env) {
 
 static inline void war_play_left_bracket(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
-    uint32_t note = 10 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 10 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -440,13 +473,15 @@ static inline void war_play_left_bracket(war_env* env) {
 
 static inline void war_play_right_bracket(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
-    uint32_t note = 11 + 12 * env->ctx_cursor->octave;
+    uint32_t note = 11 + (env->ctx_cursor->octave + 1) * 12;
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
@@ -559,6 +594,8 @@ static inline void war_preview_toggle(war_env* env) {
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
+    env->preview_note = note;
+    env->preview_layer = layer;
     // flush old data in play ring buffer so new preview writes don't get stuck
     env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;

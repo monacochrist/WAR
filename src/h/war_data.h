@@ -444,7 +444,7 @@ typedef struct war_cursor_context {
     war_vulkan_cursor_instance* instance;
     uint32_t instance_count;
     uint32_t layer;
-    uint32_t octave;
+    int32_t octave;
     // Vulkan objects
     VkShaderModule vert_module;
     VkShaderModule frag_module;
@@ -2542,6 +2542,8 @@ struct war_env {
     // preview playback state
     uint8_t preview_active;
     uint64_t preview_read_pos;   // current mono-sample position in the slot
+    uint32_t preview_note;       // note index used by qwerty play keys (not cursor pos)
+    uint32_t preview_layer;      // layer index used by qwerty play keys
     // new
     war_config_context* ctx_config;
     war_command_context* ctx_command;

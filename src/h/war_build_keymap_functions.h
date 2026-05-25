@@ -29,6 +29,7 @@ else if (strcmp(name, "war_layer_7") == 0) { return war_layer_7; }
 else if (strcmp(name, "war_layer_8") == 0) { return war_layer_8; }
 else if (strcmp(name, "war_layer_9") == 0) { return war_layer_9; }
 else if (strcmp(name, "war_layer_0") == 0) { return war_layer_0; }
+else if (strcmp(name, "war_octave_minus_1") == 0) { return war_octave_minus_1; }
 else if (strcmp(name, "war_octave_0") == 0) { return war_octave_0; }
 else if (strcmp(name, "war_octave_1") == 0) { return war_octave_1; }
 else if (strcmp(name, "war_octave_2") == 0) { return war_octave_2; }

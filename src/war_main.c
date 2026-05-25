@@ -1045,9 +1045,9 @@ int main(int argc, char** argv) {
         // preview playback: write stereo capture slot → pc_play
         // Slot contains interleaved stereo F32 (L,R,L,R,...).
         if (env->preview_active) {
-            uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+            uint32_t note = env->preview_note;
             if (note > 127) note = 127;
-            uint32_t layer = env->ctx_cursor->layer;
+            uint32_t layer = env->preview_layer;
             if (layer < 1 || layer > 9) {
                 env->preview_active = 0;
                 env->preview_read_pos = 0;
