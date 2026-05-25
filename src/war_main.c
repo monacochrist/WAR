@@ -690,6 +690,7 @@ int main(int argc, char** argv) {
     ctx_cursor->instance[0].pos[1] = ctx_wayland->gutter_rows;
     ctx_cursor->instance[0].size[0] = 1;
     ctx_cursor->instance[0].size[1] = 1;
+    ctx_cursor->layer = 1;
     uint32_t c = env->ctx_color->layer_1;
     float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
                      ((c >> 16) & 0xFF) / 255.0f,
