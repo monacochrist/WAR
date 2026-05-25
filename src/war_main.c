@@ -897,11 +897,19 @@ int main(int argc, char** argv) {
     war_cursor_init(ctx_cursor, ctx_pool, ctx_config, ctx_vk);
     ctx_cursor->instance_count = 1;
     ctx_cursor->instance[0].pos[0] = ctx_wayland->gutter_cols;
-    ctx_cursor->instance[0].pos[1] = ctx_wayland->gutter_rows;
+    ctx_cursor->instance[0].pos[1] = 60;
     ctx_cursor->instance[0].size[0] = 1;
     ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->layer = 1;
-    ctx_cursor->octave = 0;
+    ctx_cursor->octave = 5;
+    double vis_cols = (double)ctx_wayland->width / (ctx_cursor->cell_width * ctx_wayland->zoom) - ctx_wayland->gutter_cols;
+    double vis_rows = (double)ctx_wayland->height / (ctx_cursor->cell_height * ctx_wayland->zoom) - ctx_wayland->gutter_rows;
+    if (vis_cols < 1) vis_cols = 1;
+    if (vis_rows < 1) vis_rows = 1;
+    ctx_wayland->panning[0] = ctx_cursor->instance[0].pos[0] - vis_cols / 2.0;
+    ctx_wayland->panning[1] = ctx_cursor->instance[0].pos[1] - vis_rows / 2.0;
+    if (ctx_wayland->panning[0] < 0) ctx_wayland->panning[0] = 0;
+    if (ctx_wayland->panning[1] < 0) ctx_wayland->panning[1] = 0;
     uint32_t c = env->ctx_color->layer_1;
     float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
                      ((c >> 16) & 0xFF) / 255.0f,
