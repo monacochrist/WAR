@@ -425,8 +425,7 @@ static int loopback_cb_count = 0;
 static void on_pw_loopback_process(void* userdata) {
     war_env* env = (war_env*)userdata;
     struct pw_buffer* b;
-    if (!(b = pw_stream_dequeue_buffer(
-              env->ctx_pw->loopback_capture_stream)))
+    if (!(b = pw_stream_dequeue_buffer(env->ctx_pw->loopback_capture_stream)))
         return;
     struct spa_buffer* spa = b->buffer;
     void* src = spa->datas[0].data;
@@ -440,8 +439,6 @@ static void on_pw_loopback_process(void* userdata) {
     pw_stream_queue_buffer(env->ctx_pw->loopback_capture_stream, b);
 }
 
-static int play_cb_count = 0;
-static uint64_t play_test_frames = 0;
 static void on_pw_play_process(void* userdata) {
     war_env* env = (war_env*)userdata;
     struct pw_buffer* b;
@@ -449,7 +446,6 @@ static void on_pw_play_process(void* userdata) {
     struct spa_buffer* spa = b->buffer;
     void* dst = spa->datas[0].data;
     uint32_t max = spa->datas[0].maxsize;
-    uint32_t n_frames = max / 8; // stereo F32 = 8 bytes per frame
     uint32_t written = 0;
     uint32_t hdr, sz;
     while (written < max &&
@@ -457,21 +453,8 @@ static void on_pw_play_process(void* userdata) {
            sz <= max - written) {
         written += sz;
     }
-    if (play_cb_count++ < 5)
-        call_king_terry("PLAY cb: max=%u written=%u", max, written);
     if (written > 0) {
         spa->datas[0].chunk->size = written;
-        spa->datas[0].chunk->stride = 8;
-    } else if (play_test_frames < 48000) {
-        // test tone: 440 Hz sine for 1 second
-        float* f = (float*)dst;
-        for (uint32_t i = 0; i < n_frames * 2; i += 2) {
-            float s = sinf(2.0f * 3.14159265f * 440.0f * play_test_frames / 48000.0f);
-            f[i] = s * 0.3f;
-            f[i + 1] = s * 0.3f;
-            play_test_frames++;
-        }
-        spa->datas[0].chunk->size = max;
         spa->datas[0].chunk->stride = 8;
     } else {
         memset(dst, 0, max);
@@ -494,8 +477,8 @@ void* war_pipewire(void* args) {
     struct pw_main_loop* loop = pw_main_loop_new(NULL);
     env->ctx_pw->main_loop = loop; // so main thread can pw_main_loop_quit
 
-    struct pw_context* ctx = pw_context_new(
-        pw_main_loop_get_loop(loop), NULL, 0);
+    struct pw_context* ctx =
+        pw_context_new(pw_main_loop_get_loop(loop), NULL, 0);
     struct pw_core* core = pw_context_connect(ctx, NULL, 0);
     WASSERT(core);
 
@@ -511,28 +494,30 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-capture", NULL);
-        env->ctx_pw->capture_stream =
-            pw_stream_new(core, "war-capture", props);
+        env->ctx_pw->capture_stream = pw_stream_new(core, "war-capture", props);
         struct spa_audio_info_raw capture_info = {
             .format = SPA_AUDIO_FORMAT_F32,
             .rate = 48000,
             .channels = 1,
         };
         uint8_t buf[1024];
-        struct spa_pod_builder bld =
-            SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+        struct spa_pod_builder bld = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
         const struct spa_pod* params[1];
         params[0] = spa_format_audio_raw_build(
             &bld, SPA_PARAM_EnumFormat, &capture_info);
         capture_events.version = PW_VERSION_STREAM_EVENTS;
         capture_events.process = on_pw_capture_process;
-        pw_stream_add_listener(
-            env->ctx_pw->capture_stream, &capture_listener, &capture_events, env);
+        pw_stream_add_listener(env->ctx_pw->capture_stream,
+                               &capture_listener,
+                               &capture_events,
+                               env);
         WASSERT(pw_stream_connect(env->ctx_pw->capture_stream,
-                          PW_DIRECTION_INPUT, PW_ID_ANY,
-                          PW_STREAM_FLAG_AUTOCONNECT |
-                              PW_STREAM_FLAG_MAP_BUFFERS,
-                          params, 1) == 0);
+                                  PW_DIRECTION_INPUT,
+                                  PW_ID_ANY,
+                                  PW_STREAM_FLAG_AUTOCONNECT |
+                                      PW_STREAM_FLAG_MAP_BUFFERS,
+                                  params,
+                                  1) == 0);
         call_king_terry("Pipewire: capture stream connected");
     }
 
@@ -540,8 +525,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-play", NULL);
-        env->ctx_pw->play_stream =
-            pw_stream_new(core, "war-play", props);
+        env->ctx_pw->play_stream = pw_stream_new(core, "war-play", props);
         // format: F32, 48000, stereo
         struct spa_audio_info_raw play_info = {
             .format = SPA_AUDIO_FORMAT_F32,
@@ -550,32 +534,36 @@ void* war_pipewire(void* args) {
             .position = {SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR},
         };
         uint8_t buf[1024];
-        struct spa_pod_builder bld =
-            SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+        struct spa_pod_builder bld = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
         const struct spa_pod* params[1];
-        params[0] = spa_format_audio_raw_build(
-            &bld, SPA_PARAM_EnumFormat, &play_info);
+        params[0] =
+            spa_format_audio_raw_build(&bld, SPA_PARAM_EnumFormat, &play_info);
         play_events.version = PW_VERSION_STREAM_EVENTS;
         play_events.process = on_pw_play_process;
         pw_stream_add_listener(
             env->ctx_pw->play_stream, &play_listener, &play_events, env);
         WASSERT(pw_stream_connect(env->ctx_pw->play_stream,
-                          PW_DIRECTION_OUTPUT, PW_ID_ANY,
-                          PW_STREAM_FLAG_AUTOCONNECT |
-                              PW_STREAM_FLAG_MAP_BUFFERS,
-                          params, 1) == 0);
+                                  PW_DIRECTION_OUTPUT,
+                                  PW_ID_ANY,
+                                  PW_STREAM_FLAG_AUTOCONNECT |
+                                      PW_STREAM_FLAG_MAP_BUFFERS,
+                                  params,
+                                  1) == 0);
         call_king_terry("Pipewire: play stream connected");
     }
 
     // --- loopback capture stream (sink monitor → ring buffer) ---
     {
-        struct pw_properties* props = pw_properties_new(
-            PW_KEY_STREAM_CAPTURE_SINK, "true",
-            "media.name", "war-loopback",
-            NULL);
+        struct pw_properties* props =
+            pw_properties_new(PW_KEY_STREAM_CAPTURE_SINK,
+                              "true",
+                              "media.name",
+                              "war-loopback",
+                              NULL);
         env->ctx_pw->loopback_capture_stream =
             pw_stream_new(core, "war-loopback", props);
-        // format: F32, 48000, stereo (matches whatever is playing through speakers)
+        // format: F32, 48000, stereo (matches whatever is playing through
+        // speakers)
         struct spa_audio_info_raw loopback_info = {
             .format = SPA_AUDIO_FORMAT_F32,
             .rate = 48000,
@@ -583,20 +571,23 @@ void* war_pipewire(void* args) {
             .position = {SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR},
         };
         uint8_t buf[1024];
-        struct spa_pod_builder bld =
-            SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+        struct spa_pod_builder bld = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
         const struct spa_pod* params[1];
         params[0] = spa_format_audio_raw_build(
             &bld, SPA_PARAM_EnumFormat, &loopback_info);
         loopback_events.version = PW_VERSION_STREAM_EVENTS;
         loopback_events.process = on_pw_loopback_process;
-        pw_stream_add_listener(
-            env->ctx_pw->loopback_capture_stream, &loopback_listener, &loopback_events, env);
+        pw_stream_add_listener(env->ctx_pw->loopback_capture_stream,
+                               &loopback_listener,
+                               &loopback_events,
+                               env);
         WASSERT(pw_stream_connect(env->ctx_pw->loopback_capture_stream,
-                          PW_DIRECTION_INPUT, PW_ID_ANY,
-                          PW_STREAM_FLAG_AUTOCONNECT |
-                              PW_STREAM_FLAG_MAP_BUFFERS,
-                          params, 1) == 0);
+                                  PW_DIRECTION_INPUT,
+                                  PW_ID_ANY,
+                                  PW_STREAM_FLAG_AUTOCONNECT |
+                                      PW_STREAM_FLAG_MAP_BUFFERS,
+                                  params,
+                                  1) == 0);
         call_king_terry("Pipewire: loopback stream connected");
         env->atomics->capture_loopback = 1; // enabled by default
     }
@@ -910,6 +901,7 @@ int main(int argc, char** argv) {
     ctx_cursor->instance[0].size[0] = 1;
     ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->layer = 1;
+    ctx_cursor->octave = 0;
     uint32_t c = env->ctx_color->layer_1;
     float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
                      ((c >> 16) & 0xFF) / 255.0f,
@@ -926,27 +918,29 @@ int main(int argc, char** argv) {
     // main thread reads them via war_pc_from_a(pc_capture, ...)
     env->pc_capture = calloc(1, sizeof(war_producer_consumer));
     env->pc_capture->to_wr = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
-    env->pc_capture->to_a  = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
-    env->pc_capture->size  = ctx_config->PC_CAPTURE_BUFFER_SIZE;
+    env->pc_capture->to_a = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
+    env->pc_capture->size = ctx_config->PC_CAPTURE_BUFFER_SIZE;
 
     // loopback ring buffer: audio thread writes laptop speaker samples,
     // main thread reads them via war_pc_from_a(pc_loopback, ...)
     env->pc_loopback = calloc(1, sizeof(war_producer_consumer));
     env->pc_loopback->to_wr = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
-    env->pc_loopback->to_a  = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
-    env->pc_loopback->size  = ctx_config->PC_CAPTURE_BUFFER_SIZE;
+    env->pc_loopback->to_a = calloc(1, ctx_config->PC_CAPTURE_BUFFER_SIZE);
+    env->pc_loopback->size = ctx_config->PC_CAPTURE_BUFFER_SIZE;
 
     // play ring buffer: main thread writes audio samples to play,
     // audio thread reads them via war_pc_from_wr(pc_play, ...)
     env->pc_play = calloc(1, sizeof(war_producer_consumer));
-    env->pc_play->to_a  = calloc(1, ctx_config->PC_PLAY_BUFFER_SIZE);
+    env->pc_play->to_a = calloc(1, ctx_config->PC_PLAY_BUFFER_SIZE);
     env->pc_play->to_wr = calloc(1, ctx_config->PC_PLAY_BUFFER_SIZE);
-    env->pc_play->size  = ctx_config->PC_PLAY_BUFFER_SIZE;
+    env->pc_play->size = ctx_config->PC_PLAY_BUFFER_SIZE;
 
-    // pipewire context (struct allocated from pool, sub-fields filled in war_pipewire thread)
+    // pipewire context (struct allocated from pool, sub-fields filled in
+    // war_pipewire thread)
     env->ctx_pw = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_AUDIO_CTX_PW);
 
-    // spawn dedicated audio thread (war_pipewire runs pw_main_loop_run internally)
+    // spawn dedicated audio thread (war_pipewire runs pw_main_loop_run
+    // internally)
     pthread_t pw_thread;
     WASSERT(pthread_create(&pw_thread, NULL, war_pipewire, env) == 0);
 
@@ -1028,22 +1022,23 @@ int main(int argc, char** argv) {
             uint8_t buf[65536];
             while (war_pc_from_a(env->pc_loopback, &hdr, &sz, buf) && sz > 0) {
                 uint32_t n_floats = sz / sizeof(float);
-                uint64_t needed =
-                    env->capture_accumulator_count + n_floats;
+                uint64_t needed = env->capture_accumulator_count + n_floats;
                 if (needed > env->capture_accumulator_capacity) {
-                    uint64_t new_cap = env->capture_accumulator_capacity
-                                           ? env->capture_accumulator_capacity * 2
-                                           : 4096;
+                    uint64_t new_cap =
+                        env->capture_accumulator_capacity ?
+                            env->capture_accumulator_capacity * 2 :
+                            4096;
                     while (new_cap < needed) new_cap *= 2;
                     float* tmp = realloc(env->capture_accumulator,
-                                          new_cap * sizeof(float));
+                                         new_cap * sizeof(float));
                     if (!tmp) break;
                     env->capture_accumulator = tmp;
                     env->capture_accumulator_capacity = new_cap;
                 }
                 memcpy(env->capture_accumulator +
                            env->capture_accumulator_count,
-                       buf, sz);
+                       buf,
+                       sz);
                 env->capture_accumulator_count += n_floats;
             }
         }
@@ -1053,7 +1048,10 @@ int main(int argc, char** argv) {
             uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
             if (note > 127) note = 127;
             uint32_t layer = env->ctx_cursor->layer;
-            if (layer < 1 || layer > 9) { env->preview_active = 0; env->preview_read_pos = 0; }
+            if (layer < 1 || layer > 9) {
+                env->preview_active = 0;
+                env->preview_read_pos = 0;
+            }
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             war_capture_slot* slot = &env->capture_slots[idx];
             if (!slot->samples || env->preview_read_pos >= slot->count) {
@@ -1063,9 +1061,14 @@ int main(int argc, char** argv) {
                 enum { PW_CHUNK_FLOATS = 256 }; // 128 stereo frames
                 uint64_t remaining = slot->count - env->preview_read_pos;
                 while (remaining >= 2) {
-                    uint64_t batch = remaining < PW_CHUNK_FLOATS ? (remaining & ~1ULL) : PW_CHUNK_FLOATS;
+                    uint64_t batch = remaining < PW_CHUNK_FLOATS ?
+                                         (remaining & ~1ULL) :
+                                         PW_CHUNK_FLOATS;
                     uint32_t stereo_bytes = (uint32_t)(batch * sizeof(float));
-                    if (!war_pc_to_a(env->pc_play, 0, stereo_bytes, slot->samples + env->preview_read_pos))
+                    if (!war_pc_to_a(env->pc_play,
+                                     0,
+                                     stereo_bytes,
+                                     slot->samples + env->preview_read_pos))
                         break;
                     env->preview_read_pos += batch;
                     remaining -= batch;
@@ -1075,7 +1078,8 @@ int main(int argc, char** argv) {
     }
 
     //-------------------------------------------------------------------------
-    // CLEANUP (audio thread first — needs to stop before Vulkan/wayland teardown)
+    // CLEANUP (audio thread first — needs to stop before Vulkan/wayland
+    // teardown)
     //-------------------------------------------------------------------------
     // signal audio thread to stop and quit its main loop
     if (env->atomics) env->atomics->capture = 0;

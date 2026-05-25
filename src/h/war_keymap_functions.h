@@ -54,11 +54,13 @@ static inline void war_pan_follow(war_env* env) {
     if (p[1] < 0) p[1] = 0;
 }
 
-
 static inline void war_layer_1(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_1;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 1;
@@ -67,7 +69,10 @@ static inline void war_layer_1(war_env* env) {
 static inline void war_layer_2(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_2;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 2;
@@ -76,7 +81,10 @@ static inline void war_layer_2(war_env* env) {
 static inline void war_layer_3(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_3;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 3;
@@ -85,7 +93,10 @@ static inline void war_layer_3(war_env* env) {
 static inline void war_layer_4(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_4;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 4;
@@ -94,7 +105,10 @@ static inline void war_layer_4(war_env* env) {
 static inline void war_layer_5(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_5;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 5;
@@ -103,7 +117,10 @@ static inline void war_layer_5(war_env* env) {
 static inline void war_layer_6(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_6;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 6;
@@ -112,7 +129,10 @@ static inline void war_layer_6(war_env* env) {
 static inline void war_layer_7(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_7;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 7;
@@ -121,7 +141,10 @@ static inline void war_layer_7(war_env* env) {
 static inline void war_layer_8(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_8;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 8;
@@ -130,7 +153,10 @@ static inline void war_layer_8(war_env* env) {
 static inline void war_layer_9(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_9;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 9;
@@ -139,10 +165,296 @@ static inline void war_layer_9(war_env* env) {
 static inline void war_layer_0(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_none;
-    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
     ctx_cursor->layer = 0;
+}
+
+//-----------------------------------------------------------------------------
+// OCTAVES
+//-----------------------------------------------------------------------------
+
+static inline void war_octave_0(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 0;
+}
+
+static inline void war_octave_1(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 1;
+}
+
+static inline void war_octave_2(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 2;
+}
+
+static inline void war_octave_3(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 3;
+}
+
+static inline void war_octave_4(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 4;
+}
+
+static inline void war_octave_5(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 5;
+}
+
+static inline void war_octave_6(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 6;
+}
+
+static inline void war_octave_7(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 7;
+}
+
+static inline void war_octave_8(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 8;
+}
+
+static inline void war_octave_9(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 9;
+}
+
+static inline void war_octave_10(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    ctx_cursor->octave = 10;
+}
+
+//-----------------------------------------------------------------------------
+// PLAYBACK
+//-----------------------------------------------------------------------------
+
+static inline void war_play_q(war_env* env) {
+    uint32_t note = 0 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_w(war_env* env) {
+    uint32_t note = 1 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_e(war_env* env) {
+    uint32_t note = 2 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_r(war_env* env) {
+    uint32_t note = 3 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_t(war_env* env) {
+    uint32_t note = 4 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_y(war_env* env) {
+    uint32_t note = 5 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_u(war_env* env) {
+    uint32_t note = 6 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_i(war_env* env) {
+    uint32_t note = 7 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_o(war_env* env) {
+    if (env->ctx_cursor->octave == 10) { return; }
+    uint32_t note = 8 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_p(war_env* env) {
+    if (env->ctx_cursor->octave == 10) { return; }
+    uint32_t note = 9 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_left_bracket(war_env* env) {
+    if (env->ctx_cursor->octave == 10) { return; }
+    uint32_t note = 10 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
+}
+
+static inline void war_play_right_bracket(war_env* env) {
+    if (env->ctx_cursor->octave == 10) { return; }
+    uint32_t note = 11 + 12 * env->ctx_cursor->octave;
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
 }
 
 static inline void war_move_cursor_right(war_env* env) {
@@ -204,15 +516,16 @@ static inline void war_capture_audio(war_env* env) {
             free(env->capture_slots[idx].samples);
             env->capture_slots[idx].samples = env->capture_accumulator;
             env->capture_slots[idx].count = env->capture_accumulator_count;
-            env->capture_slots[idx].capacity = env->capture_accumulator_capacity;
+            env->capture_slots[idx].capacity =
+                env->capture_accumulator_capacity;
             env->capture_accumulator = NULL;
             env->capture_accumulator_count = 0;
             env->capture_accumulator_capacity = 0;
         }
         env->atomics->capture = 0;
         call_king_terry("CAPTURE: saved to note=%u layer=%u",
-                         (uint32_t)env->ctx_cursor->instance[0].pos[1],
-                         env->ctx_cursor->layer);
+                        (uint32_t)env->ctx_cursor->instance[0].pos[1],
+                        env->ctx_cursor->layer);
     } else {
         // clear existing slot data at current note/layer
         uint32_t layer = env->ctx_cursor->layer;
@@ -226,13 +539,15 @@ static inline void war_capture_audio(war_env* env) {
             env->capture_slots[idx].capacity = 0;
         }
         env->atomics->capture = 1;
+        // flush stale data from previous capture in the loopback ring buffer
+        env->pc_loopback->i_from_a = env->pc_loopback->i_to_wr;
         free(env->capture_accumulator);
         env->capture_accumulator = NULL;
         env->capture_accumulator_count = 0;
         env->capture_accumulator_capacity = 0;
         call_king_terry("CAPTURE: ON at note=%u layer=%u",
-                         (uint32_t)env->ctx_cursor->instance[0].pos[1],
-                         env->ctx_cursor->layer);
+                        (uint32_t)env->ctx_cursor->instance[0].pos[1],
+                        env->ctx_cursor->layer);
     }
 }
 
@@ -242,11 +557,16 @@ static inline void war_preview_toggle(war_env* env) {
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count) return;
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+        return;
+    // flush old data in play ring buffer so new preview writes don't get stuck
+    env->pc_play->i_from_wr = env->pc_play->i_to_a;
     env->preview_read_pos = 0;
     env->preview_active = 1;
     call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                     note, layer, env->capture_slots[idx].count);
+                    note,
+                    layer,
+                    env->capture_slots[idx].count);
 }
 
 #endif // WAR_KEYMAP_FUNCTIONS_H
