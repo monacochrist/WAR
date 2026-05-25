@@ -320,15 +320,32 @@ static void war_keyboard_key(void* data,
     uint32_t mode = WAR_MODE_ID_ROLL;
     uint64_t current_state = 0;
     uint32_t mod = 0;
-    {   xkb_mod_index_t mi;
-        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_SHIFT);
-        if (mi != XKB_MOD_INVALID && xkb_state_mod_index_is_active(ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED)) mod |= MOD_SHIFT;
-        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_CTRL);
-        if (mi != XKB_MOD_INVALID && xkb_state_mod_index_is_active(ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED)) mod |= MOD_CTRL;
-        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_ALT);
-        if (mi != XKB_MOD_INVALID && xkb_state_mod_index_is_active(ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED)) mod |= MOD_ALT;
-        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_LOGO);
-        if (mi != XKB_MOD_INVALID && xkb_state_mod_index_is_active(ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED)) mod |= MOD_LOGO;
+    {
+        xkb_mod_index_t mi;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
+                                      XKB_MOD_NAME_SHIFT);
+        if (mi != XKB_MOD_INVALID &&
+            xkb_state_mod_index_is_active(
+                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
+            mod |= MOD_SHIFT;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
+                                      XKB_MOD_NAME_CTRL);
+        if (mi != XKB_MOD_INVALID &&
+            xkb_state_mod_index_is_active(
+                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
+            mod |= MOD_CTRL;
+        mi =
+            xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_ALT);
+        if (mi != XKB_MOD_INVALID &&
+            xkb_state_mod_index_is_active(
+                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
+            mod |= MOD_ALT;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
+                                      XKB_MOD_NAME_LOGO);
+        if (mi != XKB_MOD_INVALID &&
+            xkb_state_mod_index_is_active(
+                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
+            mod |= MOD_LOGO;
     }
 
     size_t trans_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
@@ -673,10 +690,12 @@ int main(int argc, char** argv) {
     ctx_cursor->instance[0].pos[1] = ctx_wayland->gutter_rows;
     ctx_cursor->instance[0].size[0] = 1;
     ctx_cursor->instance[0].size[1] = 1;
-    ctx_cursor->instance[0].color[0] = 1;
-    ctx_cursor->instance[0].color[1] = 0;
-    ctx_cursor->instance[0].color[2] = 0;
-    ctx_cursor->instance[0].color[3] = 1;
+    uint32_t c = env->ctx_color->layer_1;
+    float rgba[4] = {((c >> 24) & 0xFF) / 255.0f,
+                     ((c >> 16) & 0xFF) / 255.0f,
+                     ((c >> 8) & 0xFF) / 255.0f,
+                     (c & 0xFF) / 255.0f};
+    memcpy(ctx_cursor->instance[0].color, rgba, sizeof(rgba));
     //-------------------------------------------------------------------------
     // PIANO GUTTER INIT
     //-------------------------------------------------------------------------

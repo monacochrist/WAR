@@ -60,6 +60,7 @@ static inline void war_layer_1(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 1;
 }
 
 static inline void war_layer_2(war_env* env) {
@@ -68,6 +69,7 @@ static inline void war_layer_2(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 2;
 }
 
 static inline void war_layer_3(war_env* env) {
@@ -76,6 +78,7 @@ static inline void war_layer_3(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 3;
 }
 
 static inline void war_layer_4(war_env* env) {
@@ -84,6 +87,7 @@ static inline void war_layer_4(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 4;
 }
 
 static inline void war_layer_5(war_env* env) {
@@ -92,6 +96,7 @@ static inline void war_layer_5(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 5;
 }
 
 static inline void war_layer_6(war_env* env) {
@@ -100,6 +105,7 @@ static inline void war_layer_6(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 6;
 }
 
 static inline void war_layer_7(war_env* env) {
@@ -108,6 +114,7 @@ static inline void war_layer_7(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 7;
 }
 
 static inline void war_layer_8(war_env* env) {
@@ -116,6 +123,7 @@ static inline void war_layer_8(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 8;
 }
 
 static inline void war_layer_9(war_env* env) {
@@ -124,6 +132,7 @@ static inline void war_layer_9(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 9;
 }
 
 static inline void war_layer_0(war_env* env) {
@@ -132,6 +141,7 @@ static inline void war_layer_0(war_env* env) {
     float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
     for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
         memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+    ctx_cursor->layer = 0;
 }
 
 static inline void war_move_cursor_right(war_env* env) {

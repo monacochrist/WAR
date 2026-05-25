@@ -433,6 +433,7 @@ typedef struct war_cursor_context {
     double cell_height;
     war_vulkan_cursor_instance* instance;
     uint32_t instance_count;
+    uint32_t layer;
     // Vulkan objects
     VkShaderModule vert_module;
     VkShaderModule frag_module;
