@@ -54,6 +54,86 @@ static inline void war_pan_follow(war_env* env) {
     if (p[1] < 0) p[1] = 0;
 }
 
+static inline void war_layer_1(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_1;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_2(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_2;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_3(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_3;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_4(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_4;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_5(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_5;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_6(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_6;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_7(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_7;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_8(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_8;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_9(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_9;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
+static inline void war_layer_0(war_env* env) {
+    war_cursor_context* ctx_cursor = env->ctx_cursor;
+    uint32_t c = env->ctx_color->layer_none;
+    float rgba[4] = {((c>>24)&0xFF)/255.0f, ((c>>16)&0xFF)/255.0f, ((c>>8)&0xFF)/255.0f, (c&0xFF)/255.0f};
+    for (uint32_t i = 0; i < ctx_cursor->instance_count; i++)
+        memcpy(ctx_cursor->instance[i].color, rgba, sizeof(rgba));
+}
+
 static inline void war_move_cursor_right(war_env* env) {
     war_cursor_context* cursor = env->ctx_cursor;
     double bound = env->ctx_wayland->right_bound;

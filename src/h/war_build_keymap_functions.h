@@ -19,6 +19,16 @@
 
 static inline void (*war_build_keymap_functions(const char* name))(war_env*) {
 if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
+else if (strcmp(name, "war_layer_1") == 0) { return war_layer_1; }
+else if (strcmp(name, "war_layer_2") == 0) { return war_layer_2; }
+else if (strcmp(name, "war_layer_3") == 0) { return war_layer_3; }
+else if (strcmp(name, "war_layer_4") == 0) { return war_layer_4; }
+else if (strcmp(name, "war_layer_5") == 0) { return war_layer_5; }
+else if (strcmp(name, "war_layer_6") == 0) { return war_layer_6; }
+else if (strcmp(name, "war_layer_7") == 0) { return war_layer_7; }
+else if (strcmp(name, "war_layer_8") == 0) { return war_layer_8; }
+else if (strcmp(name, "war_layer_9") == 0) { return war_layer_9; }
+else if (strcmp(name, "war_layer_0") == 0) { return war_layer_0; }
 else if (strcmp(name, "war_move_cursor_right") == 0) { return war_move_cursor_right; }
 else if (strcmp(name, "war_move_cursor_left") == 0) { return war_move_cursor_left; }
 else if (strcmp(name, "war_move_cursor_up") == 0) { return war_move_cursor_up; }

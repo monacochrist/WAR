@@ -320,6 +320,16 @@ static void war_keyboard_key(void* data,
     uint32_t mode = WAR_MODE_ID_ROLL;
     uint64_t current_state = 0;
     uint32_t mod = 0;
+    {   xkb_mod_index_t mi;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_SHIFT);
+        if (mi != XKB_MOD_INVALID && xkb_state_mod_index_is_active(ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED)) mod |= MOD_SHIFT;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_CTRL);
+        if (mi != XKB_MOD_INVALID && xkb_state_mod_index_is_active(ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED)) mod |= MOD_CTRL;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_ALT);
+        if (mi != XKB_MOD_INVALID && xkb_state_mod_index_is_active(ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED)) mod |= MOD_ALT;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_LOGO);
+        if (mi != XKB_MOD_INVALID && xkb_state_mod_index_is_active(ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED)) mod |= MOD_LOGO;
+    }
 
     size_t trans_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
                            config->KEYMAP_KEYSYM_CAPACITY *
