@@ -54,6 +54,7 @@ static inline void war_pan_follow(war_env* env) {
     if (p[1] < 0) p[1] = 0;
 }
 
+
 static inline void war_layer_1(war_env* env) {
     war_cursor_context* ctx_cursor = env->ctx_cursor;
     uint32_t c = env->ctx_color->layer_1;
@@ -193,7 +194,59 @@ static inline void war_zoom_reset(war_env* env) {
 }
 
 static inline void war_capture_audio(war_env* env) {
-    env->atomics->capture = !env->atomics->capture;
+    if (env->atomics->capture) {
+        // second press: stop capture and save to current note/layer
+        uint32_t layer = env->ctx_cursor->layer;
+        if (layer >= 1 && layer <= 9) {
+            uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+            if (note > 127) note = 127;
+            uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+            free(env->capture_slots[idx].samples);
+            env->capture_slots[idx].samples = env->capture_accumulator;
+            env->capture_slots[idx].count = env->capture_accumulator_count;
+            env->capture_slots[idx].capacity = env->capture_accumulator_capacity;
+            env->capture_accumulator = NULL;
+            env->capture_accumulator_count = 0;
+            env->capture_accumulator_capacity = 0;
+        }
+        env->atomics->capture = 0;
+        call_king_terry("CAPTURE: saved to note=%u layer=%u",
+                         (uint32_t)env->ctx_cursor->instance[0].pos[1],
+                         env->ctx_cursor->layer);
+    } else {
+        // clear existing slot data at current note/layer
+        uint32_t layer = env->ctx_cursor->layer;
+        if (layer >= 1 && layer <= 9) {
+            uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+            if (note > 127) note = 127;
+            uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+            free(env->capture_slots[idx].samples);
+            env->capture_slots[idx].samples = NULL;
+            env->capture_slots[idx].count = 0;
+            env->capture_slots[idx].capacity = 0;
+        }
+        env->atomics->capture = 1;
+        free(env->capture_accumulator);
+        env->capture_accumulator = NULL;
+        env->capture_accumulator_count = 0;
+        env->capture_accumulator_capacity = 0;
+        call_king_terry("CAPTURE: ON at note=%u layer=%u",
+                         (uint32_t)env->ctx_cursor->instance[0].pos[1],
+                         env->ctx_cursor->layer);
+    }
+}
+
+static inline void war_preview_toggle(war_env* env) {
+    uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+    if (note > 127) note = 127;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count) return;
+    env->preview_read_pos = 0;
+    env->preview_active = 1;
+    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
+                     note, layer, env->capture_slots[idx].count);
 }
 
 #endif // WAR_KEYMAP_FUNCTIONS_H

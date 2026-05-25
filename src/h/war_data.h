@@ -355,6 +355,14 @@ typedef struct war_atomics {
     _Atomic uint32_t bytes_needed;
 } war_atomics;
 
+#define WAR_CAPTURE_SLOT_LAYERS 9
+
+typedef struct war_capture_slot {
+    float* samples;
+    uint64_t count;
+    uint64_t capacity;
+} war_capture_slot;
+
 typedef struct war_glyph_info {
     float advance_x;
     float advance_y;
@@ -2525,6 +2533,14 @@ struct war_env {
     war_vulkan_context* ctx_new_vulkan;
     war_cursor_context* ctx_cursor;
     war_misc_context* ctx_misc;
+    // capture slots: 128 notes × 9 layers
+    war_capture_slot capture_slots[128 * WAR_CAPTURE_SLOT_LAYERS];
+    float* capture_accumulator;
+    uint64_t capture_accumulator_count;
+    uint64_t capture_accumulator_capacity;
+    // preview playback state
+    uint8_t preview_active;
+    uint64_t preview_read_pos;   // current mono-sample position in the slot
     // new
     war_config_context* ctx_config;
     war_command_context* ctx_command;

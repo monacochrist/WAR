@@ -357,15 +357,25 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_layer_0,
                    0);
-    // capture audio toggle
+    // capture audio toggle (Q = shift+q)
     war_keymap_set(keymap,
                    config,
                    1,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
                    1,
-                   (char*[]){"<C-c>"},
+                   (char*[]){"<S-q>", "Q"},
                    WAR_FUNCTION_ID_NONE,
                    war_capture_audio,
+                   0);
+    // preview toggle (space / p / P)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   4,
+                   (char*[]){"<Space>", " ", "p", "P"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_preview_toggle,
                    0);
 }
 
