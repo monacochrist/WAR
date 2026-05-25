@@ -314,6 +314,7 @@ static void war_keyboard_key(void* data,
     }
 
     war_env* env = ctx_wayland->env;
+    war_cursor_context* cur = env->ctx_cursor;
     war_keymap_context* keymap = env->ctx_keymap;
     war_config_context* config = env->ctx_config;
 
@@ -348,6 +349,11 @@ static void war_keyboard_key(void* data,
             mod |= MOD_LOGO;
     }
 
+    if (mod == 0 && keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9) {
+        cur->prefix = cur->prefix * 10 + (uint32_t)(keysym - XKB_KEY_0);
+        return;
+    }
+
     size_t trans_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
                            config->KEYMAP_KEYSYM_CAPACITY *
                            config->KEYMAP_MOD_CAPACITY +
@@ -356,18 +362,23 @@ static void war_keyboard_key(void* data,
                        (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
 
     uint64_t next = keymap->next_state[trans_idx];
-    if (!next) return;
+    if (!next) { cur->prefix = 0; return; }
 
     size_t func_count_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + next;
     uint8_t count = keymap->function_count[func_count_idx];
-    if (!count) return;
+    if (!count) { cur->prefix = 0; return; }
 
+    uint32_t repeat = cur->prefix;
+    cur->prefix = 0;
+    if (repeat == 0) repeat = 1;
     size_t func_base = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
                            config->KEYMAP_FUNCTION_CAPACITY +
                        next * (size_t)config->KEYMAP_FUNCTION_CAPACITY;
-    for (uint8_t i = 0; i < count; i++) {
-        void (*fn)(war_env*) = keymap->function[func_base + i];
-        if (fn) fn(env);
+    for (uint32_t r = 0; r < repeat; r++) {
+        for (uint8_t i = 0; i < count; i++) {
+            void (*fn)(war_env*) = keymap->function[func_base + i];
+            if (fn) fn(env);
+        }
     }
 }
 static void war_keyboard_modifiers(void* data,
@@ -1009,6 +1020,10 @@ int main(int argc, char** argv) {
             read(ctx_wayland->repeat_timer_fd, &exp, sizeof(exp));
             if (ctx_wayland->repeat_active &&
                 ctx_wayland->repeat_sym != XKB_KEY_NoSymbol) {
+                // skip digits – they are prefix accumulators, not commands
+                if (ctx_wayland->repeat_sym >= XKB_KEY_0 &&
+                    ctx_wayland->repeat_sym <= XKB_KEY_9)
+                    continue;
                 for (uint64_t i = 0; i < exp; i++) {
                     war_env* env = ctx_wayland->env;
                     war_keymap_context* keymap = env->ctx_keymap;

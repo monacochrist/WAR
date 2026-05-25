@@ -445,6 +445,7 @@ typedef struct war_cursor_context {
     uint32_t instance_count;
     uint32_t layer;
     int32_t octave;
+    uint32_t prefix;
     // Vulkan objects
     VkShaderModule vert_module;
     VkShaderModule frag_module;
