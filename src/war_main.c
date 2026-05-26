@@ -180,8 +180,50 @@ static const struct wl_callback_listener war_frame_listener = {
 static void
 war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
     war_wayland_context* ctx_wayland = data;
-    (void)time;
     wl_callback_destroy(callback);
+    // advance playback bar
+    war_env* env = ctx_wayland->env;
+    if (env->play_bar_playing) {
+        if (env->play_bar_last_frame_ms != 0) {
+            uint32_t delta_ms = time - env->play_bar_last_frame_ms;
+            env->play_bar_position_seconds += (double)delta_ms / 1000.0;
+        }
+        env->play_bar_last_frame_ms = time;
+        double bpm = env->atomics->bpm;
+        if (bpm <= 0.0) bpm = 100.0;
+        double seconds_per_cell = 60.0 / bpm;
+        double current_cell_pos =
+            (double)ctx_wayland->gutter_cols +
+            env->play_bar_position_seconds / seconds_per_cell;
+        // scan notes between previous and current playhead position
+        if (env->ctx_note && env->play_bar_last_frame_ms != 0) {
+            uint32_t ncount = env->ctx_note->instance_count;
+            for (uint32_t i = 0; i < ncount; i++) {
+                double ns = env->ctx_note->instance[i].pos[0];
+                if (ns >= env->play_bar_prev_cell_pos &&
+                    ns < current_cell_pos) {
+                    uint32_t pitch =
+                        (uint32_t)env->ctx_note->instance[i].pos[1];
+                    if (pitch > 127) pitch = 127;
+                    for (uint32_t l = 1; l <= 9; l++) {
+                        uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS +
+                                       (l - 1);
+                        war_capture_slot* slot =
+                            &env->capture_slots[idx];
+                        if (slot->samples && slot->count > 0) {
+                            env->play_bar_preview_note = pitch;
+                            env->play_bar_preview_layer = l;
+                            env->play_bar_preview_read_pos = 0;
+                            env->play_bar_preview_active = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        env->play_bar_prev_cell_pos = current_cell_pos;
+        env->ctx_line->instance[1].pos[0] = (float)current_cell_pos;
+    }
     if (ctx_wayland->rendering) {
         war_render_frame(ctx_wayland, ctx_wayland->vk);
     }
@@ -1005,7 +1047,6 @@ int main(int argc, char** argv) {
     war_line_init(ctx_line, ctx_pool, ctx_vk, line_max);
     env->ctx_line = ctx_line;
     // place a test gray line as a horizontal rule
-    ctx_line->instance_count = 1;
     ctx_line->instance[0].pos[0] = 0.0f;
     ctx_line->instance[0].pos[1] = 63.0f;
     ctx_line->instance[0].pos[2] = 0.0f;
@@ -1017,6 +1058,25 @@ int main(int argc, char** argv) {
     ctx_line->instance[0].color[2] = 0.3f;
     ctx_line->instance[0].color[3] = 1.0f;
     ctx_line->instance[0].flags = 0;
+    // playback bar (vertical green line at gutter start)
+    ctx_line->instance[1].pos[0] = (float)ctx_wayland->gutter_cols;
+    ctx_line->instance[1].pos[1] = 0.0f;
+    ctx_line->instance[1].pos[2] = 0.0f;
+    ctx_line->instance[1].size[0] = 0.0f;    // vertical
+    ctx_line->instance[1].size[1] = 127.0f;  // span full MIDI range
+    ctx_line->instance[1].width = 0.08f;     // thickness
+    ctx_line->instance[1].color[0] = 0.0f;
+    ctx_line->instance[1].color[1] = 0.8f;
+    ctx_line->instance[1].color[2] = 0.0f;
+    ctx_line->instance[1].color[3] = 1.0f;
+    ctx_line->instance[1].flags = 0;
+    ctx_line->instance_count = 2;
+    // playback bar state
+    env->play_bar_playing = 0;
+    env->play_bar_position_seconds = 0.0;
+    env->play_bar_last_frame_ms = 0;
+    env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
+    env->play_bar_preview_active = 0;
     //-------------------------------------------------------------------------
     // FIRST FRAME RENDER (record + submit)
     //-------------------------------------------------------------------------
@@ -1107,7 +1167,7 @@ int main(int argc, char** argv) {
         }
         // preview playback: write stereo capture slot → pc_play
         // Slot contains interleaved stereo F32 (L,R,L,R,...).
-        if (env->preview_active) {
+        if (env->preview_active && !env->play_bar_playing) {
             uint32_t note = env->preview_note;
             if (note > 127) note = 127;
             uint32_t layer = env->preview_layer;
@@ -1134,6 +1194,41 @@ int main(int argc, char** argv) {
                                      slot->samples + env->preview_read_pos))
                         break;
                     env->preview_read_pos += batch;
+                    remaining -= batch;
+                }
+            }
+        }
+        // playback bar streaming: preview-style → pc_play
+        if (env->play_bar_playing && env->play_bar_preview_active) {
+            uint32_t note = env->play_bar_preview_note;
+            if (note > 127) note = 127;
+            uint32_t layer = env->play_bar_preview_layer;
+            if (layer < 1 || layer > 9) {
+                env->play_bar_preview_active = 0;
+                env->play_bar_preview_read_pos = 0;
+            }
+            uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+            war_capture_slot* slot = &env->capture_slots[idx];
+            if (!slot->samples ||
+                env->play_bar_preview_read_pos >= slot->count) {
+                env->play_bar_preview_active = 0;
+                env->play_bar_preview_read_pos = 0;
+            } else {
+                enum { PW_CHUNK_FLOATS = 256 };
+                uint64_t remaining =
+                    slot->count - env->play_bar_preview_read_pos;
+                while (remaining >= 2) {
+                    uint64_t batch =
+                        remaining < PW_CHUNK_FLOATS ?
+                            (remaining & ~1ULL) :
+                            PW_CHUNK_FLOATS;
+                    uint32_t stereo_bytes =
+                        (uint32_t)(batch * sizeof(float));
+                    if (!war_pc_to_a(env->pc_play, 0, stereo_bytes,
+                                     slot->samples +
+                                         env->play_bar_preview_read_pos))
+                        break;
+                    env->play_bar_preview_read_pos += batch;
                     remaining -= batch;
                 }
             }

@@ -266,6 +266,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_zoom_reset,
                    0);
+    // playback
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-Space>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_toggle_playback,
+                   0);
     // layers
     war_keymap_set(keymap,
                    config,

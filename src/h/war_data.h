@@ -2614,6 +2614,15 @@ struct war_env {
     war_simple_line_context* ctx_line;
     war_pipewire_context* ctx_pw; // ADD: pipewire context, allocated from pool
     war_wayland_context* ctx_wayland;
+    // playback bar
+    uint8_t play_bar_playing;
+    double play_bar_position_seconds;
+    uint32_t play_bar_last_frame_ms;
+    double play_bar_prev_cell_pos;
+    uint8_t play_bar_preview_active;
+    uint32_t play_bar_preview_note;
+    uint32_t play_bar_preview_layer;
+    uint64_t play_bar_preview_read_pos;
 };
 
 typedef struct war_wayland_context {

@@ -66,6 +66,7 @@ else if (strcmp(name, "war_move_cursor_right_leap") == 0) { return war_move_curs
 else if (strcmp(name, "war_zoom_in") == 0) { return war_zoom_in; }
 else if (strcmp(name, "war_zoom_out") == 0) { return war_zoom_out; }
 else if (strcmp(name, "war_zoom_reset") == 0) { return war_zoom_reset; }
+else if (strcmp(name, "war_toggle_playback") == 0) { return war_toggle_playback; }
 else if (strcmp(name, "war_capture_audio") == 0) { return war_capture_audio; }
 else if (strcmp(name, "war_preview_toggle") == 0) { return war_preview_toggle; }
 else if (strcmp(name, "war_set_width_to_duration") == 0) { return war_set_width_to_duration; }

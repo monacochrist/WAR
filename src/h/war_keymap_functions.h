@@ -566,6 +566,25 @@ static inline void war_zoom_reset(war_env* env) {
     env->ctx_wayland->zoom = env->ctx_wayland->initial_zoom;
 }
 
+static inline void war_toggle_playback(war_env* env) {
+    war_simple_line_context* line = env->ctx_line;
+    if (!line) return;
+    float gc = (float)env->ctx_wayland->gutter_cols;
+    if (env->play_bar_playing) {
+        env->play_bar_playing = 0;
+        env->play_bar_position_seconds = 0.0;
+        env->play_bar_preview_active = 0;
+        line->instance[1].pos[0] = gc;
+    } else {
+        env->play_bar_playing = 1;
+        env->play_bar_position_seconds = 0.0;
+        env->play_bar_last_frame_ms = 0;
+        env->play_bar_prev_cell_pos = (double)gc;
+        env->play_bar_preview_active = 0;
+        line->instance[1].pos[0] = gc;
+    }
+}
+
 static inline void war_capture_audio(war_env* env) {
     if (env->atomics->capture) {
         // second press: stop capture and save to current note/layer
