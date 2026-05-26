@@ -349,9 +349,10 @@ static void war_keyboard_key(void* data,
             mod |= MOD_LOGO;
     }
 
-    if (mod == 0 && keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9) {
+    int is_digit = (mod == 0 && keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9);
+    if (is_digit) {
         cur->prefix = cur->prefix * 10 + (uint32_t)(keysym - XKB_KEY_0);
-        return;
+        call_king_terry("DIGIT: prefix now %u", cur->prefix);
     }
 
     size_t trans_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
@@ -362,15 +363,22 @@ static void war_keyboard_key(void* data,
                        (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
 
     uint64_t next = keymap->next_state[trans_idx];
-    if (!next) { cur->prefix = 0; return; }
+    if (!next) { if (!is_digit) cur->prefix = 0; return; }
 
     size_t func_count_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + next;
     uint8_t count = keymap->function_count[func_count_idx];
-    if (!count) { cur->prefix = 0; return; }
+    if (!count) { if (!is_digit) cur->prefix = 0; return; }
 
-    uint32_t repeat = cur->prefix;
-    cur->prefix = 0;
-    if (repeat == 0) repeat = 1;
+    uint32_t repeat;
+    if (is_digit) {
+        repeat = 1;
+    } else {
+        repeat = cur->prefix;
+        call_king_terry("CMD: prefix=%u keysym=0x%x", cur->prefix, keysym);
+        if (repeat == 0) repeat = 1;
+    }
+    size_t flag_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + next;
+    if (keymap->flags[flag_idx] & WAR_KEYMAP_UNIQUE_PREFIX) repeat = 1;
     size_t func_base = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
                            config->KEYMAP_FUNCTION_CAPACITY +
                        next * (size_t)config->KEYMAP_FUNCTION_CAPACITY;
@@ -380,6 +388,7 @@ static void war_keyboard_key(void* data,
             if (fn) fn(env);
         }
     }
+    if (!is_digit) cur->prefix = 0;
 }
 static void war_keyboard_modifiers(void* data,
                                    struct wl_keyboard* keyboard,
@@ -981,6 +990,13 @@ int main(int argc, char** argv) {
     war_piano_gutter_init(ctx_pg, ctx_pool, ctx_config, ctx_vk);
     war_piano_gutter_generate(ctx_pg);
     env->ctx_piano_gutter = ctx_pg;
+    //-------------------------------------------------------------------------
+    // NOTE INIT (single instance at middle C, layer 2 colour)
+    //-------------------------------------------------------------------------
+    war_note_context* ctx_note =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_NOTE);
+    war_note_init(ctx_note, ctx_pool, ctx_vk);
+    env->ctx_note = ctx_note;
     //-------------------------------------------------------------------------
     // FIRST FRAME RENDER (record + submit)
     //-------------------------------------------------------------------------

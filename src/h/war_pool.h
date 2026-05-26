@@ -315,6 +315,38 @@ static inline void war_pool_default(war_pool_context* pool,
                  sizeof(war_vulkan_piano_gutter_instance) *
                      (uint32_t)config->HUD_PIANO_INSTANCE_MAX,
                  32);
+    // ctx note
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_NOTE,
+                 sizeof(war_note_context) * (1),
+                 32);
+    uint32_t note_max = 1024;
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_NOTE_DRAW,
+                 sizeof(uint8_t) * note_max,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_NOTE_X_SECONDS,
+                 sizeof(double) * note_max,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_NOTE_Y_CELLS,
+                 sizeof(double) * note_max,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_NOTE_X_WIDTH,
+                 sizeof(double) * note_max,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_NOTE_INSTANCE,
+                 sizeof(war_new_vulkan_note_instance) * note_max,
+                 32);
     // ctx hud cursor
     war_pool_set(pool,
                  config,

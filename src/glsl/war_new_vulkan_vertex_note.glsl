@@ -1,13 +1,3 @@
-//-----------------------------------------------------------------------------
-//
-// See LICENSE
-//
-//-----------------------------------------------------------------------------
-
-//-----------------------------------------------------------------------------
-// src/glsl/war_new_vulkan_vertex_note.glsl
-//-----------------------------------------------------------------------------
-
 #version 450
 
 layout(location = 0) in vec2 in_pos;
@@ -15,6 +5,7 @@ layout(location = 0) in vec2 in_pos;
 layout(location = 1) in vec3 in_instance_pos;
 layout(location = 2) in vec2 in_instance_size;
 layout(location = 3) in vec4 in_color;
+layout(location = 4) in vec4 in_outline_color;
 
 layout(location = 7) in uint in_flags;
 
@@ -28,9 +19,13 @@ layout(push_constant) uniform PushConstants {
 
 layout(location = 0) out vec4 frag_color;
 flat layout(location = 1) out uint frag_flags;
+layout(location = 2) out vec2 frag_uv;
+flat layout(location = 3) out vec4 frag_outline_color;
 
 void main() {
     frag_flags = in_flags;
+    frag_uv = in_pos;
+    frag_outline_color = in_outline_color;
     // Quad size in pixels
     vec2 quadSizePx =
         in_instance_size * pc.cell_size * pc.zoom;

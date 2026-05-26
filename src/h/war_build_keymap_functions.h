@@ -18,7 +18,9 @@
 #include <string.h>
 
 static inline void (*war_build_keymap_functions(const char* name))(war_env*) {
-if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
+if (strcmp(name, "war_fat") == 0) { return war_fat; }
+else if (strcmp(name, "war_thin") == 0) { return war_thin; }
+else if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
 else if (strcmp(name, "war_layer_1") == 0) { return war_layer_1; }
 else if (strcmp(name, "war_layer_2") == 0) { return war_layer_2; }
 else if (strcmp(name, "war_layer_3") == 0) { return war_layer_3; }
@@ -63,6 +65,8 @@ else if (strcmp(name, "war_zoom_reset") == 0) { return war_zoom_reset; }
 else if (strcmp(name, "war_capture_audio") == 0) { return war_capture_audio; }
 else if (strcmp(name, "war_preview_toggle") == 0) { return war_preview_toggle; }
 else if (strcmp(name, "war_set_width_to_duration") == 0) { return war_set_width_to_duration; }
+else if (strcmp(name, "war_place_note") == 0) { return war_place_note; }
+else if (strcmp(name, "war_delete_note_under_cursor") == 0) { return war_delete_note_under_cursor; }
 return NULL; }
 
 #endif //WAR_BUILD_KEYMAP_FUNCTIONS_H

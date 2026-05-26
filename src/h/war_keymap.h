@@ -19,15 +19,16 @@
 #include "war_data.h"
 #include "war_functions.h"
 
-__attribute__((noinline)) static void war_keymap_set(war_keymap_context* keymap,
-                                  war_config_context* config,
-                                  uint32_t mode_count,
-                                  war_mode_id* modes,
-                                  uint32_t sequence_count,
-                                  char** sequences,
-                                  war_function_id function_id,
-                                  void (*function)(war_env* env),
-                                  war_keymap_flags flags) {
+__attribute__((noinline)) static void
+war_keymap_set(war_keymap_context* keymap,
+               war_config_context* config,
+               uint32_t mode_count,
+               war_mode_id* modes,
+               uint32_t sequence_count,
+               char** sequences,
+               war_function_id function_id,
+               void (*function)(war_env* env),
+               war_keymap_flags flags) {
     if (!keymap || !modes || !sequences) return;
 
     for (uint32_t m_idx = 0; m_idx < mode_count; m_idx++) {
@@ -386,6 +387,26 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_set_width_to_duration,
                    0);
+    // place note at cursor (z)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"z"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_place_note,
+                   0);
+    // delete note under cursor (x)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"x"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_delete_note_under_cursor,
+                   0);
     // octaves
     war_keymap_set(keymap,
                    config,
@@ -395,6 +416,96 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"-"},
                    WAR_FUNCTION_ID_NONE,
                    war_octave_minus_1,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-0>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_0,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-1>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_1,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-2>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_2,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-3>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_3,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-4>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_4,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-5>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_5,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-6>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_6,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-7>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_7,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-8>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_8,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-9>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_octave_9,
                    0);
 
     // playback
@@ -506,6 +617,25 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_play_right_bracket,
                    0);
+    // fat and thin
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"f"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_fat,
+                   WAR_KEYMAP_UNIQUE_PREFIX);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"t"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_thin,
+                   WAR_KEYMAP_UNIQUE_PREFIX);
 }
 
 void war_keymap_override(war_keymap_context* keymap,

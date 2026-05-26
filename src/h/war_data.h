@@ -324,10 +324,11 @@ typedef struct war_atomics {
     _Atomic uint64_t play_clock;
     _Atomic uint64_t play_frames;
     _Atomic uint64_t capture_frames;
-    _Atomic uint64_t loopback_frames;     // ADD: frames captured from laptop speaker loopback
+    _Atomic uint64_t
+        loopback_frames; // ADD: frames captured from laptop speaker loopback
     _Atomic float capture_threshold;
     _Atomic uint8_t capture;
-    _Atomic uint8_t capture_loopback;     // ADD: enable/disable loopback capture
+    _Atomic uint8_t capture_loopback; // ADD: enable/disable loopback capture
     _Atomic uint8_t play;
     _Atomic double play_reader_rate;
     _Atomic double play_writer_rate;
@@ -399,6 +400,7 @@ typedef struct war_vulkan_note_instance {
     float foreground_color[4];
     float foreground_outline_color[4];
     war_vulkan_flags flags;
+    uint64_t tick; // CPU-side ordering, not read by GPU
 } war_new_vulkan_note_instance;
 typedef struct war_new_vulkan_text_instance {
     float pos[3];
@@ -457,6 +459,26 @@ typedef struct war_cursor_context {
     VkDeviceMemory instance_vbo_memory;
     void* instance_mapped;
 } war_cursor_context;
+typedef struct war_note_context {
+    uint8_t* draw;
+    double* x_seconds;
+    double* y_cells;
+    double* x_width;
+    struct war_vulkan_note_instance* instance;
+    uint32_t instance_count;
+    // Vulkan objects
+    VkShaderModule vert_module;
+    VkShaderModule frag_module;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+    VkBuffer quad_vbo;
+    VkDeviceMemory quad_vbo_memory;
+    VkBuffer instance_vbo;
+    VkDeviceMemory instance_vbo_memory;
+    void* instance_mapped;
+    uint32_t max_instances;
+    uint64_t tick_counter;
+} war_note_context;
 typedef struct war_vulkan_piano_gutter_instance {
     float pos[3];
     float size[2];
@@ -1139,7 +1161,8 @@ typedef struct __attribute__((packed)) war_color_body {
 // } war_color_context;
 
 typedef struct war_pipewire_context {
-    struct pw_main_loop* main_loop;   // ADD: for pw_main_loop_run/quit from audio thread
+    struct pw_main_loop*
+        main_loop; // ADD: for pw_main_loop_run/quit from audio thread
     struct pw_loop* loop;
     struct pw_stream* play_stream;
     struct pw_stream* capture_stream;
@@ -1730,6 +1753,7 @@ typedef enum war_keymap_flags_bits {
     WAR_KEYMAP_RELEASE = 1ULL << 1,
     WAR_KEYMAP_NO_REPEAT = 1ULL << 2,
     WAR_KEYMAP_NO_TIMEOUT = 1ULL << 3,
+    WAR_KEYMAP_UNIQUE_PREFIX = 1ULL << 4,
     //
     WAR_KEYMAP_PREFIX = 1ULL << 5,
 } war_keymap_flags_bits;
@@ -2211,6 +2235,13 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_Y_CELLS,
     WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_X_WIDTH,
     WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_INSTANCE,
+    // ctx note
+    WAR_POOL_ID_MAIN_CTX_NOTE,
+    WAR_POOL_ID_MAIN_CTX_NOTE_DRAW,
+    WAR_POOL_ID_MAIN_CTX_NOTE_X_SECONDS,
+    WAR_POOL_ID_MAIN_CTX_NOTE_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_NOTE_X_WIDTH,
+    WAR_POOL_ID_MAIN_CTX_NOTE_INSTANCE,
     // ctx hud cursor
     WAR_POOL_ID_MAIN_CTX_HUD_CURSOR,
     WAR_POOL_ID_MAIN_CTX_HUD_CURSOR_PTRS,
@@ -2529,8 +2560,10 @@ struct war_env {
     war_file* capture_wav;
     war_fsm_context* ctx_fsm;
     war_producer_consumer* pc_capture;
-    war_producer_consumer* pc_loopback;    // ADD: ring buffer, audio thread writes loopback samples
-    war_producer_consumer* pc_play;      // ADD: ring buffer, main writes play data → audio reads
+    war_producer_consumer*
+        pc_loopback; // ADD: ring buffer, audio thread writes loopback samples
+    war_producer_consumer*
+        pc_play; // ADD: ring buffer, main writes play data → audio reads
     war_nsgt_context* ctx_nsgt;
     war_vulkan_context* ctx_new_vulkan;
     war_cursor_context* ctx_cursor;
@@ -2542,9 +2575,10 @@ struct war_env {
     uint64_t capture_accumulator_capacity;
     // preview playback state
     uint8_t preview_active;
-    uint64_t preview_read_pos;   // current mono-sample position in the slot
-    uint32_t preview_note;       // note index used by qwerty play keys (not cursor pos)
-    uint32_t preview_layer;      // layer index used by qwerty play keys
+    uint64_t preview_read_pos; // current mono-sample position in the slot
+    uint32_t
+        preview_note; // note index used by qwerty play keys (not cursor pos)
+    uint32_t preview_layer; // layer index used by qwerty play keys
     // new
     war_config_context* ctx_config;
     war_command_context* ctx_command;
@@ -2554,7 +2588,8 @@ struct war_env {
     war_color_context* ctx_color;
     war_hot_context* ctx_hot;
     war_piano_gutter_context* ctx_piano_gutter;
-    war_pipewire_context* ctx_pw;        // ADD: pipewire context, allocated from pool
+    war_note_context* ctx_note;
+    war_pipewire_context* ctx_pw; // ADD: pipewire context, allocated from pool
     war_wayland_context* ctx_wayland;
 };
 

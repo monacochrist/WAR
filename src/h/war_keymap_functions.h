@@ -32,6 +32,16 @@
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
 
+static inline void war_fat(war_env* env) {
+    env->ctx_cursor->x_width[0] = env->ctx_cursor->prefix;
+    env->ctx_cursor->instance[0].size[0] = (float)env->ctx_cursor->x_width[0];
+}
+
+static inline void war_thin(war_env* env) {
+    env->ctx_cursor->x_width[0] /= env->ctx_cursor->prefix;
+    env->ctx_cursor->instance[0].size[0] = (float)env->ctx_cursor->x_width[0];
+}
+
 static inline void war_pan_follow(war_env* env) {
     war_wayland_context* wl = env->ctx_wayland;
     war_cursor_context* cur = env->ctx_cursor;
@@ -617,14 +627,86 @@ static inline void war_set_width_to_duration(war_env* env) {
         double duration = (double)env->capture_slots[idx].count / 48000.0;
         if (duration < 1.0) duration = 1.0;
         new_w = (float)duration;
-        call_king_terry("WIDTH: note=%u layer=%u count=%lu duration=%.3f size=%.2f",
-                        note, layer, env->capture_slots[idx].count, duration, new_w);
+        call_king_terry(
+            "WIDTH: note=%u layer=%u count=%lu duration=%.3f size=%.2f",
+            note,
+            layer,
+            env->capture_slots[idx].count,
+            duration,
+            new_w);
     } else {
         new_w = 1.0f;
-        call_king_terry("WIDTH: no capture at note=%u layer=%u, default=1.0",
-                        note, layer);
+        call_king_terry(
+            "WIDTH: no capture at note=%u layer=%u, default=1.0", note, layer);
     }
     env->ctx_cursor->instance[0].size[0] = new_w;
+}
+
+static inline void war_place_note(war_env* env) {
+    war_note_context* note = env->ctx_note;
+    if (!note) return;
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
+    if (note->instance_count >= note->max_instances) return;
+    uint32_t i = note->instance_count++;
+    note->instance[i].pos[0] = cur->instance[0].pos[0];
+    note->instance[i].pos[1] = cur->instance[0].pos[1];
+    note->instance[i].pos[2] = cur->instance[0].pos[2];
+    note->instance[i].size[0] = cur->instance[0].size[0];
+    note->instance[i].size[1] = cur->instance[0].size[1];
+    note->instance[i].color[0] = cur->instance[0].color[0];
+    note->instance[i].color[1] = cur->instance[0].color[1];
+    note->instance[i].color[2] = cur->instance[0].color[2];
+    note->instance[i].color[3] = cur->instance[0].color[3];
+    note->instance[i].outline_color[0] = 0.0f;
+    note->instance[i].outline_color[1] = 0.0f;
+    note->instance[i].outline_color[2] = 0.0f;
+    note->instance[i].outline_color[3] = 1.0f;
+    note->instance[i].flags = 0;
+    note->instance[i].tick = note->tick_counter++;
+    call_king_terry(
+        "NOTE: placed #%u at pos=(%.1f,%.1f) size=(%.1f,%.1f) tick=%lu",
+        i,
+        note->instance[i].pos[0],
+        note->instance[i].pos[1],
+        note->instance[i].size[0],
+        note->instance[i].size[1],
+        note->instance[i].tick);
+}
+
+static inline void war_delete_note_under_cursor(war_env* env) {
+    war_note_context* note = env->ctx_note;
+    if (!note || !note->instance_count) return;
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
+    float cx0 = cur->instance[0].pos[0];
+    float cx1 = cx0 + cur->instance[0].size[0];
+    float cy0 = cur->instance[0].pos[1];
+    float cy1 = cy0 + cur->instance[0].size[1];
+    // find candidates whose rect overlaps cursor rect
+    uint32_t best = UINT32_MAX;
+    uint64_t best_tick = 0;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        float nx0 = note->instance[i].pos[0];
+        float nx1 = nx0 + note->instance[i].size[0];
+        float ny0 = note->instance[i].pos[1];
+        float ny1 = ny0 + note->instance[i].size[1];
+        if (cx0 < nx1 && cx1 > nx0 && cy0 < ny1 && cy1 > ny0) {
+            if (best == UINT32_MAX || note->instance[i].tick > best_tick) {
+                best = i;
+                best_tick = note->instance[i].tick;
+            }
+        }
+    }
+    if (best == UINT32_MAX) return;
+    uint32_t last = note->instance_count - 1;
+    if (best != last) { note->instance[best] = note->instance[last]; }
+    note->instance_count--;
+    call_king_terry("NOTE: deleted #%u at pos=(%.1f,%.1f), remaining=%u",
+                    best,
+                    note->instance[best].pos[0],
+                    note->instance[best].pos[1],
+                    note->instance_count);
 }
 
 #endif // WAR_KEYMAP_FUNCTIONS_H

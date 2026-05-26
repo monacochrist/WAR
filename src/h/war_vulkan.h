@@ -380,7 +380,7 @@ static inline void war_piano_gutter_init(war_piano_gutter_context* ctx_pg,
     };
     WASSERT(vkCreateGraphicsPipelines(ctx_vk->device, VK_NULL_HANDLE, 1, &gpci, NULL, &ctx_pg->pipeline) == VK_SUCCESS);
 
-    float quad_verts[] = {-0.5f,-0.5f, 0.5f,-0.5f, -0.5f,0.5f, 0.5f,0.5f};
+    float quad_verts[] = {0.0f,0.0f, 1.0f,0.0f, 0.0f,1.0f, 1.0f,1.0f};
     VkBufferCreateInfo bci = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sizeof(quad_verts), .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -549,6 +549,191 @@ static inline void war_render_init(war_wayland_context* ctx_wayland,
     vkCreateFramebuffer(ctx_vk->device, &fbci, NULL, &ctx_vk->framebuffer);
 }
 
+static inline void war_note_init(war_note_context* ctx_note,
+                                 war_pool_context* ctx_pool,
+                                 war_vulkan_context* ctx_vk) {
+    ctx_note->draw = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_NOTE_DRAW);
+    ctx_note->x_seconds = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_NOTE_X_SECONDS);
+    ctx_note->y_cells = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_NOTE_Y_CELLS);
+    ctx_note->x_width = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_NOTE_X_WIDTH);
+    ctx_note->instance = war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_NOTE_INSTANCE);
+    ctx_note->instance_count = 0;
+    ctx_note->max_instances = 1024;
+    ctx_note->tick_counter = 0;
+
+    const char* vert_path = "build/spv/war_new_vulkan_vertex_note.spv";
+    const char* frag_path = "build/spv/war_new_vulkan_fragment_note.spv";
+    uint8_t vert_code[4096], frag_code[4096];
+    size_t vert_size = 0, frag_size = 0;
+    FILE* f = fopen(vert_path, "rb");
+    if (f) { vert_size = fread(vert_code, 1, sizeof(vert_code), f); fclose(f); }
+    WASSERT(vert_size > 0 && vert_size % 4 == 0);
+    f = fopen(frag_path, "rb");
+    if (f) { frag_size = fread(frag_code, 1, sizeof(frag_code), f); fclose(f); }
+    WASSERT(frag_size > 0 && frag_size % 4 == 0);
+
+    VkShaderModuleCreateInfo smci = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = vert_size, .pCode = (uint32_t*)vert_code,
+    };
+    WASSERT(vkCreateShaderModule(ctx_vk->device, &smci, NULL, &ctx_note->vert_module) == VK_SUCCESS);
+    smci.codeSize = frag_size; smci.pCode = (uint32_t*)frag_code;
+    WASSERT(vkCreateShaderModule(ctx_vk->device, &smci, NULL, &ctx_note->frag_module) == VK_SUCCESS);
+
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = 40,
+    };
+    VkPipelineLayoutCreateInfo plci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pushConstantRangeCount = 1, .pPushConstantRanges = &pc_range,
+    };
+    WASSERT(vkCreatePipelineLayout(ctx_vk->device, &plci, NULL, &ctx_note->pipeline_layout) == VK_SUCCESS);
+
+    VkPipelineShaderStageCreateInfo stages[2] = {
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = ctx_note->vert_module, .pName = "main"},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = ctx_note->frag_module, .pName = "main"},
+    };
+
+    VkVertexInputBindingDescription bindings[2] = {
+        {0, sizeof(float) * 2, VK_VERTEX_INPUT_RATE_VERTEX},
+        {1, sizeof(war_new_vulkan_note_instance), VK_VERTEX_INPUT_RATE_INSTANCE},
+    };
+    VkVertexInputAttributeDescription attrs[6] = {
+        {0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
+        {1, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(war_new_vulkan_note_instance, pos)},
+        {2, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(war_new_vulkan_note_instance, size)},
+        {3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(war_new_vulkan_note_instance, color)},
+        {4, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(war_new_vulkan_note_instance, outline_color)},
+        {7, 1, VK_FORMAT_R32_UINT, offsetof(war_new_vulkan_note_instance, flags)},
+    };
+    VkPipelineVertexInputStateCreateInfo vis = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 2,
+        .pVertexBindingDescriptions = bindings,
+        .vertexAttributeDescriptionCount = 6,
+        .pVertexAttributeDescriptions = attrs,
+    };
+    VkPipelineInputAssemblyStateCreateInfo ias = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+    };
+    VkDynamicState dyn_states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dsi = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2, .pDynamicStates = dyn_states,
+    };
+    VkPipelineViewportStateCreateInfo vpsi = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1, .scissorCount = 1,
+    };
+    VkPipelineRasterizationStateCreateInfo rs = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL, .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE, .lineWidth = 1,
+    };
+    VkPipelineMultisampleStateCreateInfo ms = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    VkPipelineColorBlendAttachmentState cba = {
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    VkPipelineColorBlendStateCreateInfo cbs = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1, .pAttachments = &cba,
+    };
+    VkGraphicsPipelineCreateInfo gpci = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 2, .pStages = stages,
+        .pVertexInputState = &vis, .pInputAssemblyState = &ias,
+        .pViewportState = &vpsi, .pRasterizationState = &rs,
+        .pMultisampleState = &ms, .pDynamicState = &dsi,
+        .pColorBlendState = &cbs, .layout = ctx_note->pipeline_layout,
+        .renderPass = ctx_vk->render_pass,
+    };
+    WASSERT(vkCreateGraphicsPipelines(ctx_vk->device, VK_NULL_HANDLE, 1, &gpci, NULL, &ctx_note->pipeline) == VK_SUCCESS);
+
+    float quad_verts[] = {0.0f,0.0f, 1.0f,0.0f, 0.0f,1.0f, 1.0f,1.0f};
+    VkBufferCreateInfo bci = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = sizeof(quad_verts), .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    };
+    WASSERT(vkCreateBuffer(ctx_vk->device, &bci, NULL, &ctx_note->quad_vbo) == VK_SUCCESS);
+    VkMemoryRequirements mem_req;
+    vkGetBufferMemoryRequirements(ctx_vk->device, ctx_note->quad_vbo, &mem_req);
+    VkPhysicalDeviceMemoryProperties mem_props;
+    vkGetPhysicalDeviceMemoryProperties(ctx_vk->physical_device, &mem_props);
+    uint32_t mem_type = find_mem_type(mem_props, mem_req.memoryTypeBits,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    WASSERT(mem_type != UINT32_MAX);
+    VkMemoryAllocateInfo mai = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mem_req.size, .memoryTypeIndex = mem_type,
+    };
+    WASSERT(vkAllocateMemory(ctx_vk->device, &mai, NULL, &ctx_note->quad_vbo_memory) == VK_SUCCESS);
+    vkBindBufferMemory(ctx_vk->device, ctx_note->quad_vbo, ctx_note->quad_vbo_memory, 0);
+    void* mapped;
+    vkMapMemory(ctx_vk->device, ctx_note->quad_vbo_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+    memcpy(mapped, quad_verts, sizeof(quad_verts));
+    vkUnmapMemory(ctx_vk->device, ctx_note->quad_vbo_memory);
+
+    VkDeviceSize instance_buf_size = sizeof(war_new_vulkan_note_instance) * ctx_note->max_instances;
+    bci.size = instance_buf_size;
+    bci.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    WASSERT(vkCreateBuffer(ctx_vk->device, &bci, NULL, &ctx_note->instance_vbo) == VK_SUCCESS);
+    vkGetBufferMemoryRequirements(ctx_vk->device, ctx_note->instance_vbo, &mem_req);
+    mem_type = find_mem_type(mem_props, mem_req.memoryTypeBits,
+                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    WASSERT(mem_type != UINT32_MAX);
+    mai.allocationSize = mem_req.size;
+    WASSERT(vkAllocateMemory(ctx_vk->device, &mai, NULL, &ctx_note->instance_vbo_memory) == VK_SUCCESS);
+    vkBindBufferMemory(ctx_vk->device, ctx_note->instance_vbo, ctx_note->instance_vbo_memory, 0);
+    vkMapMemory(ctx_vk->device, ctx_note->instance_vbo_memory, 0, VK_WHOLE_SIZE, 0, &ctx_note->instance_mapped);
+}
+
+static inline void war_note_render(VkCommandBuffer cmd,
+                                   war_note_context* ctx_note,
+                                   war_wayland_context* ctx_wayland,
+                                   float screen_w,
+                                   float screen_h) {
+    if (!ctx_note || !ctx_note->instance_count) return;
+    memcpy(ctx_note->instance_mapped, ctx_note->instance,
+           sizeof(war_new_vulkan_note_instance) * ctx_note->instance_count);
+    VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
+    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)screen_h}};
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_note->pipeline);
+    float pc_data[] = {
+         (float)ctx_wayland->env->ctx_cursor->cell_width,
+         (float)ctx_wayland->env->ctx_cursor->cell_height,
+         -ctx_wayland->panning[0] * ctx_wayland->zoom,
+         -ctx_wayland->panning[1] * ctx_wayland->zoom,
+         ctx_wayland->zoom,
+         0,
+         screen_w, screen_h,
+         0, 0,
+    };
+    vkCmdPushConstants(cmd, ctx_note->pipeline_layout,
+                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
+    VkBuffer bufs[] = {ctx_note->quad_vbo, ctx_note->instance_vbo};
+    VkDeviceSize offsets[] = {0, 0};
+    vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
+    vkCmdDraw(cmd, 4, ctx_note->instance_count, 0, 0);
+}
+
 static inline void war_render_frame(war_wayland_context* ctx_wayland,
                                     war_vulkan_context* ctx_vk) {
     VkCommandBuffer cmd;
@@ -571,6 +756,9 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
     war_piano_gutter_render(cmd, ctx_wayland->env->ctx_piano_gutter, ctx_wayland,
                             ctx_wayland->env->ctx_cursor,
                             (float)ctx_wayland->width, (float)ctx_wayland->height);
+    if (ctx_wayland->env->ctx_note)
+        war_note_render(cmd, ctx_wayland->env->ctx_note, ctx_wayland,
+                        (float)ctx_wayland->width, (float)ctx_wayland->height);
     war_cursor_render(cmd, ctx_wayland->env->ctx_cursor, ctx_wayland,
                       (float)ctx_wayland->width, (float)ctx_wayland->height);
     vkCmdEndRenderPass(cmd);
