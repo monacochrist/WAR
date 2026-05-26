@@ -479,6 +479,26 @@ typedef struct war_note_context {
     uint32_t max_instances;
     uint64_t tick_counter;
 } war_note_context;
+typedef struct war_simple_line_context {
+    uint8_t* draw;
+    double* x_seconds;
+    double* y_cells;
+    double* x_size;
+    double* y_size;
+    double* width;
+    war_vulkan_line_instance* instance;
+    uint32_t instance_count;
+    // Vulkan objects
+    VkShaderModule vert_module;
+    VkShaderModule frag_module;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+    VkBuffer quad_vbo;
+    VkDeviceMemory quad_vbo_memory;
+    VkBuffer instance_vbo;
+    VkDeviceMemory instance_vbo_memory;
+    void* instance_mapped;
+} war_simple_line_context;
 typedef struct war_vulkan_piano_gutter_instance {
     float pos[3];
     float size[2];
@@ -2263,6 +2283,8 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_LINE_WIDTH_SECONDS,
     WAR_POOL_ID_MAIN_CTX_LINE_LINE_WIDTH_SECONDS,
     WAR_POOL_ID_MAIN_CTX_LINE_HEIGHT_CELLS,
+    WAR_POOL_ID_MAIN_CTX_LINE_DRAW,
+    WAR_POOL_ID_MAIN_CTX_LINE_INSTANCE,
     WAR_POOL_ID_MAIN_CTX_LINE_CAPACITY,
     WAR_POOL_ID_MAIN_CTX_LINE_STAGE,
     // ctx text
@@ -2589,6 +2611,7 @@ struct war_env {
     war_hot_context* ctx_hot;
     war_piano_gutter_context* ctx_piano_gutter;
     war_note_context* ctx_note;
+    war_simple_line_context* ctx_line;
     war_pipewire_context* ctx_pw; // ADD: pipewire context, allocated from pool
     war_wayland_context* ctx_wayland;
 };

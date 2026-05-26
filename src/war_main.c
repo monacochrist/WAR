@@ -352,7 +352,6 @@ static void war_keyboard_key(void* data,
     int is_digit = (mod == 0 && keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9);
     if (is_digit) {
         cur->prefix = cur->prefix * 10 + (uint32_t)(keysym - XKB_KEY_0);
-        call_king_terry("DIGIT: prefix now %u", cur->prefix);
     }
 
     size_t trans_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
@@ -374,7 +373,6 @@ static void war_keyboard_key(void* data,
         repeat = 1;
     } else {
         repeat = cur->prefix;
-        call_king_terry("CMD: prefix=%u keysym=0x%x", cur->prefix, keysym);
         if (repeat == 0) repeat = 1;
     }
     size_t flag_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + next;
@@ -997,6 +995,28 @@ int main(int argc, char** argv) {
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_NOTE);
     war_note_init(ctx_note, ctx_pool, ctx_vk);
     env->ctx_note = ctx_note;
+    //-------------------------------------------------------------------------
+    // LINE CONTEXT INIT
+    //-------------------------------------------------------------------------
+    war_simple_line_context* ctx_line =
+        war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_LINE);
+    uint32_t line_max = ctx_config->LINE_CELL_INSTANCE_MAX +
+                        ctx_config->LINE_BPM_INSTANCE_MAX;
+    war_line_init(ctx_line, ctx_pool, ctx_vk, line_max);
+    env->ctx_line = ctx_line;
+    // place a test gray line as a horizontal rule
+    ctx_line->instance_count = 1;
+    ctx_line->instance[0].pos[0] = 0.0f;
+    ctx_line->instance[0].pos[1] = 63.0f;
+    ctx_line->instance[0].pos[2] = 0.0f;
+    ctx_line->instance[0].size[0] = 100.0f; // span
+    ctx_line->instance[0].size[1] = 0.0f;   // horizontal
+    ctx_line->instance[0].width = 0.05f;       // thickness
+    ctx_line->instance[0].color[0] = 0.3f;
+    ctx_line->instance[0].color[1] = 0.3f;
+    ctx_line->instance[0].color[2] = 0.3f;
+    ctx_line->instance[0].color[3] = 1.0f;
+    ctx_line->instance[0].flags = 0;
     //-------------------------------------------------------------------------
     // FIRST FRAME RENDER (record + submit)
     //-------------------------------------------------------------------------

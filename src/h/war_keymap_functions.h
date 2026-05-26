@@ -33,7 +33,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 static inline void war_fat(war_env* env) {
-    env->ctx_cursor->x_width[0] = env->ctx_cursor->prefix;
+    env->ctx_cursor->x_width[0] *= env->ctx_cursor->prefix;
     env->ctx_cursor->instance[0].size[0] = (float)env->ctx_cursor->x_width[0];
 }
 
@@ -532,6 +532,22 @@ static inline void war_move_cursor_down(war_env* env) {
     if (cursor->instance_count && cursor->instance[0].pos[1] > bound)
         cursor->instance[0].pos[1] -= 1;
     war_pan_follow(env);
+}
+
+static inline void war_move_cursor_down_leap(war_env* env) {
+    for (int i = 0; i < 13; i++) war_move_cursor_down(env);
+}
+
+static inline void war_move_cursor_up_leap(war_env* env) {
+    for (int i = 0; i < 13; i++) war_move_cursor_up(env);
+}
+
+static inline void war_move_cursor_left_leap(war_env* env) {
+    for (int i = 0; i < 13; i++) war_move_cursor_left(env);
+}
+
+static inline void war_move_cursor_right_leap(war_env* env) {
+    for (int i = 0; i < 13; i++) war_move_cursor_right(env);
 }
 
 static inline void war_zoom_in(war_env* env) {

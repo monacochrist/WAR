@@ -412,7 +412,7 @@ static inline void war_pool_default(war_pool_context* pool,
     war_pool_set(pool,
                  config,
                  WAR_POOL_ID_MAIN_CTX_LINE,
-                 sizeof(war_line_context) * (1),
+                 sizeof(war_simple_line_context) * (1),
                  32);
     war_pool_set(pool,
                  config,
@@ -448,6 +448,18 @@ static inline void war_pool_default(war_pool_context* pool,
                  WAR_POOL_ID_MAIN_CTX_LINE_HEIGHT_CELLS,
                  sizeof(double) * (config->LINE_CELL_INSTANCE_MAX +
                                    config->LINE_BPM_INSTANCE_MAX),
+                 32);
+    uint32_t line_max = config->LINE_CELL_INSTANCE_MAX +
+                        config->LINE_BPM_INSTANCE_MAX;
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_LINE_DRAW,
+                 sizeof(uint8_t) * line_max,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_LINE_INSTANCE,
+                 sizeof(war_vulkan_line_instance) * line_max,
                  32);
     war_pool_set(pool,
                  config,
