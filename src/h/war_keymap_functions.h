@@ -33,7 +33,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 static inline void war_fat(war_env* env) {
-    env->ctx_cursor->x_width[0] *= env->ctx_cursor->prefix;
+    env->ctx_cursor->x_width[0] = env->ctx_cursor->prefix;
     env->ctx_cursor->instance[0].size[0] = (float)env->ctx_cursor->x_width[0];
 }
 
