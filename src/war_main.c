@@ -981,8 +981,17 @@ int main(int argc, char** argv) {
     war_cursor_context* ctx_cursor =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR);
     env->ctx_cursor = ctx_cursor;
-    ctx_cursor->cell_width = 10;
-    ctx_cursor->cell_height = 20;
+    // init freetype and derive cell size from FreeMono.otf
+    if (FT_Init_FreeType(&env->ft_lib)) {
+        call_king_terry("freetype init failed");
+    }
+    if (FT_New_Face(env->ft_lib, "assets/fonts/FreeMono.otf", 0, &env->ft_face)) {
+        call_king_terry("freetype: failed to load FreeMono.otf");
+    }
+    FT_Set_Pixel_Sizes(env->ft_face, 0, 20);
+    FT_Load_Char(env->ft_face, 'M', FT_LOAD_DEFAULT);
+    ctx_cursor->cell_width = (double)(env->ft_face->glyph->advance.x >> 6);
+    ctx_cursor->cell_height = (double)(env->ft_face->size->metrics.height >> 6);
     ctx_wayland->gutter_rows = 3;
     ctx_wayland->gutter_cols = 4;
     ctx_wayland->num_cols = ctx_wayland->width / ctx_cursor->cell_width;
@@ -1326,5 +1335,7 @@ int main(int argc, char** argv) {
     xkb_keymap_unref(ctx_wayland->xkb_keymap);
     xkb_context_unref(ctx_wayland->xkb_ctx);
     wl_keyboard_destroy(ctx_wayland->keyboard);
+    FT_Done_Face(env->ft_face);
+    FT_Done_FreeType(env->ft_lib);
     wl_display_disconnect(ctx_wayland->display);
 }

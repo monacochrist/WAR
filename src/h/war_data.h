@@ -2658,6 +2658,9 @@ struct war_env {
     uint32_t play_bar_preview_note;
     uint32_t play_bar_preview_layer;
     uint64_t play_bar_preview_read_pos;
+    // freetype
+    FT_Library ft_lib;
+    FT_Face ft_face;
 };
 
 typedef struct war_wayland_context {
