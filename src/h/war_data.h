@@ -278,6 +278,7 @@ typedef struct war_lua_context {
     _Atomic int HUD_STATUS_MIDDLE_INSTANCE_MAX;
     _Atomic int HUD_LINE_NUMBERS_INSTANCE_MAX;
     _Atomic int HUD_PIANO_INSTANCE_MAX;
+    _Atomic int HUD_GRIDLINES_INSTANCE_MAX;
     _Atomic int HUD_EXPLORE_INSTANCE_MAX;
     // cursor
     _Atomic int CURSOR_COUNT;
@@ -436,6 +437,29 @@ typedef struct war_vulkan_cursor_instance {
     float foreground_outline_color[4];
     war_vulkan_flags flags;
 } war_vulkan_cursor_instance;
+typedef struct war_vulkan_gridlines_instance {
+    float pos[3];
+    float size[2];
+    float color[4];
+    war_vulkan_flags flags;
+} war_vulkan_gridlines_instance;
+typedef struct war_gridlines_context {
+    uint8_t* draw;
+    double* x_cells;
+    double* y_cells;
+    double* x_width;
+    war_vulkan_gridlines_instance* instance;
+    uint32_t instance_count;
+    VkShaderModule vert_module;
+    VkShaderModule frag_module;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+    VkBuffer quad_vbo;
+    VkDeviceMemory quad_vbo_memory;
+    VkBuffer instance_vbo;
+    VkDeviceMemory instance_vbo_memory;
+    void* instance_mapped;
+} war_gridlines_context;
 typedef struct war_cursor_context {
     uint8_t* draw;
     double* x_seconds;
@@ -2099,6 +2123,7 @@ typedef struct war_config_context {
     int HUD_STATUS_MIDDLE_INSTANCE_MAX;
     int HUD_LINE_NUMBERS_INSTANCE_MAX;
     int HUD_PIANO_INSTANCE_MAX;
+    int HUD_GRIDLINES_INSTANCE_MAX;
     int HUD_EXPLORE_INSTANCE_MAX;
     int CURSOR_COUNT;
     int CURSOR_DEFAULT_INSTANCE_MAX;
@@ -2255,6 +2280,13 @@ typedef enum war_pool_id_enum {
     WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_Y_CELLS,
     WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_X_WIDTH,
     WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_INSTANCE,
+    // ctx gridlines
+    WAR_POOL_ID_MAIN_CTX_GRIDLINES,
+    WAR_POOL_ID_MAIN_CTX_GRIDLINES_DRAW,
+    WAR_POOL_ID_MAIN_CTX_GRIDLINES_X_CELLS,
+    WAR_POOL_ID_MAIN_CTX_GRIDLINES_Y_CELLS,
+    WAR_POOL_ID_MAIN_CTX_GRIDLINES_X_WIDTH,
+    WAR_POOL_ID_MAIN_CTX_GRIDLINES_INSTANCE,
     // ctx note
     WAR_POOL_ID_MAIN_CTX_NOTE,
     WAR_POOL_ID_MAIN_CTX_NOTE_DRAW,
@@ -2610,6 +2642,7 @@ struct war_env {
     war_color_context* ctx_color;
     war_hot_context* ctx_hot;
     war_piano_gutter_context* ctx_piano_gutter;
+    war_gridlines_context* ctx_gridlines;
     war_note_context* ctx_note;
     war_simple_line_context* ctx_line;
     war_pipewire_context* ctx_pw; // ADD: pipewire context, allocated from pool

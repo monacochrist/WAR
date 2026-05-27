@@ -315,6 +315,38 @@ static inline void war_pool_default(war_pool_context* pool,
                  sizeof(war_vulkan_piano_gutter_instance) *
                      (uint32_t)config->HUD_PIANO_INSTANCE_MAX,
                  32);
+    // ctx gridlines
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_GRIDLINES,
+                 sizeof(war_gridlines_context) * (1),
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_GRIDLINES_DRAW,
+                 sizeof(uint8_t) * (uint32_t)config->HUD_GRIDLINES_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_GRIDLINES_X_CELLS,
+                 sizeof(double) * (uint32_t)config->HUD_GRIDLINES_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_GRIDLINES_Y_CELLS,
+                 sizeof(double) * (uint32_t)config->HUD_GRIDLINES_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_GRIDLINES_X_WIDTH,
+                 sizeof(double) * (uint32_t)config->HUD_GRIDLINES_INSTANCE_MAX,
+                 32);
+    war_pool_set(pool,
+                 config,
+                 WAR_POOL_ID_MAIN_CTX_GRIDLINES_INSTANCE,
+                 sizeof(war_vulkan_gridlines_instance) *
+                     (uint32_t)config->HUD_GRIDLINES_INSTANCE_MAX,
+                 32);
     // ctx note
     war_pool_set(pool,
                  config,

@@ -141,6 +141,7 @@ static inline void war_config_default(war_config_context* config) {
     config->HUD_STATUS_MIDDLE_INSTANCE_MAX = 1;
     config->HUD_LINE_NUMBERS_INSTANCE_MAX = 128;
     config->HUD_PIANO_INSTANCE_MAX = 128;
+    config->HUD_GRIDLINES_INSTANCE_MAX = 2048;
     config->HUD_EXPLORE_INSTANCE_MAX = 1;
     // hud line context
     config->HUD_LINE_COUNT = 1;
