@@ -222,7 +222,7 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
             }
         }
         env->play_bar_prev_cell_pos = current_cell_pos;
-        env->ctx_line->instance[1].pos[0] = (float)current_cell_pos;
+        env->ctx_line->instance[0].pos[0] = (float)current_cell_pos;
     }
     if (ctx_wayland->rendering) {
         war_render_frame(ctx_wayland, ctx_wayland->vk);
