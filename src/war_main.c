@@ -1028,7 +1028,7 @@ int main(int argc, char** argv) {
     war_piano_gutter_context* ctx_pg =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER);
     war_piano_gutter_init(ctx_pg, ctx_pool, ctx_config, ctx_vk);
-    war_piano_gutter_generate(ctx_pg, ctx_wayland->gutter_cols);
+    war_piano_gutter_generate(ctx_pg, ctx_wayland->gutter_cols, ctx_wayland->gutter_rows);
     env->ctx_piano_gutter = ctx_pg;
     //-------------------------------------------------------------------------
     // GRIDLINES INIT
@@ -1036,7 +1036,9 @@ int main(int argc, char** argv) {
     war_gridlines_context* ctx_gl =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_GRIDLINES);
     war_gridlines_init(ctx_gl, ctx_pool, ctx_config, ctx_vk);
-    war_gridlines_generate(ctx_gl, 256, 128, ctx_wayland->gutter_cols);
+    war_gridlines_generate(ctx_gl, (double)ctx_wayland->gutter_cols,
+                           (double)(ctx_wayland->gutter_cols + ctx_wayland->num_cols),
+                           128, (uint32_t)ctx_config->HUD_GRIDLINES_INSTANCE_MAX, ctx_wayland->gutter_rows);
     env->ctx_gridlines = ctx_gl;
     //-------------------------------------------------------------------------
     // NOTE INIT (single instance at middle C, layer 2 colour)
@@ -1056,10 +1058,10 @@ int main(int argc, char** argv) {
     env->ctx_line = ctx_line;
     // playback bar (vertical green line at gutter start)
     ctx_line->instance[0].pos[0] = (float)ctx_wayland->gutter_cols;
-    ctx_line->instance[0].pos[1] = 0.0f;
+    ctx_line->instance[0].pos[1] = ctx_wayland->gutter_rows;
     ctx_line->instance[0].pos[2] = 0.0f;
     ctx_line->instance[0].size[0] = 0.0f;    // vertical
-    ctx_line->instance[0].size[1] = 127.0f;  // span full MIDI range
+    ctx_line->instance[0].size[1] = 128.0f - ctx_wayland->gutter_rows;  // span full MIDI range
     ctx_line->instance[0].width = 0.08f;     // thickness
     ctx_line->instance[0].color[0] = 0.0f;
     ctx_line->instance[0].color[1] = 0.8f;
