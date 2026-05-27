@@ -2666,6 +2666,7 @@ typedef struct war_wayland_context {
     int32_t repeat_delay;
     uint32_t repeat_key;
     uint32_t repeat_sym;
+    uint32_t repeat_mod;
     uint8_t repeat_active;
     struct timespec repeat_time;
     int repeat_timer_fd;

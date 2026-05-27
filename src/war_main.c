@@ -341,20 +341,6 @@ static void war_keyboard_key(void* data,
     uint32_t keysym = war_normalize_keysym(sym);
     if (keysym == XKB_KEY_NoSymbol) return;
 
-    if (ctx_wayland->repeat_rate > 0) {
-        ctx_wayland->repeat_key = key;
-        ctx_wayland->repeat_sym = keysym;
-        ctx_wayland->repeat_active = 1;
-        // arm timerfd: initial delay then periodic at repeat_rate
-        int32_t d = ctx_wayland->repeat_delay;
-        int32_t r = ctx_wayland->repeat_rate;
-        struct itimerspec its = {
-            .it_value = {d / 1000, (long)(d % 1000) * 1000000L},
-            .it_interval = {0, r > 0 ? 1000000000L / r : 0},
-        };
-        timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &its, NULL);
-    }
-
     war_env* env = ctx_wayland->env;
     war_cursor_context* cur = env->ctx_cursor;
     war_keymap_context* keymap = env->ctx_keymap;
@@ -389,6 +375,20 @@ static void war_keyboard_key(void* data,
             xkb_state_mod_index_is_active(
                 ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
             mod |= MOD_LOGO;
+    }
+
+    if (ctx_wayland->repeat_rate > 0) {
+        ctx_wayland->repeat_key = key;
+        ctx_wayland->repeat_sym = keysym;
+        ctx_wayland->repeat_mod = mod;
+        ctx_wayland->repeat_active = 1;
+        int32_t d = ctx_wayland->repeat_delay;
+        int32_t r = ctx_wayland->repeat_rate;
+        struct itimerspec its = {
+            .it_value = {d / 1000, (long)(d % 1000) * 1000000L},
+            .it_interval = {0, r > 0 ? 1000000000L / r : 0},
+        };
+        timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &its, NULL);
     }
 
     int is_digit = (mod == 0 && keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9);
@@ -1028,7 +1028,7 @@ int main(int argc, char** argv) {
     war_piano_gutter_context* ctx_pg =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER);
     war_piano_gutter_init(ctx_pg, ctx_pool, ctx_config, ctx_vk);
-    war_piano_gutter_generate(ctx_pg);
+    war_piano_gutter_generate(ctx_pg, ctx_wayland->gutter_cols);
     env->ctx_piano_gutter = ctx_pg;
     //-------------------------------------------------------------------------
     // NOTE INIT (single instance at middle C, layer 2 colour)
@@ -1125,7 +1125,8 @@ int main(int argc, char** argv) {
                     war_keymap_context* keymap = env->ctx_keymap;
                     war_config_context* config = env->ctx_config;
                     size_t ti = (size_t)ctx_wayland->repeat_sym *
-                                config->KEYMAP_MOD_CAPACITY;
+                                config->KEYMAP_MOD_CAPACITY +
+                                ctx_wayland->repeat_mod;
                     uint64_t next = keymap->next_state[ti];
                     if (next) {
                         uint8_t cnt = keymap->function_count[next];

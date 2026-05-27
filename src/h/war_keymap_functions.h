@@ -33,11 +33,13 @@
 #include <xkbcommon/xkbcommon.h>
 
 static inline void war_fat(war_env* env) {
+    if (env->ctx_cursor->prefix == 0) { env->ctx_cursor->prefix = 1; }
     env->ctx_cursor->x_width[0] = env->ctx_cursor->prefix;
     env->ctx_cursor->instance[0].size[0] = (float)env->ctx_cursor->x_width[0];
 }
 
 static inline void war_thin(war_env* env) {
+    if (env->ctx_cursor->prefix == 0) { env->ctx_cursor->prefix = 1; }
     env->ctx_cursor->x_width[0] /= env->ctx_cursor->prefix;
     env->ctx_cursor->instance[0].size[0] = (float)env->ctx_cursor->x_width[0];
 }
@@ -60,6 +62,10 @@ static inline void war_pan_follow(war_env* env) {
     if (cx >= p[0] + vis_cols) p[0] = (float)(cx - vis_cols + 1);
     if (cy < p[1]) p[1] = (float)(cy - wl->gutter_rows - 0.5);
     if (cy >= p[1] + vis_rows) p[1] = (float)(cy - vis_rows + 1);
+    if (cx - p[0] < wl->gutter_cols + 0.5)
+        p[0] = (float)(cx - wl->gutter_cols - 0.5);
+    if (cy - p[1] < wl->gutter_rows + 0.5)
+        p[1] = (float)(cy - wl->gutter_rows - 0.5);
     if (p[0] < 0) p[0] = 0;
     if (p[1] < 0) p[1] = 0;
 }

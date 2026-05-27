@@ -420,7 +420,8 @@ static inline void war_piano_gutter_init(war_piano_gutter_context* ctx_pg,
 }
 
 static inline void
-war_piano_gutter_generate(war_piano_gutter_context* ctx_pg) {
+war_piano_gutter_generate(war_piano_gutter_context* ctx_pg,
+                          uint32_t gutter_cols) {
     ctx_pg->instance_count = 128;
     for (uint32_t i = 0; i < 128; i++) {
         uint32_t c = i % 12;
@@ -429,10 +430,10 @@ war_piano_gutter_generate(war_piano_gutter_context* ctx_pg) {
         ctx_pg->instance[i].color[1] = black ? 0 : 1;
         ctx_pg->instance[i].color[2] = black ? 0 : 1;
         ctx_pg->instance[i].color[3] = 1;
-        ctx_pg->instance[i].pos[0] = 1.0;
+        ctx_pg->instance[i].pos[0] = 0.0f;
         ctx_pg->instance[i].pos[1] = (float)i;
         ctx_pg->instance[i].pos[2] = 0;
-        ctx_pg->instance[i].size[0] = 3;
+        ctx_pg->instance[i].size[0] = (float)gutter_cols;
         ctx_pg->instance[i].size[1] = 1;
         ctx_pg->instance[i].flags = 0;
     }
@@ -455,7 +456,7 @@ static inline void war_piano_gutter_render(VkCommandBuffer cmd,
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_pg->pipeline);
     float pc_data[] = {
          (float)ctx_cursor->cell_width, (float)ctx_cursor->cell_height,
-         -ctx_wayland->panning[0] * ctx_wayland->zoom,
+         0.0f,
          -ctx_wayland->panning[1] * ctx_wayland->zoom,
          ctx_wayland->zoom,
          0,
@@ -484,13 +485,13 @@ static inline void war_cursor_render(VkCommandBuffer cmd,
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_cursor->pipeline);
     float pc_data[] = {
-         (float)ctx_cursor->cell_width, (float)ctx_cursor->cell_height, // cell_size (offset 0)
+         (float)ctx_cursor->cell_width, (float)ctx_cursor->cell_height,
          -ctx_wayland->panning[0] * ctx_wayland->zoom,
-         -ctx_wayland->panning[1] * ctx_wayland->zoom, // panning (offset 8)
-         ctx_wayland->zoom, // zoom (offset 16)
-         0,                 // padding (offset 20, aligns vec2)
-         screen_w, screen_h, // screen_size (offset 24)
-         0, 0,              // cell_offset (offset 32)
+         -ctx_wayland->panning[1] * ctx_wayland->zoom,
+         ctx_wayland->zoom,
+         0,
+         screen_w, screen_h,
+         0, 0,
     };
     vkCmdPushConstants(cmd, ctx_cursor->pipeline_layout,
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
