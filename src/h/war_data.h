@@ -1749,6 +1749,38 @@ typedef struct war_text_context {
     uint32_t buffer_count;
 } war_text_context;
 
+typedef struct war_font_context {
+    // font atlas
+    VkImage atlas_image;
+    VkDeviceMemory atlas_memory;
+    VkImageView atlas_view;
+    VkSampler sampler;
+    // descriptor infrastructure
+    VkDescriptorSetLayout desc_set_layout;
+    VkDescriptorPool desc_pool;
+    VkDescriptorSet desc_set;
+    // pipeline
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
+    VkShaderModule vert_module;
+    VkShaderModule frag_module;
+    // geometry buffers
+    VkBuffer quad_vbo;
+    VkDeviceMemory quad_vbo_memory;
+    VkBuffer instance_vbo;
+    VkDeviceMemory instance_vbo_memory;
+    void* instance_mapped;
+    uint32_t instance_count;
+    // glyph metrics (from FreeType, in pixels)
+    float glyph_px_w;
+    float glyph_px_h;
+    float glyph_advance;
+    float glyph_ascent;   // pixels from baseline to top
+    float glyph_descent;  // pixels from baseline to bottom
+    // atlas UV for 'M'
+    float uv[4];
+} war_font_context;
+
 typedef uint32_t war_function_id;
 typedef enum war_function_id_enum {
     WAR_FUNCTION_ID_NONE,
@@ -2649,6 +2681,7 @@ struct war_env {
     war_simple_line_context* ctx_line;
     war_pipewire_context* ctx_pw; // ADD: pipewire context, allocated from pool
     war_wayland_context* ctx_wayland;
+    war_font_context* ctx_font;
     // playback bar
     uint8_t play_bar_playing;
     double play_bar_position_seconds;

@@ -939,6 +939,388 @@ static inline void war_gridlines_render(VkCommandBuffer cmd,
     vkCmdDraw(cmd, 4, ctx_gl->instance_count, 0, 0);
 }
 
+static inline void war_font_init(war_font_context* font,
+                                 war_vulkan_context* ctx_vk,
+                                 FT_Face face,
+                                 double cell_px_w,
+                                 double cell_px_h) {
+    font->instance_count = 1;
+
+    // load 'M' at the display size to get display metrics
+    if (FT_Load_Char(face, 'M', FT_LOAD_DEFAULT))
+        call_king_terry("freetype: failed to load 'M'");
+    float disp_w = (float)(face->glyph->metrics.width >> 6);
+    float disp_h = (float)(face->glyph->metrics.height >> 6);
+    float disp_advance = (float)(face->glyph->advance.x >> 6);
+
+    // render 'M' at higher resolution for the atlas
+    FT_Set_Pixel_Sizes(face, 0, 80);
+    if (FT_Load_Char(face, 'M', FT_LOAD_RENDER))
+        call_king_terry("freetype: failed to load 'M' (high-res)");
+    int bmp_w = face->glyph->bitmap.width;
+    int bmp_h = face->glyph->bitmap.rows;
+    unsigned char* bmp = face->glyph->bitmap.buffer;
+    int pitch = face->glyph->bitmap.pitch;
+
+    font->glyph_px_w = disp_w;
+    font->glyph_px_h = disp_h;
+    font->glyph_advance = disp_advance;
+    font->glyph_ascent = (float)(face->size->metrics.ascender >> 6);
+    font->glyph_descent = (float)(-face->size->metrics.descender >> 6);
+
+    // restore display size
+    FT_Set_Pixel_Sizes(face, 0, (FT_UInt)cell_px_h);
+
+    // atlas image (R8 at high resolution)
+    VkImageCreateInfo ici = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8_UNORM,
+        .extent = {bmp_w > 0 ? (uint32_t)bmp_w : 1, bmp_h > 0 ? (uint32_t)bmp_h : 1, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_LINEAR,
+        .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
+        .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    VkResult res = vkCreateImage(ctx_vk->device, &ici, NULL, &font->atlas_image);
+    WASSERT(res == VK_SUCCESS);
+
+    VkMemoryRequirements mem_req;
+    vkGetImageMemoryRequirements(ctx_vk->device, font->atlas_image, &mem_req);
+    VkPhysicalDeviceMemoryProperties mem_props;
+    vkGetPhysicalDeviceMemoryProperties(ctx_vk->physical_device, &mem_props);
+    uint32_t mem_type = find_mem_type(mem_props, mem_req.memoryTypeBits,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    WASSERT(mem_type != UINT32_MAX);
+    VkMemoryAllocateInfo mai = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mem_req.size,
+        .memoryTypeIndex = mem_type,
+    };
+    res = vkAllocateMemory(ctx_vk->device, &mai, NULL, &font->atlas_memory);
+    WASSERT(res == VK_SUCCESS);
+    vkBindImageMemory(ctx_vk->device, font->atlas_image, font->atlas_memory, 0);
+
+    // upload bitmap data
+    void* mapped;
+    vkMapMemory(ctx_vk->device, font->atlas_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+    VkImageSubresource sub = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
+    VkSubresourceLayout layout;
+    vkGetImageSubresourceLayout(ctx_vk->device, font->atlas_image, &sub, &layout);
+    uint8_t* dst = (uint8_t*)mapped + layout.offset;
+    for (int y = 0; y < bmp_h && y < (int)layout.size / layout.rowPitch; y++) {
+        memcpy(dst + y * layout.rowPitch, bmp + y * pitch, bmp_w);
+    }
+    vkUnmapMemory(ctx_vk->device, font->atlas_memory);
+
+    // image view
+    VkImageViewCreateInfo ivci = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = font->atlas_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8_UNORM,
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+    };
+    res = vkCreateImageView(ctx_vk->device, &ivci, NULL, &font->atlas_view);
+    WASSERT(res == VK_SUCCESS);
+
+    // sampler
+    VkSamplerCreateInfo sci = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    };
+    res = vkCreateSampler(ctx_vk->device, &sci, NULL, &font->sampler);
+    WASSERT(res == VK_SUCCESS);
+
+    // descriptor set layout
+    VkDescriptorSetLayoutBinding dslb = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    };
+    VkDescriptorSetLayoutCreateInfo dslci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &dslb,
+    };
+    res = vkCreateDescriptorSetLayout(ctx_vk->device, &dslci, NULL, &font->desc_set_layout);
+    WASSERT(res == VK_SUCCESS);
+
+    // descriptor pool
+    VkDescriptorPoolSize dps = {
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+    };
+    VkDescriptorPoolCreateInfo dpci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 1,
+        .poolSizeCount = 1,
+        .pPoolSizes = &dps,
+    };
+    res = vkCreateDescriptorPool(ctx_vk->device, &dpci, NULL, &font->desc_pool);
+    WASSERT(res == VK_SUCCESS);
+
+    // allocate descriptor set
+    VkDescriptorSetAllocateInfo dsai = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = font->desc_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &font->desc_set_layout,
+    };
+    res = vkAllocateDescriptorSets(ctx_vk->device, &dsai, &font->desc_set);
+    WASSERT(res == VK_SUCCESS);
+
+    // update descriptor set
+    VkDescriptorImageInfo dii = {
+        .sampler = font->sampler,
+        .imageView = font->atlas_view,
+        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    VkWriteDescriptorSet wds = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = font->desc_set,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &dii,
+    };
+    vkUpdateDescriptorSets(ctx_vk->device, 1, &wds, 0, NULL);
+
+    // load text vertex/fragment shaders
+    uint8_t vert_code[8192];
+    uint8_t frag_code[8192];
+    size_t vert_size = 0, frag_size = 0;
+    FILE* f = fopen("build/spv/war_new_vulkan_vertex_text.spv", "rb");
+    if (f) { vert_size = fread(vert_code, 1, sizeof(vert_code), f); fclose(f); }
+    WASSERT(vert_size > 0 && vert_size % 4 == 0);
+    f = fopen("build/spv/war_new_vulkan_fragment_text.spv", "rb");
+    if (f) { frag_size = fread(frag_code, 1, sizeof(frag_code), f); fclose(f); }
+    WASSERT(frag_size > 0 && frag_size % 4 == 0);
+
+    VkShaderModuleCreateInfo smci = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = vert_size,
+        .pCode = (uint32_t*)vert_code,
+    };
+    res = vkCreateShaderModule(ctx_vk->device, &smci, NULL, &font->vert_module);
+    WASSERT(res == VK_SUCCESS);
+    smci.codeSize = frag_size;
+    smci.pCode = (uint32_t*)frag_code;
+    res = vkCreateShaderModule(ctx_vk->device, &smci, NULL, &font->frag_module);
+    WASSERT(res == VK_SUCCESS);
+
+    // pipeline layout (push constants + descriptor set)
+    VkPushConstantRange pc_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .offset = 0,
+        .size = 40,
+    };
+    VkPipelineLayoutCreateInfo plci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &font->desc_set_layout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pc_range,
+    };
+    res = vkCreatePipelineLayout(ctx_vk->device, &plci, NULL, &font->pipeline_layout);
+    WASSERT(res == VK_SUCCESS);
+
+    // graphics pipeline
+    VkPipelineShaderStageCreateInfo stages[2] = {
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_VERTEX_BIT,
+         .module = font->vert_module,
+         .pName = "main"},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .module = font->frag_module,
+         .pName = "main"},
+    };
+
+    VkVertexInputBindingDescription bindings[2] = {
+        {0, sizeof(float) * 2, VK_VERTEX_INPUT_RATE_VERTEX},
+        {1, sizeof(war_vulkan_text_instance), VK_VERTEX_INPUT_RATE_INSTANCE},
+    };
+    VkVertexInputAttributeDescription attrs[] = {
+        {0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
+        {1, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(war_vulkan_text_instance, pos)},
+        {2, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(war_vulkan_text_instance, size)},
+        {3, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(war_vulkan_text_instance, uv)},
+        {4, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(war_vulkan_text_instance, glyph_scale)},
+        {5, 1, VK_FORMAT_R32_SFLOAT, offsetof(war_vulkan_text_instance, baseline)},
+        {6, 1, VK_FORMAT_R32_SFLOAT, offsetof(war_vulkan_text_instance, ascent)},
+        {7, 1, VK_FORMAT_R32_SFLOAT, offsetof(war_vulkan_text_instance, descent)},
+        {8, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(war_vulkan_text_instance, color)},
+        {12, 1, VK_FORMAT_R32_UINT, offsetof(war_vulkan_text_instance, flags)},
+    };
+
+    VkPipelineVertexInputStateCreateInfo vis = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 2,
+        .pVertexBindingDescriptions = bindings,
+        .vertexAttributeDescriptionCount = 10,
+        .pVertexAttributeDescriptions = attrs,
+    };
+    VkPipelineInputAssemblyStateCreateInfo ias = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+    };
+    VkDynamicState dyn_states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dsi = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2,
+        .pDynamicStates = dyn_states,
+    };
+    VkPipelineViewportStateCreateInfo vpsi = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .scissorCount = 1,
+    };
+    VkPipelineRasterizationStateCreateInfo rs = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .lineWidth = 1,
+    };
+    VkPipelineMultisampleStateCreateInfo ms = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    VkPipelineColorBlendAttachmentState cba = {
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    VkPipelineColorBlendStateCreateInfo cbs = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &cba,
+    };
+    VkGraphicsPipelineCreateInfo gpci = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 2,
+        .pStages = stages,
+        .pVertexInputState = &vis,
+        .pInputAssemblyState = &ias,
+        .pViewportState = &vpsi,
+        .pRasterizationState = &rs,
+        .pMultisampleState = &ms,
+        .pDynamicState = &dsi,
+        .pColorBlendState = &cbs,
+        .layout = font->pipeline_layout,
+        .renderPass = ctx_vk->render_pass,
+    };
+    res = vkCreateGraphicsPipelines(ctx_vk->device, VK_NULL_HANDLE, 1, &gpci, NULL, &font->pipeline);
+    WASSERT(res == VK_SUCCESS);
+
+    // quad VBO
+    float quad_verts[] = {0,0,1,0,0,1,1,1};
+    VkBufferCreateInfo bci = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = sizeof(quad_verts),
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    };
+    res = vkCreateBuffer(ctx_vk->device, &bci, NULL, &font->quad_vbo);
+    WASSERT(res == VK_SUCCESS);
+    vkGetBufferMemoryRequirements(ctx_vk->device, font->quad_vbo, &mem_req);
+    mem_type = find_mem_type(mem_props, mem_req.memoryTypeBits,
+                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    WASSERT(mem_type != UINT32_MAX);
+    mai.allocationSize = mem_req.size;
+    res = vkAllocateMemory(ctx_vk->device, &mai, NULL, &font->quad_vbo_memory);
+    WASSERT(res == VK_SUCCESS);
+    vkBindBufferMemory(ctx_vk->device, font->quad_vbo, font->quad_vbo_memory, 0);
+    vkMapMemory(ctx_vk->device, font->quad_vbo_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+    memcpy(mapped, quad_verts, sizeof(quad_verts));
+    vkUnmapMemory(ctx_vk->device, font->quad_vbo_memory);
+
+    // instance VBO
+    VkDeviceSize instance_buf_size = sizeof(war_vulkan_text_instance) * font->instance_count;
+    bci.size = instance_buf_size;
+    res = vkCreateBuffer(ctx_vk->device, &bci, NULL, &font->instance_vbo);
+    WASSERT(res == VK_SUCCESS);
+    vkGetBufferMemoryRequirements(ctx_vk->device, font->instance_vbo, &mem_req);
+    mem_type = find_mem_type(mem_props, mem_req.memoryTypeBits,
+                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    WASSERT(mem_type != UINT32_MAX);
+    mai.allocationSize = mem_req.size;
+    res = vkAllocateMemory(ctx_vk->device, &mai, NULL, &font->instance_vbo_memory);
+    WASSERT(res == VK_SUCCESS);
+    vkBindBufferMemory(ctx_vk->device, font->instance_vbo, font->instance_vbo_memory, 0);
+    vkMapMemory(ctx_vk->device, font->instance_vbo_memory, 0, VK_WHOLE_SIZE, 0, &font->instance_mapped);
+
+    // atlas UV (whole image)
+    font->uv[0] = 0;
+    font->uv[1] = 0;
+    font->uv[2] = 1;
+    font->uv[3] = 1;
+}
+
+static inline void war_font_render(VkCommandBuffer cmd,
+                                   war_font_context* font,
+                                   war_wayland_context* ctx_wayland,
+                                   war_cursor_context* cur,
+                                   float screen_w, float screen_h) {
+    if (!font || !font->instance_count || !cur->instance_count) return;
+
+    double cw = cur->cell_width, ch = cur->cell_height;
+    float zoom = ctx_wayland->zoom;
+
+    war_vulkan_text_instance inst = {0};
+    inst.pos[0] = cur->instance[0].pos[0];
+    inst.pos[1] = cur->instance[0].pos[1];
+    inst.size[0] = 1.0f;
+    inst.size[1] = 1.0f;
+    inst.uv[0] = font->uv[0];
+    inst.uv[1] = font->uv[1];
+    inst.uv[2] = font->uv[2];
+    inst.uv[3] = font->uv[3];
+    inst.glyph_scale[0] = font->glyph_px_w / (float)cw;
+    inst.glyph_scale[1] = font->glyph_px_h / (float)ch;
+    inst.ascent = 0.5f + font->glyph_px_h / (2.0f * (float)ch);
+    inst.descent = 0;
+    inst.baseline = 0;
+    inst.color[0] = 1; inst.color[1] = 1; inst.color[2] = 1; inst.color[3] = 1;
+    inst.flags = 0;
+
+    memcpy(font->instance_mapped, &inst, sizeof(inst));
+
+    VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
+    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)screen_h}};
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, font->pipeline);
+    float pc_data[] = {
+        (float)cw, (float)ch,
+        -ctx_wayland->panning[0] * zoom, -ctx_wayland->panning[1] * zoom,
+        zoom, 0, screen_w, screen_h, 0, 0,
+    };
+    vkCmdPushConstants(cmd, font->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            font->pipeline_layout, 0, 1, &font->desc_set, 0, NULL);
+    VkBuffer bufs[] = {font->quad_vbo, font->instance_vbo};
+    VkDeviceSize offsets[] = {0, 0};
+    vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
+    vkCmdDraw(cmd, 4, font->instance_count, 0, 0);
+}
+
 static inline void war_cursor_render(VkCommandBuffer cmd,
                                      war_cursor_context* ctx_cursor,
                                      war_wayland_context* ctx_wayland,
@@ -1651,6 +2033,13 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                       ctx_wayland,
                       (float)ctx_wayland->width,
                       (float)ctx_wayland->height);
+    if (ctx_wayland->env->ctx_font)
+        war_font_render(cmd,
+                        ctx_wayland->env->ctx_font,
+                        ctx_wayland,
+                        ctx_wayland->env->ctx_cursor,
+                        (float)ctx_wayland->width,
+                        (float)ctx_wayland->height);
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
 

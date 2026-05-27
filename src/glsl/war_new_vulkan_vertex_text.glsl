@@ -49,7 +49,7 @@ void main() {
                              - glyphSizePx.y;
 
     // You can tweak slightly
-    float verticalTweak = 15.0;
+    float verticalTweak = 0.0;
 
     vec2 localPosPx = vec2(
         in_pos.x * glyphSizePx.x + horizontalOffsetPx,

@@ -1127,6 +1127,12 @@ int main(int argc, char** argv) {
     env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
     env->play_bar_preview_active = 0;
     //-------------------------------------------------------------------------
+    // FONT INIT (renders 'M' glyph, sets up Vulkan text pipeline)
+    //-------------------------------------------------------------------------
+    env->ctx_font = calloc(1, sizeof(war_font_context));
+    war_font_init(env->ctx_font, ctx_vk, env->ft_face,
+                  ctx_cursor->cell_width, ctx_cursor->cell_height);
+    //-------------------------------------------------------------------------
     // FIRST FRAME RENDER (record + submit)
     //-------------------------------------------------------------------------
     war_render_frame(ctx_wayland, ctx_vk);
@@ -1321,6 +1327,25 @@ int main(int argc, char** argv) {
     env->pc_play = NULL;
 
     vkDeviceWaitIdle(ctx_vk->device);
+    // font cleanup (must happen before device teardown)
+    if (env->ctx_font) {
+        vkDestroyPipeline(ctx_vk->device, env->ctx_font->pipeline, NULL);
+        vkDestroyPipelineLayout(ctx_vk->device, env->ctx_font->pipeline_layout, NULL);
+        vkDestroyShaderModule(ctx_vk->device, env->ctx_font->vert_module, NULL);
+        vkDestroyShaderModule(ctx_vk->device, env->ctx_font->frag_module, NULL);
+        vkDestroyDescriptorSetLayout(ctx_vk->device, env->ctx_font->desc_set_layout, NULL);
+        vkDestroyDescriptorPool(ctx_vk->device, env->ctx_font->desc_pool, NULL);
+        vkDestroySampler(ctx_vk->device, env->ctx_font->sampler, NULL);
+        vkDestroyImageView(ctx_vk->device, env->ctx_font->atlas_view, NULL);
+        vkDestroyImage(ctx_vk->device, env->ctx_font->atlas_image, NULL);
+        vkFreeMemory(ctx_vk->device, env->ctx_font->atlas_memory, NULL);
+        vkDestroyBuffer(ctx_vk->device, env->ctx_font->quad_vbo, NULL);
+        vkDestroyBuffer(ctx_vk->device, env->ctx_font->instance_vbo, NULL);
+        vkFreeMemory(ctx_vk->device, env->ctx_font->quad_vbo_memory, NULL);
+        vkFreeMemory(ctx_vk->device, env->ctx_font->instance_vbo_memory, NULL);
+        free(env->ctx_font);
+        env->ctx_font = NULL;
+    }
     vkDestroyCommandPool(ctx_vk->device, ctx_vk->cmd_pool, NULL);
     vkDestroyFramebuffer(ctx_vk->device, ctx_vk->framebuffer, NULL);
     vkDestroyImageView(ctx_vk->device, ctx_vk->image_view, NULL);
