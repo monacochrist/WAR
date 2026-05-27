@@ -548,6 +548,25 @@ static inline void war_move_cursor_up_leap(war_env* env) {
     for (int i = 0; i < 13; i++) war_move_cursor_up(env);
 }
 
+static inline void war_goto_viewport_bottom(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_wayland_context* wl = env->ctx_wayland;
+    double bottom = wl->panning[1];
+    if (bottom < wl->gutter_rows) bottom = wl->gutter_rows;
+    if (bottom > 127) bottom = 127;
+    cur->instance[0].pos[1] = (uint32_t)(bottom + 0.5);
+}
+
+static inline void war_goto_viewport_top(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_wayland_context* wl = env->ctx_wayland;
+    double total_vis_rows = (double)wl->height / (cur->cell_height * wl->zoom);
+    double top = wl->panning[1] + total_vis_rows - 1;
+    if (top < 0) top = 0;
+    if (top > 127) top = 127;
+    cur->instance[0].pos[1] = (uint32_t)(top + 0.5);
+}
+
 static inline void war_move_cursor_left_leap(war_env* env) {
     for (int i = 0; i < 13; i++) war_move_cursor_left(env);
 }

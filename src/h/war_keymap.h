@@ -417,6 +417,26 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_delete_note_under_cursor,
                    0);
+    // goto bottom of viewport (G)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"G"},
+                   WAR_FUNCTION_ID_GOTO_VIEWPORT_BOTTOM,
+                   war_goto_viewport_bottom,
+                   0);
+    // goto top of viewport (gg)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"gg"},
+                   WAR_FUNCTION_ID_GOTO_VIEWPORT_TOP,
+                   war_goto_viewport_top,
+                   0);
     // octaves
     war_keymap_set(keymap,
                    config,

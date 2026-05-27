@@ -1760,6 +1760,8 @@ typedef enum war_function_id_enum {
     WAR_FUNCTION_ID_MOVE_CURSOR_LEFT_LEAP,
     WAR_FUNCTION_ID_MOVE_CURSOR_UP_LEAP,
     WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT_LEAP,
+    WAR_FUNCTION_ID_GOTO_VIEWPORT_BOTTOM,
+    WAR_FUNCTION_ID_GOTO_VIEWPORT_TOP,
     //
     WAR_FUNCTION_COUNT,
 } war_function_id_enum;
@@ -2703,6 +2705,9 @@ typedef struct war_wayland_context {
     uint8_t repeat_active;
     struct timespec repeat_time;
     int repeat_timer_fd;
+    // keymap FSM state for multi-key sequences (e.g. gg)
+    uint64_t keymap_state;
+    uint32_t keymap_state_time;
 } war_wayland_context;
 
 #endif // WAR_DATA_H

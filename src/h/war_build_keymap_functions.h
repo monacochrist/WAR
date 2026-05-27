@@ -61,6 +61,8 @@ else if (strcmp(name, "war_move_cursor_up") == 0) { return war_move_cursor_up; }
 else if (strcmp(name, "war_move_cursor_down") == 0) { return war_move_cursor_down; }
 else if (strcmp(name, "war_move_cursor_down_leap") == 0) { return war_move_cursor_down_leap; }
 else if (strcmp(name, "war_move_cursor_up_leap") == 0) { return war_move_cursor_up_leap; }
+else if (strcmp(name, "war_goto_viewport_bottom") == 0) { return war_goto_viewport_bottom; }
+else if (strcmp(name, "war_goto_viewport_top") == 0) { return war_goto_viewport_top; }
 else if (strcmp(name, "war_move_cursor_left_leap") == 0) { return war_move_cursor_left_leap; }
 else if (strcmp(name, "war_move_cursor_right_leap") == 0) { return war_move_cursor_right_leap; }
 else if (strcmp(name, "war_zoom_in") == 0) { return war_zoom_in; }

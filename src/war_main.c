@@ -347,7 +347,9 @@ static void war_keyboard_key(void* data,
     war_config_context* config = env->ctx_config;
 
     uint32_t mode = WAR_MODE_ID_ROLL;
-    uint64_t current_state = 0;
+    // check timeout for pending prefix state (500ms)
+    if (ctx_wayland->keymap_state && time - ctx_wayland->keymap_state_time > 500)
+        ctx_wayland->keymap_state = 0;
     uint32_t mod = 0;
     {
         xkb_mod_index_t mi;
@@ -396,19 +398,46 @@ static void war_keyboard_key(void* data,
         cur->prefix = cur->prefix * 10 + (uint32_t)(keysym - XKB_KEY_0);
     }
 
-    size_t trans_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
-                           config->KEYMAP_KEYSYM_CAPACITY *
-                           config->KEYMAP_MOD_CAPACITY +
-                       current_state * (size_t)config->KEYMAP_KEYSYM_CAPACITY *
-                           config->KEYMAP_MOD_CAPACITY +
-                       (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
-
-    uint64_t next = keymap->next_state[trans_idx];
+    uint64_t next = 0;
+    // try from stored prefix state first (for multi-key sequences like gg)
+    if (ctx_wayland->keymap_state) {
+        size_t prefix_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
+                                config->KEYMAP_KEYSYM_CAPACITY *
+                                config->KEYMAP_MOD_CAPACITY +
+                            ctx_wayland->keymap_state *
+                                (size_t)config->KEYMAP_KEYSYM_CAPACITY *
+                                config->KEYMAP_MOD_CAPACITY +
+                            (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
+        next = keymap->next_state[prefix_idx];
+    }
+    // if no transition from prefix state, fall back to root
+    size_t trans_idx;
+    if (!next) {
+        ctx_wayland->keymap_state = 0;
+        trans_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
+                        config->KEYMAP_KEYSYM_CAPACITY *
+                        config->KEYMAP_MOD_CAPACITY +
+                    0 * (size_t)config->KEYMAP_KEYSYM_CAPACITY *
+                        config->KEYMAP_MOD_CAPACITY +
+                    (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
+        next = keymap->next_state[trans_idx];
+    }
     if (!next) { if (!is_digit) cur->prefix = 0; return; }
 
     size_t func_count_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + next;
     uint8_t count = keymap->function_count[func_count_idx];
-    if (!count) { if (!is_digit) cur->prefix = 0; return; }
+    if (!count) {
+        // prefix state — store for next keypress
+        // flag is on the SOURCE state (the state the transition leaves from)
+        uint64_t src_state = ctx_wayland->keymap_state ? ctx_wayland->keymap_state : 0;
+        size_t flag_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + src_state;
+        if (keymap->flags[flag_idx] & WAR_KEYMAP_PREFIX) {
+            ctx_wayland->keymap_state = next;
+            ctx_wayland->keymap_state_time = time;
+        }
+        if (!is_digit) cur->prefix = 0;
+        return;
+    }
 
     uint32_t repeat;
     if (is_digit) {
@@ -428,6 +457,7 @@ static void war_keyboard_key(void* data,
             if (fn) fn(env);
         }
     }
+    ctx_wayland->keymap_state = 0;
     if (!is_digit) cur->prefix = 0;
 }
 static void war_keyboard_modifiers(void* data,
@@ -907,6 +937,8 @@ int main(int argc, char** argv) {
     ctx_wayland->panning[1] = 0;
     ctx_wayland->right_bound = 1000000.0;
     ctx_wayland->top_bound = 127.0;
+    ctx_wayland->keymap_state = 0;
+    ctx_wayland->keymap_state_time = 0;
     ctx_wayland->repeat_active = 0;
     ctx_wayland->repeat_rate = 20;
     ctx_wayland->repeat_delay = 200;
