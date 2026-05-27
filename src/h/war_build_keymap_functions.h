@@ -21,6 +21,12 @@ static inline void (*war_build_keymap_functions(const char* name))(war_env*) {
 if (strcmp(name, "war_fat") == 0) { return war_fat; }
 else if (strcmp(name, "war_thin") == 0) { return war_thin; }
 else if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
+else if (strcmp(name, "war_goto_col") == 0) { return war_goto_col; }
+else if (strcmp(name, "war_goto_left_visible_bound") == 0) { return war_goto_left_visible_bound; }
+else if (strcmp(name, "war_goto_row_127") == 0) { return war_goto_row_127; }
+else if (strcmp(name, "war_goto_row_60") == 0) { return war_goto_row_60; }
+else if (strcmp(name, "war_goto_row_0") == 0) { return war_goto_row_0; }
+else if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
 else if (strcmp(name, "war_layer_1") == 0) { return war_layer_1; }
 else if (strcmp(name, "war_layer_2") == 0) { return war_layer_2; }
 else if (strcmp(name, "war_layer_3") == 0) { return war_layer_3; }

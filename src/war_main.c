@@ -206,10 +206,9 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
                         (uint32_t)env->ctx_note->instance[i].pos[1];
                     if (pitch > 127) pitch = 127;
                     for (uint32_t l = 1; l <= 9; l++) {
-                        uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS +
-                                       (l - 1);
-                        war_capture_slot* slot =
-                            &env->capture_slots[idx];
+                        uint32_t idx =
+                            pitch * WAR_CAPTURE_SLOT_LAYERS + (l - 1);
+                        war_capture_slot* slot = &env->capture_slots[idx];
                         if (slot->samples && slot->count > 0) {
                             env->play_bar_preview_note = pitch;
                             env->play_bar_preview_layer = l;
@@ -348,7 +347,8 @@ static void war_keyboard_key(void* data,
 
     uint32_t mode = WAR_MODE_ID_ROLL;
     // check timeout for pending prefix state (500ms)
-    if (ctx_wayland->keymap_state && time - ctx_wayland->keymap_state_time > 500)
+    if (ctx_wayland->keymap_state &&
+        time - ctx_wayland->keymap_state_time > 500)
         ctx_wayland->keymap_state = 0;
     uint32_t mod = 0;
     {
@@ -401,13 +401,12 @@ static void war_keyboard_key(void* data,
     uint64_t next = 0;
     // try from stored prefix state first (for multi-key sequences like gg)
     if (ctx_wayland->keymap_state) {
-        size_t prefix_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY *
-                                config->KEYMAP_KEYSYM_CAPACITY *
-                                config->KEYMAP_MOD_CAPACITY +
-                            ctx_wayland->keymap_state *
-                                (size_t)config->KEYMAP_KEYSYM_CAPACITY *
-                                config->KEYMAP_MOD_CAPACITY +
-                            (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
+        size_t prefix_idx =
+            mode * (size_t)config->KEYMAP_STATE_CAPACITY *
+                config->KEYMAP_KEYSYM_CAPACITY * config->KEYMAP_MOD_CAPACITY +
+            ctx_wayland->keymap_state * (size_t)config->KEYMAP_KEYSYM_CAPACITY *
+                config->KEYMAP_MOD_CAPACITY +
+            (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
         next = keymap->next_state[prefix_idx];
     }
     // if no transition from prefix state, fall back to root
@@ -422,15 +421,20 @@ static void war_keyboard_key(void* data,
                     (size_t)keysym * config->KEYMAP_MOD_CAPACITY + mod;
         next = keymap->next_state[trans_idx];
     }
-    if (!next) { if (!is_digit) cur->prefix = 0; return; }
+    if (!next) {
+        if (!is_digit) cur->prefix = 0;
+        return;
+    }
 
     size_t func_count_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + next;
     uint8_t count = keymap->function_count[func_count_idx];
     if (!count) {
         // prefix state — store for next keypress
         // flag is on the SOURCE state (the state the transition leaves from)
-        uint64_t src_state = ctx_wayland->keymap_state ? ctx_wayland->keymap_state : 0;
-        size_t flag_idx = mode * (size_t)config->KEYMAP_STATE_CAPACITY + src_state;
+        uint64_t src_state =
+            ctx_wayland->keymap_state ? ctx_wayland->keymap_state : 0;
+        size_t flag_idx =
+            mode * (size_t)config->KEYMAP_STATE_CAPACITY + src_state;
         if (keymap->flags[flag_idx] & WAR_KEYMAP_PREFIX) {
             ctx_wayland->keymap_state = next;
             ctx_wayland->keymap_state_time = time;
@@ -1060,7 +1064,8 @@ int main(int argc, char** argv) {
     war_piano_gutter_context* ctx_pg =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER);
     war_piano_gutter_init(ctx_pg, ctx_pool, ctx_config, ctx_vk);
-    war_piano_gutter_generate(ctx_pg, ctx_wayland->gutter_cols, ctx_wayland->gutter_rows);
+    war_piano_gutter_generate(
+        ctx_pg, ctx_wayland->gutter_cols, ctx_wayland->gutter_rows);
     env->ctx_piano_gutter = ctx_pg;
     //-------------------------------------------------------------------------
     // GRIDLINES INIT
@@ -1068,9 +1073,13 @@ int main(int argc, char** argv) {
     war_gridlines_context* ctx_gl =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_GRIDLINES);
     war_gridlines_init(ctx_gl, ctx_pool, ctx_config, ctx_vk);
-    war_gridlines_generate(ctx_gl, (double)ctx_wayland->gutter_cols,
-                           (double)(ctx_wayland->gutter_cols + ctx_wayland->num_cols),
-                           128, (uint32_t)ctx_config->HUD_GRIDLINES_INSTANCE_MAX, ctx_wayland->gutter_rows);
+    war_gridlines_generate(
+        ctx_gl,
+        (double)ctx_wayland->gutter_cols,
+        (double)(ctx_wayland->gutter_cols + ctx_wayland->num_cols),
+        128,
+        (uint32_t)ctx_config->HUD_GRIDLINES_INSTANCE_MAX,
+        ctx_wayland->gutter_rows);
     env->ctx_gridlines = ctx_gl;
     //-------------------------------------------------------------------------
     // NOTE INIT (single instance at middle C, layer 2 colour)
@@ -1084,17 +1093,18 @@ int main(int argc, char** argv) {
     //-------------------------------------------------------------------------
     war_simple_line_context* ctx_line =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_LINE);
-    uint32_t line_max = ctx_config->LINE_CELL_INSTANCE_MAX +
-                        ctx_config->LINE_BPM_INSTANCE_MAX;
+    uint32_t line_max =
+        ctx_config->LINE_CELL_INSTANCE_MAX + ctx_config->LINE_BPM_INSTANCE_MAX;
     war_line_init(ctx_line, ctx_pool, ctx_vk, line_max);
     env->ctx_line = ctx_line;
     // playback bar (vertical green line at gutter start)
     ctx_line->instance[0].pos[0] = (float)ctx_wayland->gutter_cols;
     ctx_line->instance[0].pos[1] = ctx_wayland->gutter_rows;
     ctx_line->instance[0].pos[2] = 0.0f;
-    ctx_line->instance[0].size[0] = 0.0f;    // vertical
-    ctx_line->instance[0].size[1] = 128.0f - ctx_wayland->gutter_rows;  // span full MIDI range
-    ctx_line->instance[0].width = 0.08f;     // thickness
+    ctx_line->instance[0].size[0] = 0.0f; // vertical
+    ctx_line->instance[0].size[1] =
+        128.0f - ctx_wayland->gutter_rows; // span full MIDI range
+    ctx_line->instance[0].width = 0.08f;   // thickness
     ctx_line->instance[0].color[0] = 0.0f;
     ctx_line->instance[0].color[1] = 0.8f;
     ctx_line->instance[0].color[2] = 0.0f;
@@ -1155,7 +1165,7 @@ int main(int argc, char** argv) {
                     war_keymap_context* keymap = env->ctx_keymap;
                     war_config_context* config = env->ctx_config;
                     size_t ti = (size_t)ctx_wayland->repeat_sym *
-                                config->KEYMAP_MOD_CAPACITY +
+                                    config->KEYMAP_MOD_CAPACITY +
                                 ctx_wayland->repeat_mod;
                     uint64_t next = keymap->next_state[ti];
                     if (next) {
@@ -1249,13 +1259,13 @@ int main(int argc, char** argv) {
                 uint64_t remaining =
                     slot->count - env->play_bar_preview_read_pos;
                 while (remaining >= 2) {
-                    uint64_t batch =
-                        remaining < PW_CHUNK_FLOATS ?
-                            (remaining & ~1ULL) :
-                            PW_CHUNK_FLOATS;
-                    uint32_t stereo_bytes =
-                        (uint32_t)(batch * sizeof(float));
-                    if (!war_pc_to_a(env->pc_play, 0, stereo_bytes,
+                    uint64_t batch = remaining < PW_CHUNK_FLOATS ?
+                                         (remaining & ~1ULL) :
+                                         PW_CHUNK_FLOATS;
+                    uint32_t stereo_bytes = (uint32_t)(batch * sizeof(float));
+                    if (!war_pc_to_a(env->pc_play,
+                                     0,
+                                     stereo_bytes,
                                      slot->samples +
                                          env->play_bar_preview_read_pos))
                         break;

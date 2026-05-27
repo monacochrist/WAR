@@ -233,10 +233,10 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    config,
                    1,
                    (war_mode_id[]){WAR_MODE_ID_ROLL},
-                  2,
+                   2,
                    (char*[]){"<A-l>", "<A-Right>"},
-                  WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT_LEAP,
-                  war_move_cursor_right_leap,
+                   WAR_FUNCTION_ID_MOVE_CURSOR_RIGHT_LEAP,
+                   war_move_cursor_right_leap,
                    0);
     // zoom
     war_keymap_set(keymap,
@@ -436,6 +436,34 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"gg"},
                    WAR_FUNCTION_ID_GOTO_VIEWPORT_TOP,
                    war_goto_viewport_top,
+                   0);
+    // absolute row jumps
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"gt"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_goto_row_127,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"gm"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_goto_row_60,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"gb"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_goto_row_0,
                    0);
     // octaves
     war_keymap_set(keymap,
@@ -666,6 +694,26 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_thin,
                    WAR_KEYMAP_UNIQUE_PREFIX);
+    // goto col
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"$"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_goto_col,
+                   WAR_KEYMAP_UNIQUE_PREFIX);
+    // left visible bound
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"0"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_goto_left_visible_bound,
+                   0);
 }
 
 void war_keymap_override(war_keymap_context* keymap,

@@ -1594,7 +1594,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     vkBeginCommandBuffer(cmd, &cbbi);
-    VkClearValue clear = {.color = {{0.1, 0, 0, 0}}};
+    VkClearValue clear = {.color = {{0, 0, 0, 0}}};
     VkRenderPassBeginInfo rpbi = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = ctx_vk->render_pass,

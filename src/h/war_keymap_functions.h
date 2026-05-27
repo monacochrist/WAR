@@ -44,6 +44,53 @@ static inline void war_thin(war_env* env) {
     env->ctx_cursor->instance[0].size[0] = (float)env->ctx_cursor->x_width[0];
 }
 
+static inline void war_pan_follow(war_env* env);
+
+static inline void war_goto_col(war_env* env) {
+    war_wayland_context* wl = env->ctx_wayland;
+    war_cursor_context* cur = env->ctx_cursor;
+    double col;
+    if (cur->prefix == 0) {
+        double vis_cols = (double)wl->width / (cur->cell_width * wl->zoom) - wl->gutter_cols;
+        if (vis_cols < 1) vis_cols = 1;
+        col = (double)(uint32_t)(wl->panning[0] + vis_cols + 0.5);
+    } else {
+        col = (double)cur->prefix;
+    }
+    if (col < wl->gutter_cols) col = wl->gutter_cols;
+    if (col > wl->right_bound) col = wl->right_bound;
+    cur->instance->pos[0] = (float)col;
+    war_pan_follow(env);
+}
+
+static inline void war_goto_left_visible_bound(war_env* env) {
+    war_wayland_context* wl = env->ctx_wayland;
+    war_cursor_context* cur = env->ctx_cursor;
+    double col = wl->panning[0];
+    if (col < wl->gutter_cols) col = wl->gutter_cols;
+    cur->instance->pos[0] = (float)(uint32_t)(col + 0.5);
+    war_pan_follow(env);
+}
+
+static inline void war_goto_row_127(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    cur->instance[0].pos[1] = 127;
+    war_pan_follow(env);
+}
+
+static inline void war_goto_row_60(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    cur->instance[0].pos[1] = 60;
+    war_pan_follow(env);
+}
+
+static inline void war_goto_row_0(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_wayland_context* wl = env->ctx_wayland;
+    cur->instance[0].pos[1] = wl->gutter_rows;
+    war_pan_follow(env);
+}
+
 static inline void war_pan_follow(war_env* env) {
     war_wayland_context* wl = env->ctx_wayland;
     war_cursor_context* cur = env->ctx_cursor;
