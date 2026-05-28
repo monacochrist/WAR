@@ -677,6 +677,27 @@ static inline void war_capture_audio(war_env* env) {
         if (layer >= 1 && layer <= 9) {
             uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
             if (note > 127) note = 127;
+            // trim trailing silence
+            if (env->capture_accumulator_count >= 2) {
+                uint64_t i = env->capture_accumulator_count - 2;
+                while (i >= 2) {
+                    float l = env->capture_accumulator[i];
+                    float r = env->capture_accumulator[i + 1];
+                    if (fabsf(l) >= 0.001f || fabsf(r) >= 0.001f)
+                        break;
+                    i -= 2;
+                }
+                i += 2; // last frame with signal
+                uint64_t tail = 4800; // ~100ms at 48kHz
+                uint64_t keep = i + (tail > (env->capture_accumulator_count - i) ?
+                                      env->capture_accumulator_count - i : tail);
+                if (keep < env->capture_accumulator_count) {
+                    call_king_terry("TRIM: %llu -> %llu floats",
+                                    (unsigned long long)env->capture_accumulator_count,
+                                    (unsigned long long)keep);
+                    env->capture_accumulator_count = keep;
+                }
+            }
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             free(env->capture_slots[idx].samples);
             env->capture_slots[idx].samples = env->capture_accumulator;
