@@ -348,8 +348,10 @@ static void war_keyboard_key(void* data,
     uint32_t mode = WAR_MODE_ID_ROLL;
     // check timeout for pending prefix state (500ms)
     if (ctx_wayland->keymap_state &&
-        time - ctx_wayland->keymap_state_time > 500)
+        time - ctx_wayland->keymap_state_time > 500) {
         ctx_wayland->keymap_state = 0;
+        cur->prefix = 0;
+    }
     uint32_t mod = 0;
     {
         xkb_mod_index_t mi;
@@ -484,7 +486,6 @@ static void war_keyboard_key(void* data,
             ctx_wayland->keymap_state = next;
             ctx_wayland->keymap_state_time = time;
         }
-        if (!is_digit) cur->prefix = 0;
         return;
     }
 

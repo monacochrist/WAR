@@ -2165,6 +2165,58 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                             ctx_wayland->env,
                             (float)ctx_wayland->width,
                             (float)ctx_wayland->height);
+        // gutter label: cursor row, col
+        war_font_context* font = ctx_wayland->env->ctx_font;
+        double cw = ctx_wayland->env->ctx_cursor->cell_width;
+        double ch = ctx_wayland->env->ctx_cursor->cell_height;
+        float zoom = ctx_wayland->zoom;
+        char label[32];
+        int n = snprintf(label, sizeof(label), "%.0f, %.0f",
+                         ctx_wayland->env->ctx_cursor->instance[0].pos[1],
+                         ctx_wayland->env->ctx_cursor->instance[0].pos[0]);
+        if (n < 0 || n > (int)sizeof(label)) n = 0;
+        float label_row = ctx_wayland->panning[1] + (float)(ctx_wayland->height / (ch * zoom));
+        label_row -= (float)ctx_wayland->gutter_rows / 2.0f;
+#define LABEL_OFFSET 256
+        war_vulkan_text_instance* dst = font->instance_mapped;
+        for (int i = 0; i < n; i++) {
+            unsigned char c = (unsigned char)label[i];
+            war_vulkan_text_instance* ti = &dst[LABEL_OFFSET + i];
+            ti->pos[0] = (float)ctx_wayland->gutter_cols + (float)i;
+            ti->pos[1] = label_row;
+            ti->pos[2] = 0;
+            ti->size[0] = 1.0f;
+            ti->size[1] = 1.0f;
+            ti->uv[0] = font->glyph_uv[c][0];
+            ti->uv[1] = font->glyph_uv[c][1];
+            ti->uv[2] = font->glyph_uv[c][2];
+            ti->uv[3] = font->glyph_uv[c][3];
+            ti->glyph_scale[0] = font->glyph_px_w / (float)cw;
+            ti->glyph_scale[1] = font->glyph_px_h / (float)ch;
+            ti->ascent = 0.5f + font->glyph_px_h / (2.0f * (float)ch);
+            ti->descent = 0;
+            ti->baseline = 0;
+            ti->color[0] = 1; ti->color[1] = 1; ti->color[2] = 1; ti->color[3] = 1;
+            ti->flags = 0;
+        }
+        VkViewport vp = {0, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 1};
+        VkRect2D scissor = {{0, 0}, {ctx_wayland->width, ctx_wayland->height}};
+        vkCmdSetViewport(cmd, 0, 1, &vp);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, font->pipeline);
+        float pc_data[] = {
+            (float)cw, (float)ch,
+            -ctx_wayland->panning[0] * zoom, -ctx_wayland->panning[1] * zoom,
+            zoom, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 0,
+        };
+        vkCmdPushConstants(cmd, font->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                font->pipeline_layout, 0, 1, &font->desc_set, 0, NULL);
+        VkBuffer bufs[] = {font->quad_vbo, font->instance_vbo};
+        VkDeviceSize offsets[] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
+        vkCmdDraw(cmd, 4, (uint32_t)n, 0, LABEL_OFFSET);
+#undef LABEL_OFFSET
     }
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);

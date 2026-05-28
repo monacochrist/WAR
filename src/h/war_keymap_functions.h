@@ -612,11 +612,19 @@ static inline void war_goto_viewport_bottom(war_env* env) {
 static inline void war_goto_viewport_top(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     war_wayland_context* wl = env->ctx_wayland;
-    double total_vis_rows = (double)wl->height / (cur->cell_height * wl->zoom);
-    double top = wl->panning[1] + total_vis_rows - 1;
-    if (top < 0) top = 0;
-    if (top > 127) top = 127;
-    cur->instance[0].pos[1] = (uint32_t)(top + 0.5);
+    if (cur->prefix == 0) {
+        double total_vis_rows = (double)wl->height / (cur->cell_height * wl->zoom);
+        double top = wl->panning[1] + total_vis_rows - 1;
+        if (top < 0) top = 0;
+        if (top > 127) top = 127;
+        cur->instance[0].pos[1] = (uint32_t)(top + 0.5);
+    } else {
+        double row = (double)cur->prefix;
+        if (row < 0) row = 0;
+        if (row > 127) row = 127;
+        cur->instance[0].pos[1] = (float)row;
+    }
+    war_pan_follow(env);
 }
 
 static inline void war_move_cursor_left_leap(war_env* env) {

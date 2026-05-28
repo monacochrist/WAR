@@ -436,7 +436,7 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"gg"},
                    WAR_FUNCTION_ID_GOTO_VIEWPORT_TOP,
                    war_goto_viewport_top,
-                   0);
+                   WAR_KEYMAP_UNIQUE_PREFIX);
     // absolute row jumps
     war_keymap_set(keymap,
                    config,
