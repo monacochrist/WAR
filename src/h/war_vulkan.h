@@ -582,7 +582,12 @@ static inline void war_piano_gutter_render(VkCommandBuffer cmd,
            ctx_pg->instance,
            sizeof(war_vulkan_piano_gutter_instance) * ctx_pg->instance_count);
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
-    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)screen_h}};
+    int32_t gutter_bottom =
+        (int32_t)((float)ctx_cursor->cell_height * ctx_wayland->zoom *
+                  ctx_wayland->gutter_rows);
+    if (gutter_bottom < 0) gutter_bottom = 0;
+    if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
+    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_pg->pipeline);
@@ -909,9 +914,14 @@ static inline void war_gridlines_render(VkCommandBuffer cmd,
                   ctx_wayland->zoom);
     if (gutter_right < 0) gutter_right = 0;
     if (gutter_right > (int32_t)screen_w) gutter_right = (int32_t)screen_w;
+    int32_t gutter_bottom =
+        (int32_t)((float)ctx_cursor->cell_height * ctx_wayland->zoom *
+                  ctx_wayland->gutter_rows);
+    if (gutter_bottom < 0) gutter_bottom = 0;
+    if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
     VkRect2D scissor = {
         {gutter_right, 0},
-        {(uint32_t)(screen_w - gutter_right), (uint32_t)screen_h}};
+        {(uint32_t)(screen_w - gutter_right), (uint32_t)(screen_h - gutter_bottom)}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_gl->pipeline);
@@ -954,7 +964,7 @@ static inline void war_font_init(war_font_context* font,
     float disp_advance = (float)(face->glyph->advance.x >> 6);
 
     // render 'M' at higher resolution for the atlas
-    FT_Set_Pixel_Sizes(face, 0, 80);
+    FT_Set_Pixel_Sizes(face, 0, 192);
     if (FT_Load_Char(face, 'M', FT_LOAD_RENDER))
         call_king_terry("freetype: failed to load 'M' (high-res)");
     int bmp_w = face->glyph->bitmap.width;
@@ -1303,7 +1313,11 @@ static inline void war_font_render(VkCommandBuffer cmd,
     memcpy(font->instance_mapped, &inst, sizeof(inst));
 
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
-    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)screen_h}};
+    int32_t gutter_bottom =
+        (int32_t)((float)ch * ctx_wayland->zoom * ctx_wayland->gutter_rows);
+    if (gutter_bottom < 0) gutter_bottom = 0;
+    if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
+    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, font->pipeline);
@@ -1331,7 +1345,12 @@ static inline void war_cursor_render(VkCommandBuffer cmd,
            ctx_cursor->instance,
            sizeof(war_vulkan_cursor_instance) * ctx_cursor->instance_count);
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
-    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)screen_h}};
+    int32_t gutter_bottom =
+        (int32_t)((float)ctx_cursor->cell_height * ctx_wayland->zoom *
+                  ctx_wayland->gutter_rows);
+    if (gutter_bottom < 0) gutter_bottom = 0;
+    if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
+    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(
@@ -1659,7 +1678,12 @@ static inline void war_note_render(VkCommandBuffer cmd,
            ctx_note->instance,
            sizeof(war_new_vulkan_note_instance) * ctx_note->instance_count);
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
-    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)screen_h}};
+    int32_t gutter_bottom =
+        (int32_t)(ctx_wayland->env->ctx_cursor->cell_height * ctx_wayland->zoom *
+                  ctx_wayland->gutter_rows);
+    if (gutter_bottom < 0) gutter_bottom = 0;
+    if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
+    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_note->pipeline);
@@ -1937,9 +1961,14 @@ static inline void war_line_render(VkCommandBuffer cmd,
                   ctx_wayland->env->ctx_cursor->cell_width * ctx_wayland->zoom);
     if (gutter_right < 0) gutter_right = 0;
     if (gutter_right > (int32_t)screen_w) gutter_right = (int32_t)screen_w;
+    int32_t gutter_bottom =
+        (int32_t)(ctx_wayland->env->ctx_cursor->cell_height * ctx_wayland->zoom *
+                  ctx_wayland->gutter_rows);
+    if (gutter_bottom < 0) gutter_bottom = 0;
+    if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
     VkRect2D scissor = {
         {gutter_right, 0},
-        {(uint32_t)(screen_w - gutter_right), (uint32_t)screen_h}};
+        {(uint32_t)(screen_w - gutter_right), (uint32_t)(screen_h - gutter_bottom)}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_line->pipeline);

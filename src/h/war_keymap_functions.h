@@ -105,14 +105,17 @@ static inline void war_pan_follow(war_env* env) {
     double cx = cur->instance[0].pos[0];
     double cy = cur->instance[0].pos[1];
     float* p = wl->panning;
-    if (cx < p[0]) p[0] = (float)(cx - wl->gutter_cols - 0.5);
-    if (cx >= p[0] + vis_cols) p[0] = (float)(cx - vis_cols + 1);
-    if (cy < p[1]) p[1] = (float)(cy - wl->gutter_rows - 0.5);
-    if (cy >= p[1] + vis_rows) p[1] = (float)(cy - vis_rows + 1);
-    if (cx - p[0] < wl->gutter_cols + 0.5)
-        p[0] = (float)(cx - wl->gutter_cols - 0.5);
-    if (cy - p[1] < wl->gutter_rows + 0.5)
-        p[1] = (float)(cy - wl->gutter_rows - 0.5);
+    double const margin_down = 3.0, margin_up = 0.0;
+    double const margin_right = 0.0, margin_left = 3.0;
+    double const gg = wl->gutter_rows, gc = wl->gutter_cols;
+    if (cx < p[0]) p[0] = (float)(cx - margin_left);
+    if (cx >= p[0] + vis_cols + gc) p[0] = (float)(cx - vis_cols - gc + 1 + margin_right);
+    if (cy < p[1]) p[1] = (float)(cy - margin_down);
+    if (cy >= p[1] + vis_rows + gg) p[1] = (float)(cy - vis_rows - gg + 1 + margin_up);
+    if (cx - p[0] < margin_left)
+        p[0] = (float)(cx - margin_left);
+    if (cy - p[1] < margin_down)
+        p[1] = (float)(cy - margin_down);
     if (p[0] < 0) p[0] = 0;
     if (p[1] < 0) p[1] = 0;
 }

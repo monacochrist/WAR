@@ -988,7 +988,7 @@ int main(int argc, char** argv) {
     if (FT_New_Face(env->ft_lib, "assets/fonts/FreeMono.otf", 0, &env->ft_face)) {
         call_king_terry("freetype: failed to load FreeMono.otf");
     }
-    FT_Set_Pixel_Sizes(env->ft_face, 0, 20);
+    FT_Set_Pixel_Sizes(env->ft_face, 0, 24);
     FT_Load_Char(env->ft_face, 'M', FT_LOAD_DEFAULT);
     ctx_cursor->cell_width = (double)(env->ft_face->glyph->advance.x >> 6);
     ctx_cursor->cell_height = (double)(env->ft_face->size->metrics.height >> 6);
