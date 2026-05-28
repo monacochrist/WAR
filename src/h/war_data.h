@@ -2694,6 +2694,7 @@ struct war_env {
     uint32_t play_bar_voice_note[WAR_PLAY_BAR_VOICES];
     uint32_t play_bar_voice_layer[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_pos[WAR_PLAY_BAR_VOICES];
+    uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
     // command mode (Neovim-style :)
     uint8_t cmd_active;
     char cmd_buf[256];

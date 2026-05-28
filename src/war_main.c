@@ -210,11 +210,16 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
                             pitch * WAR_CAPTURE_SLOT_LAYERS + (l - 1);
                         war_capture_slot* slot = &env->capture_slots[idx];
                         if (slot->samples && slot->count > 0) {
+                            double dur_cells = env->ctx_note->instance[i].size[0];
+                            uint64_t max_floats = (uint64_t)(dur_cells * 60.0 / bpm * 48000.0 * 2.0);
+                            if (max_floats > slot->count) max_floats = slot->count;
+                            if (max_floats & 1) max_floats &= ~1ULL;
                             for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
                                 if (!env->play_bar_voice_active[v]) {
                                     env->play_bar_voice_note[v] = pitch;
                                     env->play_bar_voice_layer[v] = l;
                                     env->play_bar_voice_read_pos[v] = 0;
+                                    env->play_bar_voice_read_limit[v] = max_floats;
                                     env->play_bar_voice_active[v] = 1;
                                     break;
                                 }
@@ -338,6 +343,7 @@ static void war_export_wav(war_env* env, const char* filename) {
     for (uint32_t i = 0; i < num_notes; i++) {
         uint32_t pitch = (uint32_t)env->ctx_note->instance[i].pos[1];
         if (pitch > 127) pitch = 127;
+        double dur_sec = env->ctx_note->instance[i].size[0] * sec_per_cell;
         double sample_sec = 0;
         for (uint32_t l = 0; l < WAR_CAPTURE_SLOT_LAYERS; l++) {
             uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + l;
@@ -347,6 +353,7 @@ static void war_export_wav(war_env* env, const char* filename) {
                 break;
             }
         }
+        if (dur_sec < sample_sec) sample_sec = dur_sec;
         double start = (double)env->ctx_note->instance[i].pos[0] * sec_per_cell;
         double end = start + sample_sec;
         if (end > total_sec) total_sec = end;
@@ -382,7 +389,10 @@ static void war_export_wav(war_env* env, const char* filename) {
 
         double start_sec = (double)env->ctx_note->instance[i].pos[0] * sec_per_cell;
         uint64_t start_frame = (uint64_t)(start_sec * sr);
+        double dur_sec = env->ctx_note->instance[i].size[0] * sec_per_cell;
+        uint64_t dur_frames = (uint64_t)(dur_sec * sr);
         uint64_t src_frames = src_count / 2;
+        if (dur_frames < src_frames) src_frames = dur_frames;
         for (uint64_t f = 0; f < src_frames && start_frame + f < total_frames; f++) {
             mix[(start_frame + f) * 2 + 0] += src[f * 2 + 0];
             mix[(start_frame + f) * 2 + 1] += src[f * 2 + 1];
@@ -1463,14 +1473,24 @@ int main(int argc, char** argv) {
                     }
                     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                     war_capture_slot* slot = &env->capture_slots[idx];
-                    uint64_t remaining =
-                        slot->samples ? slot->count - env->play_bar_voice_read_pos[v] : 0;
-                    if (remaining < 2) {
+                    uint64_t read_pos = env->play_bar_voice_read_pos[v];
+                    uint64_t read_limit = env->play_bar_voice_read_limit[v];
+                    if (read_pos >= read_limit) {
                         env->play_bar_voice_active[v] = 0;
                         continue;
                     }
-                    uint64_t batch = remaining < PW_CHUNK_FLOATS ?
-                                         (remaining & ~1ULL) :
+                    uint64_t slot_avail = slot->samples ? slot->count : 0;
+                    if (read_pos >= slot_avail) {
+                        env->play_bar_voice_active[v] = 0;
+                        continue;
+                    }
+                    uint64_t avail = (read_limit < slot_avail ? read_limit : slot_avail) - read_pos;
+                    if (avail < 2) {
+                        env->play_bar_voice_active[v] = 0;
+                        continue;
+                    }
+                    uint64_t batch = avail < PW_CHUNK_FLOATS ?
+                                         (avail & ~1ULL) :
                                          PW_CHUNK_FLOATS;
                     voice_batch[v] = batch;
                     for (uint64_t f = 0; f < batch; f++)
