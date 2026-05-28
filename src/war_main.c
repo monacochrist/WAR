@@ -335,9 +335,9 @@ static void war_keyboard_key(void* data,
         }
         return;
     }
-    xkb_keysym_t sym =
+    xkb_keysym_t raw_sym =
         xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
-    uint32_t keysym = war_normalize_keysym(sym);
+    uint32_t keysym = war_normalize_keysym(raw_sym);
     if (keysym == XKB_KEY_NoSymbol) return;
 
     war_env* env = ctx_wayland->env;
@@ -396,6 +396,50 @@ static void war_keyboard_key(void* data,
     int is_digit = (mod == 0 && keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9);
     if (is_digit) {
         cur->prefix = cur->prefix * 10 + (uint32_t)(keysym - XKB_KEY_0);
+    }
+
+    // command mode handling
+    if (env->cmd_active) {
+        if (raw_sym == XKB_KEY_Escape) {
+            env->cmd_active = 0;
+            env->cmd_len = 0;
+            cur->prefix = 0;
+            return;
+        }
+        if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
+            // execute command (for now, just exit)
+            env->cmd_active = 0;
+            env->cmd_len = 0;
+            cur->prefix = 0;
+            return;
+        }
+        if (raw_sym == XKB_KEY_BackSpace) {
+            if (env->cmd_len > 0) env->cmd_len--;
+            cur->prefix = 0;
+            return;
+        }
+        // printable ASCII via utf8 from raw sym
+        char utf8[8] = {0};
+        int n = xkb_keysym_to_utf8(raw_sym, utf8, sizeof(utf8));
+        if (n == 1 && utf8[0] >= 32 && utf8[0] <= 126) {
+            if (env->cmd_len < 255)
+                env->cmd_buf[env->cmd_len++] = utf8[0];
+        }
+        cur->prefix = 0;
+        return;
+    }
+
+    // enter command mode on ':' (check raw sym before normalizer maps it to ';')
+    if (raw_sym == XKB_KEY_colon) {
+        env->cmd_active = 1;
+        env->cmd_len = 1;
+        env->cmd_buf[0] = ':';
+        cur->prefix = 0;
+        // suppress repeat — command mode handles text separately
+        ctx_wayland->repeat_active = 0;
+        struct itimerspec off = {0};
+        timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &off, NULL);
+        return;
     }
 
     uint64_t next = 0;
@@ -888,6 +932,8 @@ int main(int argc, char** argv) {
     env->ctx_pool = ctx_pool;
     env->ctx_config = ctx_config;
     env->ctx_hot = ctx_hot;
+    env->cmd_active = 0;
+    env->cmd_len = 0;
     ctx_hot->fn_id[0] = WAR_HOT_ID_COLOR;
     ctx_hot->fn_id[1] = WAR_HOT_ID_KEYMAP;
     ctx_hot->fn_id[2] = WAR_HOT_ID_COMMAND;
@@ -989,7 +1035,7 @@ int main(int argc, char** argv) {
         call_king_terry("freetype: failed to load FreeMono.otf");
     }
     FT_Set_Pixel_Sizes(env->ft_face, 0, 24);
-    FT_Load_Char(env->ft_face, 'M', FT_LOAD_DEFAULT);
+    FT_Load_Char(env->ft_face, '*', FT_LOAD_DEFAULT);
     ctx_cursor->cell_width = (double)(env->ft_face->glyph->advance.x >> 6);
     ctx_cursor->cell_height = (double)(env->ft_face->size->metrics.height >> 6);
     ctx_wayland->gutter_rows = 3;
@@ -1170,7 +1216,8 @@ int main(int argc, char** argv) {
             uint64_t exp;
             read(ctx_wayland->repeat_timer_fd, &exp, sizeof(exp));
             if (ctx_wayland->repeat_active &&
-                ctx_wayland->repeat_sym != XKB_KEY_NoSymbol) {
+                ctx_wayland->repeat_sym != XKB_KEY_NoSymbol &&
+                !ctx_wayland->env->cmd_active) {
                 // skip digits – they are prefix accumulators, not commands
                 if (ctx_wayland->repeat_sym >= XKB_KEY_0 &&
                     ctx_wayland->repeat_sym <= XKB_KEY_9)

@@ -1777,8 +1777,10 @@ typedef struct war_font_context {
     float glyph_advance;
     float glyph_ascent;   // pixels from baseline to top
     float glyph_descent;  // pixels from baseline to bottom
-    // atlas UV for 'M'
-    float uv[4];
+    // atlas UV per glyph (indexed by ASCII code 32-126)
+    float glyph_uv[128][4];
+    // command mode render state
+    uint32_t cmd_instance_count;
 } war_font_context;
 
 typedef uint32_t war_function_id;
@@ -2691,6 +2693,10 @@ struct war_env {
     uint32_t play_bar_preview_note;
     uint32_t play_bar_preview_layer;
     uint64_t play_bar_preview_read_pos;
+    // command mode (Neovim-style :)
+    uint8_t cmd_active;
+    char cmd_buf[256];
+    uint32_t cmd_len;
     // freetype
     FT_Library ft_lib;
     FT_Face ft_face;

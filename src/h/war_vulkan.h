@@ -954,29 +954,57 @@ static inline void war_font_init(war_font_context* font,
                                  FT_Face face,
                                  double cell_px_w,
                                  double cell_px_h) {
-    font->instance_count = 1;
+    font->instance_count = 512;
+    font->cmd_instance_count = 0;
 
-    // load 'M' at the display size to get display metrics
-    if (FT_Load_Char(face, 'M', FT_LOAD_DEFAULT))
-        call_king_terry("freetype: failed to load 'M'");
+    // load '*' at the display size to get display metrics
+    if (FT_Load_Char(face, '*', FT_LOAD_DEFAULT))
+        call_king_terry("freetype: failed to load glyph for metrics");
     float disp_w = (float)(face->glyph->metrics.width >> 6);
     float disp_h = (float)(face->glyph->metrics.height >> 6);
     float disp_advance = (float)(face->glyph->advance.x >> 6);
-
-    // render 'M' at higher resolution for the atlas
-    FT_Set_Pixel_Sizes(face, 0, 192);
-    if (FT_Load_Char(face, 'M', FT_LOAD_RENDER))
-        call_king_terry("freetype: failed to load 'M' (high-res)");
-    int bmp_w = face->glyph->bitmap.width;
-    int bmp_h = face->glyph->bitmap.rows;
-    unsigned char* bmp = face->glyph->bitmap.buffer;
-    int pitch = face->glyph->bitmap.pitch;
 
     font->glyph_px_w = disp_w;
     font->glyph_px_h = disp_h;
     font->glyph_advance = disp_advance;
     font->glyph_ascent = (float)(face->size->metrics.ascender >> 6);
     font->glyph_descent = (float)(-face->size->metrics.descender >> 6);
+
+    // render all printable ASCII at high resolution for the atlas
+    FT_Set_Pixel_Sizes(face, 0, 192);
+
+#define ATLAS_GLYPH_SIZE 192
+#define ATLAS_COLS 10
+#define ATLAS_ROWS 10
+    int atlas_w = ATLAS_COLS * ATLAS_GLYPH_SIZE;
+    int atlas_h = ATLAS_ROWS * ATLAS_GLYPH_SIZE;
+    unsigned char* atlas_data = calloc(1, (size_t)atlas_w * atlas_h);
+
+    for (int c = 32; c <= 126; c++) {
+        if (FT_Load_Char(face, c, FT_LOAD_RENDER))
+            continue;
+        int col = (c - 32) % ATLAS_COLS;
+        int row = (c - 32) / ATLAS_COLS;
+        int dst_x = col * ATLAS_GLYPH_SIZE;
+        int dst_y = row * ATLAS_GLYPH_SIZE;
+        unsigned char* src = face->glyph->bitmap.buffer;
+        int src_w = face->glyph->bitmap.width;
+        int src_h = face->glyph->bitmap.rows;
+        int src_pitch = face->glyph->bitmap.pitch;
+        for (int y = 0; y < src_h && dst_y + y < atlas_h; y++) {
+            memcpy(atlas_data + (dst_y + y) * atlas_w + dst_x,
+                   src + y * src_pitch, src_w);
+        }
+        font->glyph_uv[c][0] = (float)dst_x / atlas_w;
+        font->glyph_uv[c][1] = (float)dst_y / atlas_h;
+        font->glyph_uv[c][2] = (float)(dst_x + src_w) / atlas_w;
+        font->glyph_uv[c][3] = (float)(dst_y + src_h) / atlas_h;
+    }
+    // fallback for non-printable — use '*' UV
+    font->glyph_uv[0][0] = font->glyph_uv['*'][0];
+    font->glyph_uv[0][1] = font->glyph_uv['*'][1];
+    font->glyph_uv[0][2] = font->glyph_uv['*'][2];
+    font->glyph_uv[0][3] = font->glyph_uv['*'][3];
 
     // restore display size
     FT_Set_Pixel_Sizes(face, 0, (FT_UInt)cell_px_h);
@@ -986,7 +1014,7 @@ static inline void war_font_init(war_font_context* font,
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = VK_FORMAT_R8_UNORM,
-        .extent = {bmp_w > 0 ? (uint32_t)bmp_w : 1, bmp_h > 0 ? (uint32_t)bmp_h : 1, 1},
+        .extent = {(uint32_t)atlas_w, (uint32_t)atlas_h, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -1014,17 +1042,18 @@ static inline void war_font_init(war_font_context* font,
     WASSERT(res == VK_SUCCESS);
     vkBindImageMemory(ctx_vk->device, font->atlas_image, font->atlas_memory, 0);
 
-    // upload bitmap data
+    // upload atlas data
     void* mapped;
     vkMapMemory(ctx_vk->device, font->atlas_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
     VkImageSubresource sub = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
     VkSubresourceLayout layout;
     vkGetImageSubresourceLayout(ctx_vk->device, font->atlas_image, &sub, &layout);
     uint8_t* dst = (uint8_t*)mapped + layout.offset;
-    for (int y = 0; y < bmp_h && y < (int)layout.size / layout.rowPitch; y++) {
-        memcpy(dst + y * layout.rowPitch, bmp + y * pitch, bmp_w);
+    for (int y = 0; y < atlas_h && y < (int)layout.size / layout.rowPitch; y++) {
+        memcpy(dst + y * layout.rowPitch, atlas_data + y * atlas_w, atlas_w);
     }
     vkUnmapMemory(ctx_vk->device, font->atlas_memory);
+    free(atlas_data);
 
     // image view
     VkImageViewCreateInfo ivci = {
@@ -1276,11 +1305,7 @@ static inline void war_font_init(war_font_context* font,
     vkBindBufferMemory(ctx_vk->device, font->instance_vbo, font->instance_vbo_memory, 0);
     vkMapMemory(ctx_vk->device, font->instance_vbo_memory, 0, VK_WHOLE_SIZE, 0, &font->instance_mapped);
 
-    // atlas UV (whole image)
-    font->uv[0] = 0;
-    font->uv[1] = 0;
-    font->uv[2] = 1;
-    font->uv[3] = 1;
+    // glyph_uv is now set per-char above; glyph_uv[0] = '*' fallback
 }
 
 static inline void war_font_render(VkCommandBuffer cmd,
@@ -1298,10 +1323,10 @@ static inline void war_font_render(VkCommandBuffer cmd,
     inst.pos[1] = cur->instance[0].pos[1];
     inst.size[0] = 1.0f;
     inst.size[1] = 1.0f;
-    inst.uv[0] = font->uv[0];
-    inst.uv[1] = font->uv[1];
-    inst.uv[2] = font->uv[2];
-    inst.uv[3] = font->uv[3];
+    inst.uv[0] = font->glyph_uv['*'][0];
+    inst.uv[1] = font->glyph_uv['*'][1];
+    inst.uv[2] = font->glyph_uv['*'][2];
+    inst.uv[3] = font->glyph_uv['*'][3];
     inst.glyph_scale[0] = font->glyph_px_w / (float)cw;
     inst.glyph_scale[1] = font->glyph_px_h / (float)ch;
     inst.ascent = 0.5f + font->glyph_px_h / (2.0f * (float)ch);
@@ -1332,7 +1357,78 @@ static inline void war_font_render(VkCommandBuffer cmd,
     VkBuffer bufs[] = {font->quad_vbo, font->instance_vbo};
     VkDeviceSize offsets[] = {0, 0};
     vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
-    vkCmdDraw(cmd, 4, font->instance_count, 0, 0);
+    vkCmdDraw(cmd, 4, 1, 0, 0);
+}
+
+static inline void war_font_render_cmd(VkCommandBuffer cmd,
+                                       war_font_context* font,
+                                       war_wayland_context* ctx_wayland,
+                                       war_cursor_context* cur,
+                                       war_env* env,
+                                       float screen_w, float screen_h) {
+    if (!font || !env->cmd_active || !env->cmd_len) return;
+    if (!font->instance_count) return;
+
+    double cw = cur->cell_width, ch = cur->cell_height;
+    float zoom = ctx_wayland->zoom;
+    uint32_t count = env->cmd_len;
+
+    font->cmd_instance_count = count;
+    war_vulkan_text_instance* inst = font->instance_mapped;
+    // skip index 0 (used by cursor glyph)
+
+    // position: gutter row closest to the grid
+    float gutter_row = ctx_wayland->panning[1] + (float)(screen_h / (ch * zoom));
+    gutter_row -= (float)ctx_wayland->gutter_rows;
+
+    for (uint32_t i = 0; i < count; i++) {
+        unsigned char c = (unsigned char)env->cmd_buf[i];
+        war_vulkan_text_instance* ti = &inst[1 + i];
+        ti->pos[0] = (float)ctx_wayland->gutter_cols + (float)i;
+        ti->pos[1] = gutter_row;
+        ti->pos[2] = 0;
+        ti->size[0] = 1.0f;
+        ti->size[1] = 1.0f;
+        if (c >= 32 && c <= 126) {
+            ti->uv[0] = font->glyph_uv[c][0];
+            ti->uv[1] = font->glyph_uv[c][1];
+            ti->uv[2] = font->glyph_uv[c][2];
+            ti->uv[3] = font->glyph_uv[c][3];
+        } else {
+            ti->uv[0] = font->glyph_uv[0][0];
+            ti->uv[1] = font->glyph_uv[0][1];
+            ti->uv[2] = font->glyph_uv[0][2];
+            ti->uv[3] = font->glyph_uv[0][3];
+        }
+        ti->glyph_scale[0] = font->glyph_px_w / (float)cw;
+        ti->glyph_scale[1] = font->glyph_px_h / (float)ch;
+        ti->ascent = 0.5f + font->glyph_px_h / (2.0f * (float)ch);
+        ti->descent = 0;
+        ti->baseline = 0;
+        ti->color[0] = 1; ti->color[1] = 1; ti->color[2] = 1; ti->color[3] = 1;
+        ti->flags = 0;
+    }
+
+    VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
+    // full-screen scissor (no bottom clip) so command text appears on gutter
+    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)screen_h}};
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, font->pipeline);
+    float pc_data[] = {
+        (float)cw, (float)ch,
+        -ctx_wayland->panning[0] * zoom, -ctx_wayland->panning[1] * zoom,
+        zoom, 0, screen_w, screen_h, 0, 0,
+    };
+    vkCmdPushConstants(cmd, font->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            font->pipeline_layout, 0, 1, &font->desc_set, 0, NULL);
+    VkBuffer bufs[] = {font->quad_vbo, font->instance_vbo};
+    VkDeviceSize offsets[] = {0, 0};
+    vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
+    vkCmdDraw(cmd, 4, count, 0, 1);
+
+    // restore bottom scissor for subsequent passes (none follow, but be tidy)
 }
 
 static inline void war_cursor_render(VkCommandBuffer cmd,
@@ -2062,13 +2158,21 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                       ctx_wayland,
                       (float)ctx_wayland->width,
                       (float)ctx_wayland->height);
-    if (ctx_wayland->env->ctx_font)
+    if (ctx_wayland->env->ctx_font) {
         war_font_render(cmd,
                         ctx_wayland->env->ctx_font,
                         ctx_wayland,
                         ctx_wayland->env->ctx_cursor,
                         (float)ctx_wayland->width,
                         (float)ctx_wayland->height);
+        war_font_render_cmd(cmd,
+                            ctx_wayland->env->ctx_font,
+                            ctx_wayland,
+                            ctx_wayland->env->ctx_cursor,
+                            ctx_wayland->env,
+                            (float)ctx_wayland->width,
+                            (float)ctx_wayland->height);
+    }
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
 
