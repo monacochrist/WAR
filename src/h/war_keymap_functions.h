@@ -603,7 +603,7 @@ static inline void war_move_cursor_up_leap(war_env* env) {
 static inline void war_goto_viewport_bottom(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     war_wayland_context* wl = env->ctx_wayland;
-    double bottom = wl->panning[1];
+    double bottom = wl->panning[1] + wl->gutter_rows;
     if (bottom < wl->gutter_rows) bottom = wl->gutter_rows;
     if (bottom > 127) bottom = 127;
     cur->instance[0].pos[1] = (uint32_t)(bottom + 0.5);

@@ -407,21 +407,22 @@ static void war_keyboard_key(void* data,
             return;
         }
         if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
-            // execute command (for now, just exit)
+            if (env->cmd_len == 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w')
+                fprintf(stderr, "hello world\n");
             env->cmd_active = 0;
             env->cmd_len = 0;
             cur->prefix = 0;
             return;
         }
         if (raw_sym == XKB_KEY_BackSpace) {
-            if (env->cmd_len > 0) env->cmd_len--;
+            if (env->cmd_len > 1) env->cmd_len--;
             cur->prefix = 0;
             return;
         }
         // printable ASCII via utf8 from raw sym
         char utf8[8] = {0};
         int n = xkb_keysym_to_utf8(raw_sym, utf8, sizeof(utf8));
-        if (n == 1 && utf8[0] >= 32 && utf8[0] <= 126) {
+        if (n > 1 && utf8[0] >= 32 && utf8[0] <= 126) {
             if (env->cmd_len < 255)
                 env->cmd_buf[env->cmd_len++] = utf8[0];
         }

@@ -1377,9 +1377,8 @@ static inline void war_font_render_cmd(VkCommandBuffer cmd,
     war_vulkan_text_instance* inst = font->instance_mapped;
     // skip index 0 (used by cursor glyph)
 
-    // position: gutter row closest to the grid
-    float gutter_row = ctx_wayland->panning[1] + (float)(screen_h / (ch * zoom));
-    gutter_row -= (float)ctx_wayland->gutter_rows;
+    // position: bottom* of visible area
+    float gutter_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1;
 
     for (uint32_t i = 0; i < count; i++) {
         unsigned char c = (unsigned char)env->cmd_buf[i];
@@ -2159,12 +2158,6 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                       (float)ctx_wayland->width,
                       (float)ctx_wayland->height);
     if (ctx_wayland->env->ctx_font) {
-        war_font_render(cmd,
-                        ctx_wayland->env->ctx_font,
-                        ctx_wayland,
-                        ctx_wayland->env->ctx_cursor,
-                        (float)ctx_wayland->width,
-                        (float)ctx_wayland->height);
         war_font_render_cmd(cmd,
                             ctx_wayland->env->ctx_font,
                             ctx_wayland,
