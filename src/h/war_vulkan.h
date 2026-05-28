@@ -2028,7 +2028,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             ctx_wayland->gutter_cols;
         if (vis_cols < 1) vis_cols = 1;
         double start_col = ctx_wayland->panning[0];
-        double end_col = start_col + vis_cols + 1;
+        double end_col = start_col + vis_cols + ctx_wayland->gutter_cols + 1;
         if (end_col > ctx_wayland->right_bound)
             end_col = ctx_wayland->right_bound;
         war_gridlines_generate(

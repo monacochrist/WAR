@@ -106,7 +106,7 @@ static inline void war_pan_follow(war_env* env) {
     double cy = cur->instance[0].pos[1];
     float* p = wl->panning;
     double const margin_down = 3.0, margin_up = 0.0;
-    double const margin_right = 0.0, margin_left = 3.0;
+    double const margin_right = 0.0, margin_left = 4.0;
     double const gg = wl->gutter_rows, gc = wl->gutter_cols;
     if (cx < p[0]) p[0] = (float)(cx - margin_left);
     if (cx >= p[0] + vis_cols + gc) p[0] = (float)(cx - vis_cols - gc + 1 + margin_right);
@@ -116,6 +116,8 @@ static inline void war_pan_follow(war_env* env) {
         p[0] = (float)(cx - margin_left);
     if (cy - p[1] < margin_down)
         p[1] = (float)(cy - margin_down);
+    p[0] = (float)(int)(p[0] + 0.5);
+    p[1] = (float)(int)(p[1] + 0.5);
     if (p[0] < 0) p[0] = 0;
     if (p[1] < 0) p[1] = 0;
 }
