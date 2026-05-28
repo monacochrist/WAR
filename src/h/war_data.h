@@ -2689,10 +2689,11 @@ struct war_env {
     double play_bar_position_seconds;
     uint32_t play_bar_last_frame_ms;
     double play_bar_prev_cell_pos;
-    uint8_t play_bar_preview_active;
-    uint32_t play_bar_preview_note;
-    uint32_t play_bar_preview_layer;
-    uint64_t play_bar_preview_read_pos;
+#define WAR_PLAY_BAR_VOICES 64
+    uint8_t play_bar_voice_active[WAR_PLAY_BAR_VOICES];
+    uint32_t play_bar_voice_note[WAR_PLAY_BAR_VOICES];
+    uint32_t play_bar_voice_layer[WAR_PLAY_BAR_VOICES];
+    uint64_t play_bar_voice_read_pos[WAR_PLAY_BAR_VOICES];
     // command mode (Neovim-style :)
     uint8_t cmd_active;
     char cmd_buf[256];

@@ -658,14 +658,14 @@ static inline void war_toggle_playback(war_env* env) {
     if (env->play_bar_playing) {
         env->play_bar_playing = 0;
         env->play_bar_position_seconds = 0.0;
-        env->play_bar_preview_active = 0;
+        memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
         line->instance[1].pos[0] = gc;
     } else {
         env->play_bar_playing = 1;
         env->play_bar_position_seconds = 0.0;
         env->play_bar_last_frame_ms = 0;
         env->play_bar_prev_cell_pos = (double)gc;
-        env->play_bar_preview_active = 0;
+        memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
         line->instance[1].pos[0] = gc;
     }
 }
