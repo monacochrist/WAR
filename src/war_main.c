@@ -1135,7 +1135,6 @@ int main(int argc, char** argv) {
     ctx_wayland->panning[0] = 0;
     ctx_wayland->panning[1] = 0;
     ctx_wayland->right_bound = 1000000.0;
-    ctx_wayland->top_bound = 127.0;
     ctx_wayland->keymap_state = 0;
     ctx_wayland->keymap_state_time = 0;
     ctx_wayland->repeat_active = 0;
@@ -1188,6 +1187,7 @@ int main(int argc, char** argv) {
     ctx_cursor->cell_width = (double)(env->ft_face->glyph->advance.x >> 6);
     ctx_cursor->cell_height = (double)(env->ft_face->size->metrics.height >> 6);
     ctx_wayland->gutter_rows = 3;
+    ctx_wayland->top_bound = 127.0 + ctx_wayland->gutter_rows;
     ctx_wayland->gutter_cols = 4;
     ctx_wayland->num_cols = ctx_wayland->width / ctx_cursor->cell_width;
     ctx_wayland->num_rows = ctx_wayland->height / ctx_cursor->cell_height;
@@ -1197,7 +1197,7 @@ int main(int argc, char** argv) {
     war_cursor_init(ctx_cursor, ctx_pool, ctx_config, ctx_vk);
     ctx_cursor->instance_count = 1;
     ctx_cursor->instance[0].pos[0] = ctx_wayland->gutter_cols;
-    ctx_cursor->instance[0].pos[1] = 60;
+    ctx_cursor->instance[0].pos[1] = 60.0 + (double)ctx_wayland->gutter_rows;
     ctx_cursor->instance[0].size[0] = 1;
     ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->layer = 1;

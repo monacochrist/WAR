@@ -74,13 +74,13 @@ static inline void war_goto_left_visible_bound(war_env* env) {
 
 static inline void war_goto_row_127(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
-    cur->instance[0].pos[1] = 127;
+    cur->instance[0].pos[1] = 127.0 + (double)env->ctx_wayland->gutter_rows;
     war_pan_follow(env);
 }
 
 static inline void war_goto_row_60(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
-    cur->instance[0].pos[1] = 60;
+    cur->instance[0].pos[1] = 60.0 + (double)env->ctx_wayland->gutter_rows;
     war_pan_follow(env);
 }
 
@@ -579,16 +579,22 @@ static inline void war_move_cursor_left(war_env* env) {
 static inline void war_move_cursor_up(war_env* env) {
     war_cursor_context* cursor = env->ctx_cursor;
     double bound = env->ctx_wayland->top_bound;
-    if (cursor->instance_count && cursor->instance[0].pos[1] < bound)
-        cursor->instance[0].pos[1] += 1;
+    if (cursor->instance_count) {
+        double pos = cursor->instance[0].pos[1];
+        if (pos < bound - 0.5)
+            cursor->instance[0].pos[1] = (double)(uint32_t)(pos + 1.5);
+    }
     war_pan_follow(env);
 }
 
 static inline void war_move_cursor_down(war_env* env) {
     war_cursor_context* cursor = env->ctx_cursor;
     double bound = env->ctx_wayland->gutter_rows + 0.5;
-    if (cursor->instance_count && cursor->instance[0].pos[1] > bound)
-        cursor->instance[0].pos[1] -= 1;
+    if (cursor->instance_count) {
+        double pos = cursor->instance[0].pos[1];
+        if (pos > bound)
+            cursor->instance[0].pos[1] = (double)(uint32_t)(pos - 0.5);
+    }
     war_pan_follow(env);
 }
 
@@ -605,7 +611,7 @@ static inline void war_goto_viewport_bottom(war_env* env) {
     war_wayland_context* wl = env->ctx_wayland;
     double bottom = wl->panning[1] + wl->gutter_rows;
     if (bottom < wl->gutter_rows) bottom = wl->gutter_rows;
-    if (bottom > 127) bottom = 127;
+    if (bottom > wl->top_bound) bottom = wl->top_bound;
     cur->instance[0].pos[1] = (uint32_t)(bottom + 0.5);
 }
 
@@ -616,12 +622,12 @@ static inline void war_goto_viewport_top(war_env* env) {
         double total_vis_rows = (double)wl->height / (cur->cell_height * wl->zoom);
         double top = wl->panning[1] + total_vis_rows - 1;
         if (top < 0) top = 0;
-        if (top > 127) top = 127;
+        if (top > wl->top_bound) top = wl->top_bound;
         cur->instance[0].pos[1] = (uint32_t)(top + 0.5);
     } else {
         double row = (double)cur->prefix;
         if (row < 0) row = 0;
-        if (row > 127) row = 127;
+        if (row > wl->top_bound) row = wl->top_bound;
         cur->instance[0].pos[1] = (float)row;
     }
     war_pan_follow(env);

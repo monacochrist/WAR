@@ -157,7 +157,7 @@ ctx_lua = {
     HUD_STATUS_TOP_INSTANCE_MAX                 = 1,
     HUD_STATUS_MIDDLE_INSTANCE_MAX              = 1,
     HUD_LINE_NUMBERS_INSTANCE_MAX               = 128,
-    HUD_PIANO_INSTANCE_MAX                      = 128,
+    HUD_PIANO_INSTANCE_MAX                      = 256,
     HUD_EXPLORE_INSTANCE_MAX                    = 1,
     -- hud line context
     HUD_LINE_COUNT                              = 1,

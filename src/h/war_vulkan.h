@@ -553,22 +553,24 @@ static inline void war_piano_gutter_init(war_piano_gutter_context* ctx_pg,
 static inline void war_piano_gutter_generate(war_piano_gutter_context* ctx_pg,
                                              uint32_t gutter_cols,
                                              uint32_t gutter_rows) {
-    ctx_pg->instance_count = 128;
+    int idx = 0;
+    // MIDI keys 0-127 at rows gutter_rows to gutter_rows+127
     for (uint32_t i = 0; i < 128; i++) {
-        if ((int)i < (int)gutter_rows) { continue; }
         uint32_t c = i % 12;
         int black = (c == 1 || c == 3 || c == 6 || c == 8 || c == 10);
-        ctx_pg->instance[i].color[0] = black ? 0 : 1;
-        ctx_pg->instance[i].color[1] = black ? 0 : 1;
-        ctx_pg->instance[i].color[2] = black ? 0 : 1;
-        ctx_pg->instance[i].color[3] = 1;
-        ctx_pg->instance[i].pos[0] = 0.0f;
-        ctx_pg->instance[i].pos[1] = (float)i;
-        ctx_pg->instance[i].pos[2] = 0;
-        ctx_pg->instance[i].size[0] = (float)gutter_cols;
-        ctx_pg->instance[i].size[1] = 1;
-        ctx_pg->instance[i].flags = 0;
+        ctx_pg->instance[idx].color[0] = black ? 0 : 1;
+        ctx_pg->instance[idx].color[1] = black ? 0 : 1;
+        ctx_pg->instance[idx].color[2] = black ? 0 : 1;
+        ctx_pg->instance[idx].color[3] = 1;
+        ctx_pg->instance[idx].pos[0] = 0.0f;
+        ctx_pg->instance[idx].pos[1] = (float)(gutter_rows + i);
+        ctx_pg->instance[idx].pos[2] = 0;
+        ctx_pg->instance[idx].size[0] = (float)gutter_cols;
+        ctx_pg->instance[idx].size[1] = 1;
+        ctx_pg->instance[idx].flags = 0;
+        idx++;
     }
+    ctx_pg->instance_count = (uint32_t)idx;
 }
 
 static inline void war_piano_gutter_render(VkCommandBuffer cmd,
@@ -2130,7 +2132,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             ctx_wayland->env->ctx_gridlines,
             start_col,
             end_col,
-            128,
+            128 + ctx_wayland->gutter_rows,
             ctx_wayland->env->ctx_config->HUD_GRIDLINES_INSTANCE_MAX,
             ctx_wayland->gutter_rows);
         war_gridlines_render(cmd,
@@ -2172,7 +2174,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         float zoom = ctx_wayland->zoom;
         char label[32];
         int n = snprintf(label, sizeof(label), "%.0f, %.0f",
-                         ctx_wayland->env->ctx_cursor->instance[0].pos[1],
+                         ctx_wayland->env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows,
                          ctx_wayland->env->ctx_cursor->instance[0].pos[0]);
         if (n < 0 || n > (int)sizeof(label)) n = 0;
         float label_row = ctx_wayland->panning[1] + (float)(ctx_wayland->height / (ch * zoom));
