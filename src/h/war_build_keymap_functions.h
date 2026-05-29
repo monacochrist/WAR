@@ -23,6 +23,7 @@ else if (strcmp(name, "war_thin") == 0) { return war_thin; }
 else if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
 else if (strcmp(name, "war_goto_col") == 0) { return war_goto_col; }
 else if (strcmp(name, "war_goto_left_visible_bound") == 0) { return war_goto_left_visible_bound; }
+else if (strcmp(name, "war_pan_center_on_cursor") == 0) { return war_pan_center_on_cursor; }
 else if (strcmp(name, "war_goto_row_127") == 0) { return war_goto_row_127; }
 else if (strcmp(name, "war_goto_row_60") == 0) { return war_goto_row_60; }
 else if (strcmp(name, "war_goto_row_0") == 0) { return war_goto_row_0; }
@@ -61,6 +62,9 @@ else if (strcmp(name, "war_play_o") == 0) { return war_play_o; }
 else if (strcmp(name, "war_play_p") == 0) { return war_play_p; }
 else if (strcmp(name, "war_play_left_bracket") == 0) { return war_play_left_bracket; }
 else if (strcmp(name, "war_play_right_bracket") == 0) { return war_play_right_bracket; }
+else if (strcmp(name, "war_step_mode_fat") == 0) { return war_step_mode_fat; }
+else if (strcmp(name, "war_step_mode_thin") == 0) { return war_step_mode_thin; }
+else if (strcmp(name, "war_reset_step") == 0) { return war_reset_step; }
 else if (strcmp(name, "war_move_cursor_right") == 0) { return war_move_cursor_right; }
 else if (strcmp(name, "war_move_cursor_left") == 0) { return war_move_cursor_left; }
 else if (strcmp(name, "war_move_cursor_up") == 0) { return war_move_cursor_up; }

@@ -1202,6 +1202,7 @@ int main(int argc, char** argv) {
     ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->layer = 1;
     ctx_cursor->octave = 4;
+    ctx_cursor->step = 0.0;
     double vis_cols = (double)ctx_wayland->width /
                           (ctx_cursor->cell_width * ctx_wayland->zoom) -
                       ctx_wayland->gutter_cols;

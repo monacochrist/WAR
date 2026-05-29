@@ -387,7 +387,17 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_preview_toggle,
                    0);
-    // set cursor width to slot duration (s)
+    // set cursor width to slot duration (a)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"a"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_set_width_to_duration,
+                   0);
+    // reset step to 1.0 (s)
     war_keymap_set(keymap,
                    config,
                    1,
@@ -395,7 +405,7 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    1,
                    (char*[]){"s"},
                    WAR_FUNCTION_ID_NONE,
-                   war_set_width_to_duration,
+                   war_reset_step,
                    0);
     // place note at cursor (z)
     war_keymap_set(keymap,
@@ -693,6 +703,25 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"t"},
                    WAR_FUNCTION_ID_NONE,
                    war_thin,
+                   WAR_KEYMAP_UNIQUE_PREFIX);
+    // step mode fat (shift+f) and thin (shift+t)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"F"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_step_mode_fat,
+                   WAR_KEYMAP_UNIQUE_PREFIX);
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"T"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_step_mode_thin,
                    WAR_KEYMAP_UNIQUE_PREFIX);
     // goto col
     war_keymap_set(keymap,
