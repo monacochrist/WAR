@@ -2094,7 +2094,7 @@ static inline void war_line_render(VkCommandBuffer cmd,
 }
 
 static inline void war_render_frame(war_wayland_context* ctx_wayland,
-                                    war_vulkan_context* ctx_vk) {
+                                    war_vulkan_context* ctx_vk, war_color_context* ctx_color) {
     VkCommandBuffer cmd;
     vkAllocateCommandBuffers(ctx_vk->device, &ctx_vk->cbai, &cmd);
     VkCommandBufferBeginInfo cbbi = {
@@ -2102,7 +2102,12 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     vkBeginCommandBuffer(cmd, &cbbi);
-    VkClearValue clear = {.color = {{0, 0, 0, 0}}};
+    VkClearValue clear = {.color = {{
+        ((ctx_color->background >> 24) & 0xFF) / 255.0f,
+        ((ctx_color->background >> 16) & 0xFF) / 255.0f,
+        ((ctx_color->background >> 8) & 0xFF) / 255.0f,
+        (ctx_color->background & 0xFF) / 255.0f
+    }}};
     VkRenderPassBeginInfo rpbi = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = ctx_vk->render_pass,
@@ -2232,9 +2237,10 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 }
 
 static inline void war_render_init_frame(war_wayland_context* ctx_wayland,
-                                         war_vulkan_context* ctx_vk) {
+                                         war_vulkan_context* ctx_vk,
+                                         war_color_context* ctx_color) {
     war_render_init(ctx_wayland, ctx_vk);
-    war_render_frame(ctx_wayland, ctx_vk);
+    war_render_frame(ctx_wayland, ctx_vk, ctx_color);
 }
 
 static inline void war_vulkan_init(war_wayland_context* ctx_wayland,

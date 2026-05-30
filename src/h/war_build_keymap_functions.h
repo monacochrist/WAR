@@ -65,6 +65,7 @@ else if (strcmp(name, "war_play_right_bracket") == 0) { return war_play_right_br
 else if (strcmp(name, "war_step_mode_fat") == 0) { return war_step_mode_fat; }
 else if (strcmp(name, "war_step_mode_thin") == 0) { return war_step_mode_thin; }
 else if (strcmp(name, "war_reset_step") == 0) { return war_reset_step; }
+else if (strcmp(name, "war_midi_mode") == 0) { return war_midi_mode; }
 else if (strcmp(name, "war_move_cursor_right") == 0) { return war_move_cursor_right; }
 else if (strcmp(name, "war_move_cursor_left") == 0) { return war_move_cursor_left; }
 else if (strcmp(name, "war_move_cursor_up") == 0) { return war_move_cursor_up; }

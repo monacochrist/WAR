@@ -340,6 +340,19 @@ static inline int32_t war_octave_to_midi_base(int32_t octave) {
     return (octave + 1) * 12;
 }
 
+static inline void _war_preview_start_voice(war_env* env, uint32_t note, uint32_t layer, uint32_t idx) {
+    for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+        if (!env->preview_voice_active[v]) {
+            env->preview_voice_note[v] = note;
+            env->preview_voice_layer[v] = layer;
+            env->preview_voice_read_pos[v] = 0;
+            env->preview_voice_active[v] = 1;
+            break;
+        }
+    }
+    (void)idx;
+}
+
 static inline void war_play_q(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
     int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
@@ -347,243 +360,134 @@ static inline void war_play_q(war_env* env) {
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_w(war_env* env) {
-    uint32_t note = 1 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(1 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_e(war_env* env) {
-    uint32_t note = 2 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(2 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_r(war_env* env) {
-    uint32_t note = 3 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(3 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_t(war_env* env) {
-    uint32_t note = 4 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(4 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_y(war_env* env) {
-    uint32_t note = 5 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(5 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_u(war_env* env) {
-    uint32_t note = 6 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(6 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_i(war_env* env) {
-    uint32_t note = 7 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(7 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_o(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
-    uint32_t note = 8 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(8 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_p(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
-    uint32_t note = 9 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(9 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_left_bracket(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
-    uint32_t note = 10 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(10 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_play_right_bracket(war_env* env) {
     if (env->ctx_cursor->octave == 10) { return; }
-    uint32_t note = 11 + (env->ctx_cursor->octave + 1) * 12;
+    int32_t base = war_octave_to_midi_base((int32_t)env->ctx_cursor->octave);
+    uint32_t note = (uint32_t)(11 + base);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
-    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
+    if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
 }
 
 static inline void war_step_mode_fat(war_env* env) {
@@ -600,6 +504,28 @@ static inline void war_reset_step(war_env* env) {
     env->ctx_cursor->step = 0.0;
     env->ctx_cursor->x_width[0] = 1.0;
     env->ctx_cursor->instance[0].size[0] = 1.0f;
+}
+
+static inline void war_midi_mode(war_env* env) {
+    env->active_mode = (env->active_mode == WAR_MODE_ID_MIDI)
+                           ? WAR_MODE_ID_ROLL
+                           : WAR_MODE_ID_MIDI;
+}
+
+static inline int _war_keysym_to_midi_offset(uint32_t keysym) {
+    if (keysym == XKB_KEY_q) return 0;
+    if (keysym == XKB_KEY_w) return 1;
+    if (keysym == XKB_KEY_e) return 2;
+    if (keysym == XKB_KEY_r) return 3;
+    if (keysym == XKB_KEY_t) return 4;
+    if (keysym == XKB_KEY_y) return 5;
+    if (keysym == XKB_KEY_u) return 6;
+    if (keysym == XKB_KEY_i) return 7;
+    if (keysym == XKB_KEY_o) return 8;
+    if (keysym == XKB_KEY_p) return 9;
+    if (keysym == XKB_KEY_bracketleft) return 10;
+    if (keysym == XKB_KEY_bracketright) return 11;
+    return -1;
 }
 
 static inline void war_move_cursor_right(war_env* env) {
@@ -726,7 +652,7 @@ static inline void war_capture_audio(war_env* env) {
         // second press: stop capture and save to current note/layer
         uint32_t layer = env->ctx_cursor->layer;
         if (layer >= 1 && layer <= 9) {
-            uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+            uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
             if (note > 127) note = 127;
             // trim trailing silence
             if (env->capture_accumulator_count >= 2) {
@@ -761,13 +687,13 @@ static inline void war_capture_audio(war_env* env) {
         }
         env->atomics->capture = 0;
         call_king_terry("CAPTURE: saved to note=%u layer=%u",
-                        (uint32_t)env->ctx_cursor->instance[0].pos[1],
+                        (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows),
                         env->ctx_cursor->layer);
     } else {
         // clear existing slot data at current note/layer
         uint32_t layer = env->ctx_cursor->layer;
         if (layer >= 1 && layer <= 9) {
-            uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+            uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
             if (note > 127) note = 127;
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             free(env->capture_slots[idx].samples);
@@ -783,33 +709,24 @@ static inline void war_capture_audio(war_env* env) {
         env->capture_accumulator_count = 0;
         env->capture_accumulator_capacity = 0;
         call_king_terry("CAPTURE: ON at note=%u layer=%u",
-                        (uint32_t)env->ctx_cursor->instance[0].pos[1],
+                        (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows),
                         env->ctx_cursor->layer);
     }
 }
 
 static inline void war_preview_toggle(war_env* env) {
-    uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+    uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) return;
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
-    env->preview_note = note;
-    env->preview_layer = layer;
-    // flush old data in play ring buffer so new preview writes don't get stuck
-    env->pc_play->i_from_wr = env->pc_play->i_to_a;
-    env->preview_read_pos = 0;
-    env->preview_active = 1;
-    call_king_terry("PREVIEW: start note=%u layer=%u count=%u",
-                    note,
-                    layer,
-                    env->capture_slots[idx].count);
+    _war_preview_start_voice(env, note, layer, idx);
 }
 
 static inline void war_set_width_to_duration(war_env* env) {
-    uint32_t note = (uint32_t)env->ctx_cursor->instance[0].pos[1];
+    uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
     if (note > 127) note = 127;
     uint32_t layer = env->ctx_cursor->layer;
     if (layer < 1 || layer > 9) layer = 1;

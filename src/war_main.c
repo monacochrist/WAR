@@ -203,7 +203,7 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
                 if (ns >= env->play_bar_prev_cell_pos &&
                     ns < current_cell_pos) {
                     uint32_t pitch =
-                        (uint32_t)env->ctx_note->instance[i].pos[1];
+                        (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)ctx_wayland->gutter_rows);
                     if (pitch > 127) pitch = 127;
                     for (uint32_t l = 1; l <= 9; l++) {
                         uint32_t idx =
@@ -234,7 +234,7 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
         env->ctx_line->instance[0].pos[0] = (float)current_cell_pos;
     }
     if (ctx_wayland->rendering) {
-        war_render_frame(ctx_wayland, ctx_wayland->vk);
+        war_render_frame(ctx_wayland, ctx_wayland->vk, env->ctx_color);
     }
     ctx_wayland->frame_callback = wl_surface_frame(ctx_wayland->surface);
     wl_callback_add_listener(
@@ -341,7 +341,7 @@ static void war_export_wav(war_env* env, const char* filename) {
     // compute total length: end of last note
     double total_sec = 0;
     for (uint32_t i = 0; i < num_notes; i++) {
-        uint32_t pitch = (uint32_t)env->ctx_note->instance[i].pos[1];
+        uint32_t pitch = (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)env->ctx_wayland->gutter_rows);
         if (pitch > 127) pitch = 127;
         double dur_sec = env->ctx_note->instance[i].size[0] * sec_per_cell;
         double sample_sec = 0;
@@ -373,7 +373,7 @@ static void war_export_wav(war_env* env, const char* filename) {
 
     // mix each note
     for (uint32_t i = 0; i < num_notes; i++) {
-        uint32_t pitch = (uint32_t)env->ctx_note->instance[i].pos[1];
+        uint32_t pitch = (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)env->ctx_wayland->gutter_rows);
         if (pitch > 127) pitch = 127;
         float* src = NULL;
         uint64_t src_count = 0;
@@ -475,6 +475,23 @@ static void war_keyboard_key(void* data,
             struct itimerspec off = {0};
             timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &off, NULL);
         }
+        if (ctx_wayland->env) {
+            xkb_keysym_t rk = xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
+            uint32_t rk_norm = war_normalize_keysym(rk);
+            int offset = _war_keysym_to_midi_offset(rk_norm);
+            if (offset >= 0) {
+                int32_t base = war_octave_to_midi_base((int32_t)ctx_wayland->env->ctx_cursor->octave);
+                uint32_t rel_note = (uint32_t)(offset + base);
+                if (rel_note > 127) rel_note = 127;
+                for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+                    if (ctx_wayland->env->preview_voice_active[v] &&
+                        ctx_wayland->env->preview_voice_note[v] == rel_note) {
+                        ctx_wayland->env->preview_voice_active[v] = 0;
+                        break;
+                    }
+                }
+            }
+        }
         return;
     }
     xkb_keysym_t raw_sym =
@@ -487,7 +504,7 @@ static void war_keyboard_key(void* data,
     war_keymap_context* keymap = env->ctx_keymap;
     war_config_context* config = env->ctx_config;
 
-    uint32_t mode = WAR_MODE_ID_ROLL;
+    uint32_t mode = env->active_mode;
     // check timeout for pending prefix state (500ms)
     if (ctx_wayland->keymap_state &&
         time - ctx_wayland->keymap_state_time > 500) {
@@ -1083,6 +1100,7 @@ int main(int argc, char** argv) {
     env->ctx_hot = ctx_hot;
     env->cmd_active = 0;
     env->cmd_len = 0;
+    env->active_mode = WAR_MODE_ID_ROLL;
     ctx_hot->fn_id[0] = WAR_HOT_ID_COLOR;
     ctx_hot->fn_id[1] = WAR_HOT_ID_KEYMAP;
     ctx_hot->fn_id[2] = WAR_HOT_ID_COMMAND;
@@ -1331,7 +1349,7 @@ int main(int argc, char** argv) {
     //-------------------------------------------------------------------------
     // FIRST FRAME RENDER (record + submit)
     //-------------------------------------------------------------------------
-    war_render_frame(ctx_wayland, ctx_vk);
+    war_render_frame(ctx_wayland, ctx_vk, ctx_color);
     ctx_wayland->frame_callback = wl_surface_frame(ctx_wayland->surface);
     wl_callback_add_listener(
         ctx_wayland->frame_callback, &war_frame_listener, ctx_wayland);
@@ -1371,6 +1389,20 @@ int main(int argc, char** argv) {
                 // skip digits – they are prefix accumulators, not commands
                 if (ctx_wayland->repeat_sym >= XKB_KEY_0 &&
                     ctx_wayland->repeat_sym <= XKB_KEY_9)
+                    continue;
+                // skip top-row play keys – they are hold-to-play
+                if (ctx_wayland->repeat_sym == XKB_KEY_q ||
+                    ctx_wayland->repeat_sym == XKB_KEY_w ||
+                    ctx_wayland->repeat_sym == XKB_KEY_e ||
+                    ctx_wayland->repeat_sym == XKB_KEY_r ||
+                    ctx_wayland->repeat_sym == XKB_KEY_t ||
+                    ctx_wayland->repeat_sym == XKB_KEY_y ||
+                    ctx_wayland->repeat_sym == XKB_KEY_u ||
+                    ctx_wayland->repeat_sym == XKB_KEY_i ||
+                    ctx_wayland->repeat_sym == XKB_KEY_o ||
+                    ctx_wayland->repeat_sym == XKB_KEY_p ||
+                    ctx_wayland->repeat_sym == XKB_KEY_bracketleft ||
+                    ctx_wayland->repeat_sym == XKB_KEY_bracketright)
                     continue;
                 for (uint64_t i = 0; i < exp; i++) {
                     war_env* env = ctx_wayland->env;
@@ -1418,37 +1450,53 @@ int main(int argc, char** argv) {
                 env->capture_accumulator_count += n_floats;
             }
         }
-        // preview playback: write stereo capture slot → pc_play
-        // Slot contains interleaved stereo F32 (L,R,L,R,...).
-        if (env->preview_active && !env->play_bar_playing) {
-            uint32_t note = env->preview_note;
-            if (note > 127) note = 127;
-            uint32_t layer = env->preview_layer;
-            if (layer < 1 || layer > 9) {
-                env->preview_active = 0;
-                env->preview_read_pos = 0;
-            }
-            uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-            war_capture_slot* slot = &env->capture_slots[idx];
-            if (!slot->samples || env->preview_read_pos >= slot->count) {
-                env->preview_active = 0;
-                env->preview_read_pos = 0;
-            } else {
-                enum { PW_CHUNK_FLOATS = 256 }; // 128 stereo frames
-                uint64_t remaining = slot->count - env->preview_read_pos;
-                while (remaining >= 2) {
-                    uint64_t batch = remaining < PW_CHUNK_FLOATS ?
-                                         (remaining & ~1ULL) :
+        // preview playback: mix all active preview voices → pc_play
+        if (!env->play_bar_playing) {
+            enum { PW_CHUNK_FLOATS = 256 };
+            uint64_t voice_batch[WAR_PREVIEW_VOICES];
+            int any_active = 0;
+            for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
+                if (env->preview_voice_active[v]) { any_active = 1; break; }
+            while (any_active) {
+                float mix[PW_CHUNK_FLOATS];
+                memset(mix, 0, sizeof(mix));
+                any_active = 0;
+                for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+                    voice_batch[v] = 0;
+                    if (!env->preview_voice_active[v]) continue;
+                    uint32_t note = env->preview_voice_note[v];
+                    if (note > 127) note = 127;
+                    uint32_t layer = env->preview_voice_layer[v];
+                    if (layer < 1 || layer > 9) {
+                        env->preview_voice_active[v] = 0;
+                        continue;
+                    }
+                    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                    war_capture_slot* slot = &env->capture_slots[idx];
+                    uint64_t read_pos = env->preview_voice_read_pos[v];
+                    uint64_t slot_avail = slot->samples ? slot->count : 0;
+                    if (read_pos >= slot_avail) {
+                        env->preview_voice_active[v] = 0;
+                        continue;
+                    }
+                    uint64_t avail = slot_avail - read_pos;
+                    if (avail < 2) {
+                        env->preview_voice_active[v] = 0;
+                        continue;
+                    }
+                    uint64_t batch = avail < PW_CHUNK_FLOATS ?
+                                         (avail & ~1ULL) :
                                          PW_CHUNK_FLOATS;
-                    uint32_t stereo_bytes = (uint32_t)(batch * sizeof(float));
-                    if (!war_pc_to_a(env->pc_play,
-                                     0,
-                                     stereo_bytes,
-                                     slot->samples + env->preview_read_pos))
-                        break;
-                    env->preview_read_pos += batch;
-                    remaining -= batch;
+                    voice_batch[v] = batch;
+                    for (uint64_t f = 0; f < batch; f++)
+                        mix[f] += slot->samples[read_pos + f];
+                    any_active = 1;
                 }
+                if (!any_active) break;
+                if (!war_pc_to_a(env->pc_play, 0, PW_CHUNK_FLOATS * 4, mix))
+                    break;
+                for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
+                    env->preview_voice_read_pos[v] += voice_batch[v];
             }
         }
         // playback bar streaming: mix all active voices → pc_play

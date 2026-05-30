@@ -2664,12 +2664,7 @@ struct war_env {
     float* capture_accumulator;
     uint64_t capture_accumulator_count;
     uint64_t capture_accumulator_capacity;
-    // preview playback state
-    uint8_t preview_active;
-    uint64_t preview_read_pos; // current mono-sample position in the slot
-    uint32_t
-        preview_note; // note index used by qwerty play keys (not cursor pos)
-    uint32_t preview_layer; // layer index used by qwerty play keys
+    // preview playback state (now uses preview_voice_* arrays)
     // new
     war_config_context* ctx_config;
     war_command_context* ctx_command;
@@ -2682,6 +2677,7 @@ struct war_env {
     war_gridlines_context* ctx_gridlines;
     war_note_context* ctx_note;
     war_simple_line_context* ctx_line;
+    uint32_t active_mode;
     war_pipewire_context* ctx_pw; // ADD: pipewire context, allocated from pool
     war_wayland_context* ctx_wayland;
     war_font_context* ctx_font;
@@ -2691,11 +2687,17 @@ struct war_env {
     uint32_t play_bar_last_frame_ms;
     double play_bar_prev_cell_pos;
 #define WAR_PLAY_BAR_VOICES 64
+#define WAR_PREVIEW_VOICES 16
+
     uint8_t play_bar_voice_active[WAR_PLAY_BAR_VOICES];
     uint32_t play_bar_voice_note[WAR_PLAY_BAR_VOICES];
     uint32_t play_bar_voice_layer[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_pos[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
+    uint8_t preview_voice_active[WAR_PREVIEW_VOICES];
+    uint32_t preview_voice_note[WAR_PREVIEW_VOICES];
+    uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];
+    uint64_t preview_voice_read_pos[WAR_PREVIEW_VOICES];
     // command mode (Neovim-style :)
     uint8_t cmd_active;
     char cmd_buf[256];
