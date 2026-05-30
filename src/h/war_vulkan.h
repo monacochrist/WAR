@@ -2185,6 +2185,51 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                       ctx_wayland,
                       (float)ctx_wayland->width,
                       (float)ctx_wayland->height);
+    // --- 3 status bar backgrounds at bottom gutter rows ---
+    {
+        war_cursor_context* cur = ctx_wayland->env->ctx_cursor;
+        double cw = cur->cell_width;
+        double ch = cur->cell_height;
+        float zoom = ctx_wayland->zoom;
+        uint32_t bar_colors[3] = {
+            ctx_color->top_status_bar,
+            ctx_color->middle_status_bar,
+            ctx_color->bottom_status_bar,
+        };
+        war_vulkan_cursor_instance status[3] = {0};
+        for (int i = 0; i < 3; i++) {
+            // Y is inverted: 0 = bottom of screen, gutter_rows-1 = first row above gutter
+            status[i].pos[0] = ctx_wayland->panning[0];
+            status[i].pos[1] = ctx_wayland->panning[1] + ctx_wayland->gutter_rows - 1 - i;
+            status[i].size[0] = (float)ctx_wayland->width / (float)(cw * zoom);
+            status[i].size[1] = 1.0f;
+            status[i].color[0] = (float)((bar_colors[i] >> 24) & 0xFF) / 255.0f;
+            status[i].color[1] = (float)((bar_colors[i] >> 16) & 0xFF) / 255.0f;
+            status[i].color[2] = (float)((bar_colors[i] >> 8) & 0xFF) / 255.0f;
+            status[i].color[3] = (float)(bar_colors[i] & 0xFF) / 255.0f;
+            status[i].flags = 0;
+        }
+        memcpy((char*)cur->instance_mapped +
+                   sizeof(war_vulkan_cursor_instance) * cur->instance_count,
+               status, sizeof(status));
+        VkViewport svp = {0, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 1};
+        VkRect2D sscissor = {{0, 0}, {ctx_wayland->width, ctx_wayland->height}};
+        vkCmdSetViewport(cmd, 0, 1, &svp);
+        vkCmdSetScissor(cmd, 0, 1, &sscissor);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cur->pipeline);
+        float pc_data[] = {
+            (float)cw, (float)ch,
+            -ctx_wayland->panning[0] * zoom, -ctx_wayland->panning[1] * zoom,
+            zoom, 0,
+            (float)ctx_wayland->width, (float)ctx_wayland->height,
+            0, 0,
+        };
+        vkCmdPushConstants(cmd, cur->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
+        VkBuffer s_bufs[] = {cur->quad_vbo, cur->instance_vbo};
+        VkDeviceSize s_offsets[] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, s_bufs, s_offsets);
+        vkCmdDraw(cmd, 4, 3, 0, cur->instance_count);
+    }
     if (ctx_wayland->env->ctx_font) {
         war_font_render_cmd(cmd,
                             ctx_wayland->env->ctx_font,

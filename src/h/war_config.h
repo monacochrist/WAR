@@ -158,7 +158,7 @@ static inline void war_config_default(war_config_context* config) {
     config->HUD_TEXT_ERROR_INSTANCE_MAX = 1;
     // cursor context
     config->CURSOR_COUNT = 1;
-    config->CURSOR_DEFAULT_INSTANCE_MAX = 1;
+    config->CURSOR_DEFAULT_INSTANCE_MAX = 4;
     // hud cursor context
     config->HUD_CURSOR_COUNT = 1;
     config->HUD_CURSOR_DEFAULT_INSTANCE_MAX = 1;
