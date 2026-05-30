@@ -586,6 +586,89 @@ static void war_load_project(war_env* env, const char* filename) {
             path, note_count, slot_count, bpm);
 }
 
+static void war_write_inst(war_env* env, int layer, const char* filename) {
+    if (layer < 1 || layer > 9) {
+        fprintf(stderr, "WRITEINST: layer must be 1-9\n");
+        return;
+    }
+    char path[1024];
+    snprintf(path, sizeof(path), "%s", filename);
+    FILE* f = fopen(path, "wb");
+    if (!f) { fprintf(stderr, "WRITEINST: failed to open %s\n", path); return; }
+    fwrite("WARI", 1, 4, f);
+    uint32_t ver = 0;
+    fwrite(&ver, 4, 1, f);
+    uint32_t li = (uint32_t)(layer - 1);
+    // count non-empty slots
+    uint32_t count = 0;
+    for (uint32_t p = 0; p < 128; p++) {
+        if (env->capture_slots[p * WAR_CAPTURE_SLOT_LAYERS + li].samples &&
+            env->capture_slots[p * WAR_CAPTURE_SLOT_LAYERS + li].count > 0)
+            count++;
+    }
+    fwrite(&count, 4, 1, f);
+    for (uint32_t p = 0; p < 128; p++) {
+        war_capture_slot* s = &env->capture_slots[p * WAR_CAPTURE_SLOT_LAYERS + li];
+        if (s->samples && s->count > 0) {
+            fwrite(&p, 4, 1, f);
+            fwrite(&s->count, sizeof(uint64_t), 1, f);
+            fwrite(s->samples, sizeof(float), s->count, f);
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "WRITEINST: wrote %s (layer=%d, %u pitches)\n", path, layer, count);
+}
+
+static void war_load_inst(war_env* env, int layer, const char* filename) {
+    if (layer < 1 || layer > 9) {
+        fprintf(stderr, "LOADINST: layer must be 1-9\n");
+        return;
+    }
+    char path[1024];
+    snprintf(path, sizeof(path), "%s", filename);
+    FILE* f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "LOADINST: failed to open %s\n", path); return; }
+    char magic[4];
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "WARI", 4) != 0) {
+        fprintf(stderr, "LOADINST: invalid magic\n");
+        fclose(f);
+        return;
+    }
+    uint32_t ver;
+    fread(&ver, 4, 1, f);
+    uint32_t li = (uint32_t)(layer - 1);
+    // clear existing slots for this layer
+    for (uint32_t p = 0; p < 128; p++) {
+        war_capture_slot* s = &env->capture_slots[p * WAR_CAPTURE_SLOT_LAYERS + li];
+        if (s->samples) { free(s->samples); s->samples = NULL; }
+        s->count = 0;
+        s->capacity = 0;
+    }
+    uint32_t count;
+    fread(&count, 4, 1, f);
+    for (uint32_t c = 0; c < count; c++) {
+        uint32_t pitch;
+        fread(&pitch, 4, 1, f);
+        uint64_t cnt;
+        fread(&cnt, sizeof(uint64_t), 1, f);
+        if (pitch < 128 && cnt > 0) {
+            float* samples = malloc(cnt * sizeof(float));
+            if (samples) {
+                fread(samples, sizeof(float), cnt, f);
+                env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].samples = samples;
+                env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].count = cnt;
+                env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].capacity = cnt;
+            } else {
+                fseek(f, cnt * sizeof(float), SEEK_CUR);
+            }
+        } else {
+            fseek(f, cnt * sizeof(float), SEEK_CUR);
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "LOADINST: loaded %s (layer=%d, %u pitches)\n", path, layer, count);
+}
+
 static void war_loop_notes(war_env* env, int quarter_notes, int repeats) {
     war_note_context* note = env->ctx_note;
     if (!note || !note->instance_count) {
@@ -757,6 +840,13 @@ static void war_keyboard_key(void* data,
                     war_loop_notes(env, x, y);
                 else
                     fprintf(stderr, "LOOP: usage :loop <quarter_notes> <repeats>\n");
+            } else if (env->cmd_len >= 9 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'd' && env->cmd_buf[5] == 'i' && env->cmd_buf[6] == 'n' && env->cmd_buf[7] == 's' && env->cmd_buf[8] == 't') {
+                int layer = 0;
+                char name[256];
+                if (sscanf(env->cmd_buf + 9, " %d %255s", &layer, name) >= 2)
+                    war_load_inst(env, layer, name);
+                else
+                    fprintf(stderr, "LOADINST: usage :loadinst <layer> <name>\n");
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'd') {
                 const char* name = env->cmd_buf + 5;
                 while (*name == ' ') name++;
@@ -770,6 +860,13 @@ static void war_keyboard_key(void* data,
                     env->atomics->bpm = (float)val;
                 else
                     fprintf(stderr, "BPM: usage :bpm <value>\n");
+            } else if (env->cmd_len >= 10 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'r' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 't' && env->cmd_buf[5] == 'e' && env->cmd_buf[6] == 'i' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 's' && env->cmd_buf[9] == 't') {
+                int layer = 0;
+                char name[256];
+                if (sscanf(env->cmd_buf + 10, " %d %255s", &layer, name) >= 2)
+                    war_write_inst(env, layer, name);
+                else
+                    fprintf(stderr, "WRITEINST: usage :writeinst <layer> <name>\n");
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'w' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'v') {
                 const char* name = NULL;
                 if (env->cmd_len > 5 && env->cmd_buf[5] == ' ')
@@ -811,6 +908,14 @@ static void war_keyboard_key(void* data,
     }
 
     // enter command mode on ':' (check raw sym before normalizer maps it to ';')
+    if (raw_sym == XKB_KEY_Escape) {
+        if (env->active_mode == WAR_MODE_ID_MIDI) {
+            env->active_mode = WAR_MODE_ID_ROLL;
+            env->recording_active = 0;
+            cur->prefix = 0;
+            return;
+        }
+    }
     if (raw_sym == XKB_KEY_colon) {
         env->cmd_active = 1;
         env->cmd_len = 1;
