@@ -2698,6 +2698,13 @@ struct war_env {
     uint32_t preview_voice_note[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_pos[WAR_PREVIEW_VOICES];
+    // recording state
+    uint8_t recording_active;
+    double recording_position;
+    uint32_t recording_last_frame_ms;
+    double recording_start_col[WAR_PREVIEW_VOICES];
+    uint32_t recording_note_idx[WAR_PREVIEW_VOICES];
+    uint64_t recording_press_time_us[WAR_PREVIEW_VOICES];
     // command mode (Neovim-style :)
     uint8_t cmd_active;
     char cmd_buf[256];

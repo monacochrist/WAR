@@ -233,6 +233,17 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
         env->play_bar_prev_cell_pos = current_cell_pos;
         env->ctx_line->instance[0].pos[0] = (float)current_cell_pos;
     }
+    // advance recording position based on real-time delta
+    if (env->recording_active) {
+        if (env->recording_last_frame_ms != 0) {
+            uint32_t delta_ms = time - env->recording_last_frame_ms;
+            double bpm = env->atomics->bpm;
+            if (bpm <= 0.0) bpm = 100.0;
+            double seconds_per_cell = 60.0 / bpm;
+            env->recording_position += (double)delta_ms / 1000.0 / seconds_per_cell;
+        }
+        env->recording_last_frame_ms = time;
+    }
     if (ctx_wayland->rendering) {
         war_render_frame(ctx_wayland, ctx_wayland->vk, env->ctx_color);
     }
@@ -486,7 +497,25 @@ static void war_keyboard_key(void* data,
                 for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
                     if (ctx_wayland->env->preview_voice_active[v] &&
                         ctx_wayland->env->preview_voice_note[v] == rel_note) {
-                        ctx_wayland->env->preview_voice_active[v] = 0;
+                        if (ctx_wayland->env->recording_active) {
+                            uint32_t ni = ctx_wayland->env->recording_note_idx[v];
+                            double start_col = ctx_wayland->env->recording_start_col[v];
+                            uint64_t elapsed_us = war_get_monotonic_time_us() -
+                                ctx_wayland->env->recording_press_time_us[v];
+                            double bpm = ctx_wayland->env->atomics->bpm;
+                            if (bpm <= 0.0) bpm = 100.0;
+                            double sec_per_cell = 60.0 / bpm;
+                            double width = (double)elapsed_us / 1000000.0 / sec_per_cell;
+                            if (width < 1.0) width = 1.0;
+                            call_king_terry("RECORD: release note=%u ni=%u start=%.2f elapsed_us=%lu width=%.2f",
+                                            rel_note, ni, start_col,
+                                            (unsigned long)elapsed_us, width);
+                            if (ni < ctx_wayland->env->ctx_note->instance_count) {
+                                ctx_wayland->env->ctx_note->instance[ni].size[0] = (float)width;
+                                call_king_terry("RECORD: updated note #%u size[0]=%.2f", ni, (float)width);
+                            }
+                        }
+                        // do NOT deactivate voice here — let it play to completion
                         break;
                     }
                 }
@@ -1473,6 +1502,10 @@ int main(int argc, char** argv) {
                     }
                     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                     war_capture_slot* slot = &env->capture_slots[idx];
+                    if (!slot->samples || slot->count < 2) {
+                        env->preview_voice_active[v] = 0;
+                        continue;
+                    }
                     uint64_t read_pos = env->preview_voice_read_pos[v];
                     uint64_t slot_avail = slot->samples ? slot->count : 0;
                     if (read_pos >= slot_avail) {
@@ -1497,6 +1530,22 @@ int main(int argc, char** argv) {
                     break;
                 for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
                     env->preview_voice_read_pos[v] += voice_batch[v];
+                // continuously update note widths during recording
+                if (env->recording_active) {
+                    uint64_t now_us = war_get_monotonic_time_us();
+                    double bpm = env->atomics->bpm;
+                    if (bpm <= 0.0) bpm = 100.0;
+                    double sec_per_cell = 60.0 / bpm;
+                    for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+                        if (!env->preview_voice_active[v]) continue;
+                        uint32_t ni = env->recording_note_idx[v];
+                        if (ni >= env->ctx_note->instance_count) continue;
+                        uint64_t elapsed_us = now_us - env->recording_press_time_us[v];
+                        double width = (double)elapsed_us / 1000000.0 / sec_per_cell;
+                        if (width < 1.0) width = 1.0;
+                        env->ctx_note->instance[ni].size[0] = (float)width;
+                    }
+                }
             }
         }
         // playback bar streaming: mix all active voices → pc_play

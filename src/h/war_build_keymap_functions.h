@@ -50,6 +50,7 @@ else if (strcmp(name, "war_octave_7") == 0) { return war_octave_7; }
 else if (strcmp(name, "war_octave_8") == 0) { return war_octave_8; }
 else if (strcmp(name, "war_octave_9") == 0) { return war_octave_9; }
 else if (strcmp(name, "war_octave_10") == 0) { return war_octave_10; }
+else if (strcmp(name, "war_record_midi") == 0) { return war_record_midi; }
 else if (strcmp(name, "war_play_q") == 0) { return war_play_q; }
 else if (strcmp(name, "war_play_w") == 0) { return war_play_w; }
 else if (strcmp(name, "war_play_e") == 0) { return war_play_e; }

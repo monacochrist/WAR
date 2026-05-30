@@ -340,17 +340,67 @@ static inline int32_t war_octave_to_midi_base(int32_t octave) {
     return (octave + 1) * 12;
 }
 
-static inline void _war_preview_start_voice(war_env* env, uint32_t note, uint32_t layer, uint32_t idx) {
+static inline void _war_record_place_note(war_env* env, uint32_t note, int voice) {
+    war_note_context* note_ctx = env->ctx_note;
+    if (!note_ctx || voice < 0) return;
+    if (note_ctx->instance_count >= note_ctx->max_instances) return;
+    uint32_t i = note_ctx->instance_count++;
+    double visual_row = (double)note + (double)env->ctx_wayland->gutter_rows;
+    uint32_t col = (&env->ctx_color->layer_none)[env->ctx_cursor->layer];
+    note_ctx->instance[i].pos[0] = (float)env->recording_position;
+    note_ctx->instance[i].pos[1] = (float)visual_row;
+    note_ctx->instance[i].pos[2] = 0.0f;
+    note_ctx->instance[i].size[0] = 1.0f;
+    note_ctx->instance[i].size[1] = 1.0f;
+    note_ctx->instance[i].color[0] = ((col >> 24) & 0xFF) / 255.0f;
+    note_ctx->instance[i].color[1] = ((col >> 16) & 0xFF) / 255.0f;
+    note_ctx->instance[i].color[2] = ((col >> 8) & 0xFF) / 255.0f;
+    note_ctx->instance[i].color[3] = (col & 0xFF) / 255.0f;
+    note_ctx->instance[i].outline_color[0] = 0.0f;
+    note_ctx->instance[i].outline_color[1] = 0.0f;
+    note_ctx->instance[i].outline_color[2] = 0.0f;
+    note_ctx->instance[i].outline_color[3] = 1.0f;
+    note_ctx->instance[i].flags = 0;
+    note_ctx->instance[i].tick = note_ctx->tick_counter++;
+    env->recording_start_col[voice] = env->recording_position;
+    env->recording_note_idx[voice] = i;
+    env->recording_press_time_us[voice] = war_get_monotonic_time_us();
+    call_king_terry("RECORD: placed note=%u layer=%u col=%.2f voice=%u idx=%u t=%lu",
+                    note, env->ctx_cursor->layer, env->recording_position, voice, i,
+                    (unsigned long)env->recording_press_time_us[voice]);
+}
+
+static inline void war_record_midi(war_env* env) {
+    env->recording_active = !env->recording_active;
+    if (env->recording_active) {
+        env->recording_position = env->ctx_cursor->instance[0].pos[0];
+        env->recording_last_frame_ms = 0;
+        for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
+            env->recording_start_col[v] = 0.0;
+    }
+}
+
+static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t layer) {
     for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+        if (env->preview_voice_note[v] == note) {
+            // restart voice for this note (handles re-press during follow-through)
+            env->preview_voice_note[v] = note;
+            env->preview_voice_layer[v] = layer;
+            env->preview_voice_read_pos[v] = 0;
+            env->preview_voice_active[v] = 1;
+            if (env->recording_active) _war_record_place_note(env, note, (int)v);
+            return (int)v;
+        }
         if (!env->preview_voice_active[v]) {
             env->preview_voice_note[v] = note;
             env->preview_voice_layer[v] = layer;
             env->preview_voice_read_pos[v] = 0;
             env->preview_voice_active[v] = 1;
-            break;
+            if (env->recording_active) _war_record_place_note(env, note, (int)v);
+            return (int)v;
         }
     }
-    (void)idx;
+    return -1;
 }
 
 static inline void war_play_q(war_env* env) {
@@ -362,7 +412,7 @@ static inline void war_play_q(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_w(war_env* env) {
@@ -373,7 +423,7 @@ static inline void war_play_w(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_e(war_env* env) {
@@ -384,7 +434,7 @@ static inline void war_play_e(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_r(war_env* env) {
@@ -395,7 +445,7 @@ static inline void war_play_r(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_t(war_env* env) {
@@ -406,7 +456,7 @@ static inline void war_play_t(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_y(war_env* env) {
@@ -417,7 +467,7 @@ static inline void war_play_y(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_u(war_env* env) {
@@ -428,7 +478,7 @@ static inline void war_play_u(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_i(war_env* env) {
@@ -439,7 +489,7 @@ static inline void war_play_i(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_o(war_env* env) {
@@ -451,7 +501,7 @@ static inline void war_play_o(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_p(war_env* env) {
@@ -463,7 +513,7 @@ static inline void war_play_p(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_left_bracket(war_env* env) {
@@ -475,7 +525,7 @@ static inline void war_play_left_bracket(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_play_right_bracket(war_env* env) {
@@ -487,7 +537,7 @@ static inline void war_play_right_bracket(war_env* env) {
     if (layer < 1 || layer > 9) return;
     if (!env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)].samples)
         return;
-    _war_preview_start_voice(env, note, layer, note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1));
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_step_mode_fat(war_env* env) {
@@ -665,7 +715,7 @@ static inline void war_capture_audio(war_env* env) {
                     i -= 2;
                 }
                 i += 2; // last frame with signal
-                uint64_t tail = 4800; // ~100ms at 48kHz
+                uint64_t tail = 48000; // ~1s at 48kHz — preserves natural decay
                 uint64_t keep = i + (tail > (env->capture_accumulator_count - i) ?
                                       env->capture_accumulator_count - i : tail);
                 if (keep < env->capture_accumulator_count) {
@@ -722,7 +772,7 @@ static inline void war_preview_toggle(war_env* env) {
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     if (!env->capture_slots[idx].samples || !env->capture_slots[idx].count)
         return;
-    _war_preview_start_voice(env, note, layer, idx);
+    _war_preview_start_voice(env, note, layer);
 }
 
 static inline void war_set_width_to_duration(war_env* env) {

@@ -694,6 +694,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"m"},
                    WAR_FUNCTION_ID_NONE,
                    war_midi_mode,
+                    0);
+    // toggle midi recording (a)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_MIDI},
+                   1,
+                   (char*[]){"a"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_record_midi,
                    0);
     // fat and thin
     war_keymap_set(keymap,
