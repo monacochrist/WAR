@@ -515,7 +515,7 @@ static void war_keyboard_key(void* data,
                                 call_king_terry("RECORD: updated note #%u size[0]=%.2f", ni, (float)width);
                             }
                         }
-                        // do NOT deactivate voice here — let it play to completion
+                        ctx_wayland->env->preview_voice_active[v] = 0;
                         break;
                     }
                 }
