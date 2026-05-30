@@ -266,6 +266,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_zoom_reset,
                    0);
+    // $ — go to column (prefix + 3), or right bound without prefix
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"$"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_roll_cursor_goto_right_bound_or_prefix_horizontal,
+                   0);
     // playback
     war_keymap_set(keymap,
                    config,
