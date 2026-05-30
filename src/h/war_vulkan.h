@@ -973,9 +973,9 @@ static inline void war_font_init(war_font_context* font,
     font->glyph_descent = (float)(-face->size->metrics.descender >> 6);
 
     // render all printable ASCII at high resolution for the atlas
-    FT_Set_Pixel_Sizes(face, 0, 192);
+    FT_Set_Pixel_Sizes(face, 0, 384);
 
-#define ATLAS_GLYPH_SIZE 192
+#define ATLAS_GLYPH_SIZE 384
 #define ATLAS_COLS 10
 #define ATLAS_ROWS 10
     int atlas_w = ATLAS_COLS * ATLAS_GLYPH_SIZE;
@@ -1008,8 +1008,24 @@ static inline void war_font_init(war_font_context* font,
     font->glyph_uv[0][2] = font->glyph_uv['*'][2];
     font->glyph_uv[0][3] = font->glyph_uv['*'][3];
 
-    // restore display size
+    // restore display size and load per-glyph metrics at display resolution
     FT_Set_Pixel_Sizes(face, 0, (FT_UInt)cell_px_h);
+    for (int c = 32; c <= 126; c++) {
+        if (FT_Load_Char(face, c, FT_LOAD_RENDER))
+            continue;
+        float gw = (float)(face->glyph->metrics.width >> 6);
+        float gh = (float)(face->glyph->metrics.height >> 6);
+        font->glyph_norm_width[c] = gw / (float)cell_px_w;
+        font->glyph_norm_height[c] = gh / (float)cell_px_h;
+        font->glyph_norm_ascent[c] = (float)(face->glyph->metrics.horiBearingY >> 6) / (float)cell_px_h;
+        font->glyph_norm_descent[c] = (float)((face->glyph->metrics.height - face->glyph->metrics.horiBearingY) >> 6) / (float)cell_px_h;
+        font->glyph_norm_baseline[c] = font->glyph_norm_ascent[c];
+    }
+    font->glyph_norm_width[0] = font->glyph_norm_width['*'];
+    font->glyph_norm_height[0] = font->glyph_norm_height['*'];
+    font->glyph_norm_ascent[0] = font->glyph_norm_ascent['*'];
+    font->glyph_norm_descent[0] = font->glyph_norm_descent['*'];
+    font->glyph_norm_baseline[0] = font->glyph_norm_baseline['*'];
 
     // atlas image (R8 at high resolution)
     VkImageCreateInfo ici = {
@@ -1071,8 +1087,8 @@ static inline void war_font_init(war_font_context* font,
     // sampler
     VkSamplerCreateInfo sci = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_NEAREST,
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
@@ -1329,11 +1345,11 @@ static inline void war_font_render(VkCommandBuffer cmd,
     inst.uv[1] = font->glyph_uv['*'][1];
     inst.uv[2] = font->glyph_uv['*'][2];
     inst.uv[3] = font->glyph_uv['*'][3];
-    inst.glyph_scale[0] = font->glyph_px_w / (float)cw;
-    inst.glyph_scale[1] = font->glyph_px_h / (float)ch;
-    inst.ascent = 0.5f + font->glyph_px_h / (2.0f * (float)ch);
-    inst.descent = 0;
-    inst.baseline = 0;
+    inst.glyph_scale[0] = font->glyph_norm_width['*'];
+    inst.glyph_scale[1] = font->glyph_norm_height['*'];
+    inst.ascent = font->glyph_norm_ascent['*'];
+    inst.descent = font->glyph_norm_descent['*'];
+    inst.baseline = font->glyph_norm_baseline['*'];
     inst.color[0] = 1; inst.color[1] = 1; inst.color[2] = 1; inst.color[3] = 1;
     inst.flags = 0;
 
@@ -1395,17 +1411,22 @@ static inline void war_font_render_cmd(VkCommandBuffer cmd,
             ti->uv[1] = font->glyph_uv[c][1];
             ti->uv[2] = font->glyph_uv[c][2];
             ti->uv[3] = font->glyph_uv[c][3];
+            ti->glyph_scale[0] = font->glyph_norm_width[c];
+            ti->glyph_scale[1] = font->glyph_norm_height[c];
+            ti->ascent = font->glyph_norm_ascent[c];
+            ti->descent = font->glyph_norm_descent[c];
+            ti->baseline = font->glyph_norm_baseline[c];
         } else {
             ti->uv[0] = font->glyph_uv[0][0];
             ti->uv[1] = font->glyph_uv[0][1];
             ti->uv[2] = font->glyph_uv[0][2];
             ti->uv[3] = font->glyph_uv[0][3];
+            ti->glyph_scale[0] = font->glyph_norm_width[0];
+            ti->glyph_scale[1] = font->glyph_norm_height[0];
+            ti->ascent = font->glyph_norm_ascent[0];
+            ti->descent = font->glyph_norm_descent[0];
+            ti->baseline = font->glyph_norm_baseline[0];
         }
-        ti->glyph_scale[0] = font->glyph_px_w / (float)cw;
-        ti->glyph_scale[1] = font->glyph_px_h / (float)ch;
-        ti->ascent = 0.5f + font->glyph_px_h / (2.0f * (float)ch);
-        ti->descent = 0;
-        ti->baseline = 0;
         ti->color[0] = 1; ti->color[1] = 1; ti->color[2] = 1; ti->color[3] = 1;
         ti->flags = 0;
     }
@@ -2198,11 +2219,11 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             ti->uv[1] = font->glyph_uv[c][1];
             ti->uv[2] = font->glyph_uv[c][2];
             ti->uv[3] = font->glyph_uv[c][3];
-            ti->glyph_scale[0] = font->glyph_px_w / (float)cw;
-            ti->glyph_scale[1] = font->glyph_px_h / (float)ch;
-            ti->ascent = 0.5f + font->glyph_px_h / (2.0f * (float)ch);
-            ti->descent = 0;
-            ti->baseline = 0;
+            ti->glyph_scale[0] = font->glyph_norm_width[c];
+            ti->glyph_scale[1] = font->glyph_norm_height[c];
+            ti->ascent = font->glyph_norm_ascent[c];
+            ti->descent = font->glyph_norm_descent[c];
+            ti->baseline = font->glyph_norm_baseline[c];
             ti->color[0] = 1; ti->color[1] = 1; ti->color[2] = 1; ti->color[3] = 1;
             ti->flags = 0;
         }

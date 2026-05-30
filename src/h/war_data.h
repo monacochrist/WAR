@@ -1780,6 +1780,12 @@ typedef struct war_font_context {
     float glyph_descent;  // pixels from baseline to bottom
     // atlas UV per glyph (indexed by ASCII code 32-126)
     float glyph_uv[128][4];
+    // per-glyph normalized metrics
+    float glyph_norm_width[128];
+    float glyph_norm_height[128];
+    float glyph_norm_ascent[128];
+    float glyph_norm_descent[128];
+    float glyph_norm_baseline[128];
     // command mode render state
     uint32_t cmd_instance_count;
 } war_font_context;
