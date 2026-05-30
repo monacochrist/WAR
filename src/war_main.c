@@ -764,6 +764,12 @@ static void war_keyboard_key(void* data,
                     war_load_project(env, name);
                 else
                     fprintf(stderr, "LOAD: usage :load <name>\n");
+            } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'b' && env->cmd_buf[2] == 'p' && env->cmd_buf[3] == 'm') {
+                double val = 0;
+                if (sscanf(env->cmd_buf + 4, " %lf", &val) == 1 && val > 0)
+                    env->atomics->bpm = (float)val;
+                else
+                    fprintf(stderr, "BPM: usage :bpm <value>\n");
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'w' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'v') {
                 const char* name = NULL;
                 if (env->cmd_len > 5 && env->cmd_buf[5] == ' ')
