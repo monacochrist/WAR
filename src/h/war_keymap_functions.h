@@ -681,20 +681,46 @@ static inline void war_zoom_reset(war_env* env) {
 static inline void war_toggle_playback(war_env* env) {
     war_simple_line_context* line = env->ctx_line;
     if (!line) return;
-    float gc = (float)env->ctx_wayland->gutter_cols;
     if (env->play_bar_playing) {
         env->play_bar_playing = 0;
-        env->play_bar_position_seconds = 0.0;
         memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
-        line->instance[1].pos[0] = gc;
     } else {
         env->play_bar_playing = 1;
-        env->play_bar_position_seconds = 0.0;
         env->play_bar_last_frame_ms = 0;
-        env->play_bar_prev_cell_pos = (double)gc;
+        double bpm = env->atomics->bpm;
+        if (bpm <= 0.0) bpm = 100.0;
+        double sec_per_cell = 60.0 / bpm;
+        double gc = (double)env->ctx_wayland->gutter_cols;
+        env->play_bar_prev_cell_pos = gc + env->play_bar_position_seconds / sec_per_cell;
         memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
-        line->instance[1].pos[0] = gc;
     }
+}
+
+static inline void war_playbar_goto_cursor(war_env* env) {
+    war_simple_line_context* line = env->ctx_line;
+    if (!line) return;
+    float cursor_col = env->ctx_cursor->instance[0].pos[0];
+    double bpm = env->atomics->bpm;
+    if (bpm <= 0.0) bpm = 100.0;
+    double sec_per_cell = 60.0 / bpm;
+    double gc = (double)env->ctx_wayland->gutter_cols;
+    env->play_bar_position_seconds = ((double)cursor_col - gc) * sec_per_cell;
+    if (env->play_bar_position_seconds < 0.0) env->play_bar_position_seconds = 0.0;
+    env->play_bar_last_frame_ms = 0;
+    env->play_bar_prev_cell_pos = (double)cursor_col;
+    memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+    line->instance[0].pos[0] = cursor_col;
+}
+
+static inline void war_playbar_goto_start(war_env* env) {
+    war_simple_line_context* line = env->ctx_line;
+    if (!line) return;
+    float gc = (float)env->ctx_wayland->gutter_cols;
+    env->play_bar_position_seconds = 0.0;
+    env->play_bar_last_frame_ms = 0;
+    env->play_bar_prev_cell_pos = (double)gc;
+    memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+    line->instance[0].pos[0] = gc;
 }
 
 static inline void war_capture_audio(war_env* env) {

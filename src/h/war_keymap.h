@@ -276,6 +276,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_toggle_playback,
                    0);
+    // reset playback bar to beginning (shift+d)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-d>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_playbar_goto_start,
+                   0);
     // layers
     war_keymap_set(keymap,
                    config,
@@ -695,6 +705,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_midi_mode,
                     0);
+    // move playback bar to cursor (alt+a)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<A-a>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_playbar_goto_cursor,
+                   0);
     // toggle midi recording (a)
     war_keymap_set(keymap,
                    config,
@@ -704,6 +724,26 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"a"},
                    WAR_FUNCTION_ID_NONE,
                    war_record_midi,
+                   0);
+    // move playback bar to cursor (alt+a)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_MIDI},
+                   1,
+                   (char*[]){"<A-a>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_playbar_goto_cursor,
+                   0);
+    // reset playback bar to beginning (shift+d)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_MIDI},
+                   1,
+                   (char*[]){"<S-d>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_playbar_goto_start,
                    0);
     // fat and thin
     war_keymap_set(keymap,
