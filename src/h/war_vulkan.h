@@ -972,11 +972,12 @@ static inline void war_font_init(war_font_context* font,
     font->glyph_ascent = (float)(face->size->metrics.ascender >> 6);
     font->glyph_descent = (float)(-face->size->metrics.descender >> 6);
 
-    // render atlas at high resolution for quality downscaling
-    FT_Set_Pixel_Sizes(face, 0, 512);
+    // render atlas at moderate resolution (2-3x display size)
+    // bilinear filtering at 2-3x downscale yields sharp results
+    FT_Set_Pixel_Sizes(face, 0, 64);
 
 #define ATLAS_COLS 10
-    int atlas_glyph_size = 512;
+    int atlas_glyph_size = 64;
     int atlas_rows = 10;
     int atlas_w = ATLAS_COLS * atlas_glyph_size;
     int atlas_h = atlas_rows * atlas_glyph_size;
