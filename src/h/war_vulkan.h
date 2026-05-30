@@ -2235,6 +2235,54 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         vkCmdBindVertexBuffers(cmd, 0, 2, s_bufs, s_offsets);
         vkCmdDraw(cmd, 4, 3, 0, cur->instance_count);
     }
+    // --- visual mode selection highlight ---
+    if (ctx_wayland->env->ctx_cursor->visual_active) {
+        war_cursor_context* vcur = ctx_wayland->env->ctx_cursor;
+        double vcw = vcur->cell_width;
+        double vch = vcur->cell_height;
+        float vzoom = ctx_wayland->zoom;
+        float vax = vcur->visual_anchor_col;
+        float vay = vcur->visual_anchor_row;
+        float vcx = vcur->instance[0].pos[0];
+        float vcy = vcur->instance[0].pos[1];
+        {
+            war_vulkan_cursor_instance sel = {0};
+            if (vcx > vax) { sel.pos[0] = vax; sel.size[0] = vcx - vax + 1.0f; }
+            else           { sel.pos[0] = vcx; sel.size[0] = vax - vcx + 1.0f; }
+            if (vcy > vay) { sel.pos[1] = vay; sel.size[1] = vcy - vay + 1.0f; }
+            else           { sel.pos[1] = vcy; sel.size[1] = vay - vcy + 1.0f; }
+            sel.pos[2] = 0.0f;
+            sel.color[0] = 0.3f; sel.color[1] = 0.3f; sel.color[2] = 1.0f; sel.color[3] = 0.4f;
+            sel.flags = 0;
+            // write to cursor instance buffer after the cursor instances
+            memcpy((char*)vcur->instance_mapped +
+                       sizeof(war_vulkan_cursor_instance) * vcur->instance_count,
+                   &sel, sizeof(sel));
+            VkViewport svp = {0, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 1};
+            int32_t sgutter = (int32_t)(vch * vzoom * ctx_wayland->gutter_rows);
+            if (sgutter < 0) sgutter = 0;
+            if (sgutter > (int32_t)ctx_wayland->height) sgutter = (int32_t)ctx_wayland->height;
+            VkRect2D sscissor = {{0, 0}, {(uint32_t)ctx_wayland->width, (uint32_t)(ctx_wayland->height - sgutter)}};
+            vkCmdSetViewport(cmd, 0, 1, &svp);
+            vkCmdSetScissor(cmd, 0, 1, &sscissor);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vcur->pipeline);
+            float pc_data[] = {
+                (float)vcw, (float)vch,
+                -ctx_wayland->panning[0] * vzoom, -ctx_wayland->panning[1] * vzoom,
+                vzoom, 0,
+                (float)ctx_wayland->width, (float)ctx_wayland->height,
+                0, 0,
+            };
+            vkCmdPushConstants(cmd, vcur->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
+            VkBuffer bufs[] = {vcur->quad_vbo, vcur->instance_vbo};
+            VkDeviceSize offsets[] = {0, 0};
+            vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
+            vkCmdDraw(cmd, 4, 1, 0, vcur->instance_count);
+        }
+        // also recolor the cursor to indicate visual mode
+        war_vulkan_cursor_instance* vcm = (war_vulkan_cursor_instance*)vcur->instance_mapped;
+        vcm[0].color[0] = 1.0f; vcm[0].color[1] = 1.0f; vcm[0].color[2] = 0.3f; vcm[0].color[3] = 0.6f;
+    }
     if (ctx_wayland->env->ctx_font) {
         war_font_render_cmd(cmd,
                             ctx_wayland->env->ctx_font,
@@ -2295,6 +2343,92 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
         vkCmdDraw(cmd, 4, (uint32_t)n, 0, LABEL_OFFSET);
 #undef LABEL_OFFSET
+        // loop mode label
+        if (ctx_wayland->env->loop_mode) {
+            const char* loop_text = "LOOP";
+            int loop_n = 4;
+#define LOOP_OFFSET 300
+            for (int i = 0; i < loop_n; i++) {
+                unsigned char c = (unsigned char)loop_text[i];
+                war_vulkan_text_instance* ti = &dst[LOOP_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 1 + i);
+                ti->pos[1] = label_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f;
+                ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0];
+                ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2];
+                ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 0.2f; ti->color[1] = 1.0f; ti->color[2] = 0.2f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)loop_n, 0, LOOP_OFFSET);
+#undef LOOP_OFFSET
+        }
+        // midi mode label on middle status bar
+        if (ctx_wayland->env->active_mode == WAR_MODE_ID_MIDI) {
+            const char* midi_text = "MIDI";
+            int midi_n = 4;
+            float midi_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+#define MIDI_OFFSET 310
+            for (int i = 0; i < midi_n; i++) {
+                unsigned char c = (unsigned char)midi_text[i];
+                war_vulkan_text_instance* ti = &dst[MIDI_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i;
+                ti->pos[1] = midi_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f;
+                ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0];
+                ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2];
+                ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 1.0f; ti->color[1] = 1.0f; ti->color[2] = 0.2f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)midi_n, 0, MIDI_OFFSET);
+#undef MIDI_OFFSET
+        }
+        // visual mode label
+        if (ctx_wayland->env->ctx_cursor->visual_active) {
+            const char* vis_text = "VISUAL";
+            int vis_n = 6;
+            float vis_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
+#define VIS_OFFSET 320
+            for (int i = 0; i < vis_n; i++) {
+                unsigned char c = (unsigned char)vis_text[i];
+                war_vulkan_text_instance* ti = &dst[VIS_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i;
+                ti->pos[1] = vis_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f;
+                ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0];
+                ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2];
+                ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 1.0f; ti->color[1] = 0.6f; ti->color[2] = 0.2f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)vis_n, 0, VIS_OFFSET);
+#undef VIS_OFFSET
+        }
     }
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);

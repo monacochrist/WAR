@@ -473,6 +473,10 @@ typedef struct war_cursor_context {
     int32_t octave;
     uint32_t prefix;
     double step;
+    // visual mode
+    uint8_t visual_active;
+    float visual_anchor_col;
+    float visual_anchor_row;
     // Vulkan objects
     VkShaderModule vert_module;
     VkShaderModule frag_module;
@@ -2708,6 +2712,7 @@ struct war_env {
     uint64_t preview_voice_read_pos[WAR_PREVIEW_VOICES];
     // recording state
     uint8_t recording_active;
+    uint8_t loop_mode;
     double recording_position;
     uint32_t recording_last_frame_ms;
     double recording_start_col[WAR_PREVIEW_VOICES];

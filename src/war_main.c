@@ -909,6 +909,12 @@ static void war_keyboard_key(void* data,
 
     // enter command mode on ':' (check raw sym before normalizer maps it to ';')
     if (raw_sym == XKB_KEY_Escape) {
+        if (env->active_mode == WAR_MODE_ID_VISUAL) {
+            env->active_mode = WAR_MODE_ID_ROLL;
+            env->ctx_cursor->visual_active = 0;
+            cur->prefix = 0;
+            return;
+        }
         if (env->active_mode == WAR_MODE_ID_MIDI) {
             env->active_mode = WAR_MODE_ID_ROLL;
             env->recording_active = 0;
@@ -1800,13 +1806,24 @@ int main(int argc, char** argv) {
                     uint64_t read_pos = env->preview_voice_read_pos[v];
                     uint64_t slot_avail = slot->samples ? slot->count : 0;
                     if (read_pos >= slot_avail) {
-                        env->preview_voice_active[v] = 0;
-                        continue;
+                        if (env->loop_mode) {
+                            env->preview_voice_read_pos[v] = 0;
+                            read_pos = 0;
+                        } else {
+                            env->preview_voice_active[v] = 0;
+                            continue;
+                        }
                     }
                     uint64_t avail = slot_avail - read_pos;
                     if (avail < 2) {
-                        env->preview_voice_active[v] = 0;
-                        continue;
+                        if (env->loop_mode) {
+                            env->preview_voice_read_pos[v] = 0;
+                            read_pos = 0;
+                            avail = slot_avail;
+                        } else {
+                            env->preview_voice_active[v] = 0;
+                            continue;
+                        }
                     }
                     uint64_t batch = avail < PW_CHUNK_FLOATS ?
                                          (avail & ~1ULL) :

@@ -679,6 +679,42 @@ static inline void war_move_cursor_right_leap(war_env* env) {
     for (int i = 0; i < 13; i++) war_move_cursor_right(env);
 }
 
+static inline void war_next_note_same_row(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_note_context* note = env->ctx_note;
+    if (!cur->instance_count || !note || !note->instance_count) return;
+    float cy = cur->instance[0].pos[1];
+    float cx = cur->instance[0].pos[0];
+    float best = 1e9f;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        if (note->instance[i].pos[1] != cy) continue;
+        if (note->instance[i].pos[0] > cx && note->instance[i].pos[0] < best)
+            best = note->instance[i].pos[0];
+    }
+    if (best < 1e9f) {
+        cur->instance[0].pos[0] = best;
+        war_pan_follow(env);
+    }
+}
+
+static inline void war_prev_note_same_row(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_note_context* note = env->ctx_note;
+    if (!cur->instance_count || !note || !note->instance_count) return;
+    float cy = cur->instance[0].pos[1];
+    float cx = cur->instance[0].pos[0];
+    float best = -1e9f;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        if (note->instance[i].pos[1] != cy) continue;
+        if (note->instance[i].pos[0] < cx && note->instance[i].pos[0] > best)
+            best = note->instance[i].pos[0];
+    }
+    if (best > -1e9f) {
+        cur->instance[0].pos[0] = best;
+        war_pan_follow(env);
+    }
+}
+
 static inline void war_zoom_in(war_env* env) {
     float z = env->ctx_wayland->zoom * 1.25f;
     if (z > 100.0f) z = 100.0f;
@@ -694,6 +730,54 @@ static inline void war_zoom_out(war_env* env) {
 static inline void war_zoom_reset(war_env* env) {
     env->ctx_wayland->zoom = env->ctx_wayland->initial_zoom;
 }
+
+static inline void war_visual_mode(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
+    cur->visual_active = !cur->visual_active;
+    if (cur->visual_active) {
+        env->active_mode = WAR_MODE_ID_VISUAL;
+        cur->visual_anchor_col = cur->instance[0].pos[0];
+        cur->visual_anchor_row = cur->instance[0].pos[1];
+        call_king_terry("VISUAL: ON at col=%.1f row=%.1f",
+                        cur->visual_anchor_col, cur->visual_anchor_row);
+    } else {
+        env->active_mode = WAR_MODE_ID_ROLL;
+        call_king_terry("VISUAL: OFF");
+    }
+}
+
+static inline void _war_visual_move_selection(war_env* env, float dx, float dy) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_note_context* note = env->ctx_note;
+    if (!cur->visual_active || !note || !note->instance_count) return;
+    float x0 = cur->visual_anchor_col;
+    float x1 = cur->instance[0].pos[0];
+    float y0 = cur->visual_anchor_row;
+    float y1 = cur->instance[0].pos[1];
+    if (x1 < x0) { float t = x0; x0 = x1; x1 = t; }
+    if (y1 < y0) { float t = y0; y0 = y1; y1 = t; }
+    uint32_t moved = 0;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        float nx = note->instance[i].pos[0];
+        float ny = note->instance[i].pos[1];
+        if (nx >= x0 && nx <= x1 && ny >= y0 && ny <= y1) {
+            note->instance[i].pos[0] += dx;
+            note->instance[i].pos[1] += dy;
+            moved++;
+        }
+    }
+    cur->instance[0].pos[0] += dx;
+    cur->instance[0].pos[1] += dy;
+    cur->visual_anchor_col += dx;
+    cur->visual_anchor_row += dy;
+    call_king_terry("VISUAL: moved %u notes (%.0f,%.0f)", moved, dx, dy);
+}
+
+static inline void war_visual_move_right(war_env* env) { _war_visual_move_selection(env, 1.0f, 0.0f); }
+static inline void war_visual_move_left(war_env* env)  { _war_visual_move_selection(env, -1.0f, 0.0f); }
+static inline void war_visual_move_up(war_env* env)    { _war_visual_move_selection(env, 0.0f, 1.0f); }
+static inline void war_visual_move_down(war_env* env)  { _war_visual_move_selection(env, 0.0f, -1.0f); }
 
 static inline void war_toggle_playback(war_env* env) {
     war_simple_line_context* line = env->ctx_line;
@@ -738,6 +822,11 @@ static inline void war_playbar_goto_start(war_env* env) {
     env->play_bar_prev_cell_pos = (double)gc;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
     line->instance[0].pos[0] = gc;
+}
+
+static inline void war_toggle_loop(war_env* env) {
+    env->loop_mode = !env->loop_mode;
+    call_king_terry("LOOP: %s", env->loop_mode ? "ON" : "OFF");
 }
 
 static inline void war_capture_audio(war_env* env) {
