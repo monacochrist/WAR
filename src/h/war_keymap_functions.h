@@ -759,9 +759,10 @@ static inline void _war_visual_move_selection(war_env* env, float dx, float dy) 
     if (y1 < y0) { float t = y0; y0 = y1; y1 = t; }
     uint32_t moved = 0;
     for (uint32_t i = 0; i < note->instance_count; i++) {
-        float nx = note->instance[i].pos[0];
+        float nx0 = note->instance[i].pos[0];
+        float nx1 = nx0 + note->instance[i].size[0];
         float ny = note->instance[i].pos[1];
-        if (nx >= x0 && nx <= x1 && ny >= y0 && ny <= y1) {
+        if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
             note->instance[i].pos[0] += dx;
             note->instance[i].pos[1] += dy;
             moved++;
