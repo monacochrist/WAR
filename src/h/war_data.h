@@ -2725,6 +2725,12 @@ struct war_env {
     // freetype
     FT_Library ft_lib;
     FT_Face ft_face;
+    // undo
+#define WAR_UNDO_MAX 100
+    uint32_t undo_count;
+    uint32_t undo_pos; // current position in tree (0 = no undo, >0 = can undo)
+    uint32_t* undo_note_counts; // instance_count per snapshot
+    struct war_vulkan_note_instance** undo_notes; // instance copies
 };
 
 typedef struct war_wayland_context {

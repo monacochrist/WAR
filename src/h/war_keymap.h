@@ -503,6 +503,45 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_place_note,
                    0);
+    // trim note under cursor to cursor position (t / r)
+    war_keymap_set(keymap,
+                   config,
+                   2,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                   1,
+                   (char*[]){"t"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_trim_note_under_cursor,
+                   0);
+    war_keymap_set(keymap,
+                   config,
+                   2,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                   1,
+                   (char*[]){"r"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_trim_note_under_cursor,
+                   0);
+    // undo (u)
+    war_keymap_set(keymap,
+                   config,
+                   2,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                   1,
+                   (char*[]){"u"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_undo,
+                   0);
+    // redo (ctrl+r)
+    war_keymap_set(keymap,
+                   config,
+                   2,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                   1,
+                   (char*[]){"<C-r>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_redo,
+                   0);
     // delete note under cursor (x)
     war_keymap_set(keymap,
                    config,

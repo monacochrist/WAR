@@ -96,6 +96,10 @@ else if (strcmp(name, "war_capture_audio") == 0) { return war_capture_audio; }
 else if (strcmp(name, "war_preview_toggle") == 0) { return war_preview_toggle; }
 else if (strcmp(name, "war_set_width_to_duration") == 0) { return war_set_width_to_duration; }
 else if (strcmp(name, "war_place_note") == 0) { return war_place_note; }
+else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
+else if (strcmp(name, "war_undo") == 0) { return war_undo; }
+else if (strcmp(name, "war_redo") == 0) { return war_redo; }
+else if (strcmp(name, "war_trim_note_under_cursor") == 0) { return war_trim_note_under_cursor; }
 else if (strcmp(name, "war_delete_note_under_cursor") == 0) { return war_delete_note_under_cursor; }
 return NULL; }
 

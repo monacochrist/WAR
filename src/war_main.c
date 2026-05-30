@@ -1436,6 +1436,10 @@ int main(int argc, char** argv) {
     env->cmd_active = 0;
     env->cmd_len = 0;
     env->active_mode = WAR_MODE_ID_ROLL;
+    env->undo_count = 0;
+    env->undo_pos = 0;
+    env->undo_note_counts = calloc(WAR_UNDO_MAX, sizeof(uint32_t));
+    env->undo_notes = calloc(WAR_UNDO_MAX, sizeof(war_new_vulkan_note_instance*));
     ctx_hot->fn_id[0] = WAR_HOT_ID_COLOR;
     ctx_hot->fn_id[1] = WAR_HOT_ID_KEYMAP;
     ctx_hot->fn_id[2] = WAR_HOT_ID_COMMAND;

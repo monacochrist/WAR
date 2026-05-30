@@ -970,6 +970,104 @@ static inline void war_place_note(war_env* env) {
         note->instance[i].tick);
 }
 
+static inline void war_undo_save(war_env* env) {
+    war_note_context* note = env->ctx_note;
+    if (!note) return;
+    // discard any redo branches beyond current position
+    for (uint32_t i = env->undo_pos + 1; i < env->undo_count; i++) {
+        free(env->undo_notes[i]);
+        env->undo_notes[i] = NULL;
+    }
+    env->undo_count = env->undo_pos + 1;
+    // shift if full
+    if (env->undo_count > WAR_UNDO_MAX) {
+        free(env->undo_notes[0]);
+        for (uint32_t i = 1; i < env->undo_count; i++)
+            env->undo_notes[i - 1] = env->undo_notes[i];
+        env->undo_count--;
+        env->undo_pos--;
+    }
+    // save current state at undo_pos, then advance
+    uint32_t idx = env->undo_pos;
+    env->undo_note_counts[idx] = note->instance_count;
+    size_t sz = note->instance_count * sizeof(war_new_vulkan_note_instance);
+    free(env->undo_notes[idx]);
+    env->undo_notes[idx] = malloc(sz);
+    if (env->undo_notes[idx])
+        memcpy(env->undo_notes[idx], note->instance, sz);
+    env->undo_pos++;
+    if (env->undo_pos > env->undo_count)
+        env->undo_count = env->undo_pos;
+}
+
+static inline void war_undo(war_env* env) {
+    war_note_context* note = env->ctx_note;
+    if (!note || env->undo_pos == 0) return;
+    // save current live state at undo_pos so redo can find it
+    uint32_t save_idx = env->undo_pos;
+    env->undo_note_counts[save_idx] = note->instance_count;
+    size_t sz = note->instance_count * sizeof(war_new_vulkan_note_instance);
+    free(env->undo_notes[save_idx]);
+    env->undo_notes[save_idx] = malloc(sz);
+    if (env->undo_notes[save_idx])
+        memcpy(env->undo_notes[save_idx], note->instance, sz);
+    if (save_idx >= env->undo_count)
+        env->undo_count = save_idx + 1;
+    // restore previous state
+    uint32_t restore_idx = env->undo_pos - 1;
+    uint32_t cnt = env->undo_note_counts[restore_idx];
+    if (cnt > note->max_instances) cnt = note->max_instances;
+    if (env->undo_notes[restore_idx]) {
+        memcpy(note->instance, env->undo_notes[restore_idx], cnt * sizeof(war_new_vulkan_note_instance));
+        note->instance_count = cnt;
+    }
+    env->undo_pos = restore_idx;
+}
+
+static inline void war_redo(war_env* env) {
+    war_note_context* note = env->ctx_note;
+    if (!note || env->undo_pos >= env->undo_count - 1) return;
+    uint32_t restore_idx = env->undo_pos + 1;
+    uint32_t cnt = env->undo_note_counts[restore_idx];
+    if (cnt > note->max_instances) cnt = note->max_instances;
+    if (env->undo_notes[restore_idx]) {
+        memcpy(note->instance, env->undo_notes[restore_idx], cnt * sizeof(war_new_vulkan_note_instance));
+        note->instance_count = cnt;
+    }
+    env->undo_pos = restore_idx;
+}
+
+static inline void war_trim_note_under_cursor(war_env* env) {
+    war_note_context* note = env->ctx_note;
+    if (!note || !note->instance_count) return;
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
+    war_undo_save(env);
+    float cx = cur->instance[0].pos[0];
+    float cy = cur->instance[0].pos[1];
+    // find the most recently placed note whose body contains the cursor
+    uint32_t best = UINT32_MAX;
+    uint64_t best_tick = 0;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        float nx0 = note->instance[i].pos[0];
+        float nx1 = nx0 + note->instance[i].size[0];
+        float ny0 = note->instance[i].pos[1];
+        float ny1 = ny0 + note->instance[i].size[1];
+        if (cx >= nx0 && cx < nx1 && cy >= ny0 && cy < ny1) {
+            if (best == UINT32_MAX || note->instance[i].tick > best_tick) {
+                best = i;
+                best_tick = note->instance[i].tick;
+            }
+        }
+    }
+    if (best == UINT32_MAX) return;
+    float new_w = cx - note->instance[best].pos[0];
+    if (new_w < 0.01f) new_w = 0.01f;
+    note->instance[best].size[0] = new_w;
+    call_king_terry("TRIM: note #%u new width=%.2f (cursor at %.1f)",
+                    best, new_w, cx);
+}
+
 static inline void war_delete_note_under_cursor(war_env* env) {
     war_note_context* note = env->ctx_note;
     if (!note || !note->instance_count) return;
