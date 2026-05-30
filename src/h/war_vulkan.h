@@ -1017,9 +1017,9 @@ static inline void war_font_init(war_font_context* font,
         float gh = (float)(face->glyph->metrics.height >> 6);
         font->glyph_norm_width[c] = gw / (float)cell_px_w;
         font->glyph_norm_height[c] = gh / (float)cell_px_h;
-        font->glyph_norm_ascent[c] = (float)(face->glyph->metrics.horiBearingY >> 6) / (float)cell_px_h;
-        font->glyph_norm_descent[c] = (float)((face->glyph->metrics.height - face->glyph->metrics.horiBearingY) >> 6) / (float)cell_px_h;
-        font->glyph_norm_baseline[c] = font->glyph_norm_ascent[c];
+        font->glyph_norm_ascent[c] = 0.5f + gh / (2.0f * (float)cell_px_h);
+        font->glyph_norm_descent[c] = 0;
+        font->glyph_norm_baseline[c] = 0;
     }
     font->glyph_norm_width[0] = font->glyph_norm_width['*'];
     font->glyph_norm_height[0] = font->glyph_norm_height['*'];
@@ -1395,13 +1395,13 @@ static inline void war_font_render_cmd(VkCommandBuffer cmd,
     war_vulkan_text_instance* inst = font->instance_mapped;
     // skip index 0 (used by cursor glyph)
 
-    // position: bottom* of visible area
-    float gutter_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1;
+    // position: middle of the 3 gutter rows, 3 cells left of gutter edge
+    float gutter_row = ctx_wayland->panning[1] + 1.0f;
 
     for (uint32_t i = 0; i < count; i++) {
         unsigned char c = (unsigned char)env->cmd_buf[i];
         war_vulkan_text_instance* ti = &inst[1 + i];
-        ti->pos[0] = (float)ctx_wayland->gutter_cols + (float)i;
+        ti->pos[0] = (float)ctx_wayland->gutter_cols + (float)i - 4.0f;
         ti->pos[1] = gutter_row;
         ti->pos[2] = 0;
         ti->size[0] = 1.0f;
