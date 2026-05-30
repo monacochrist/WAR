@@ -826,16 +826,14 @@ static inline void war_set_width_to_duration(war_env* env) {
     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     float new_w;
     if (env->capture_slots[idx].samples && env->capture_slots[idx].count > 0) {
-        double duration = (double)env->capture_slots[idx].count / 48000.0;
-        if (duration < 1.0) duration = 1.0;
-        new_w = (float)duration;
+        double bpm = env->atomics->bpm;
+        if (bpm <= 0.0) bpm = 100.0;
+        double sec_per_cell = 60.0 / bpm;
+        double duration_sec = (double)env->capture_slots[idx].count / 48000.0 / 2.0;
+        new_w = (float)(duration_sec / sec_per_cell);
         call_king_terry(
-            "WIDTH: note=%u layer=%u count=%lu duration=%.3f size=%.2f",
-            note,
-            layer,
-            env->capture_slots[idx].count,
-            duration,
-            new_w);
+            "WIDTH: note=%u layer=%u count=%lu duration_sec=%.3f cells=%.2f",
+            note, layer, env->capture_slots[idx].count, duration_sec, new_w);
     } else {
         new_w = 1.0f;
         call_king_terry(
