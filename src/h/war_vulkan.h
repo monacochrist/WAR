@@ -2253,14 +2253,14 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                          ctx_wayland->env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows,
                          ctx_wayland->env->ctx_cursor->instance[0].pos[0]);
         if (n < 0 || n > (int)sizeof(label)) n = 0;
-        float label_row = ctx_wayland->panning[1] + (float)(ctx_wayland->height / (ch * zoom));
-        label_row -= (float)ctx_wayland->gutter_rows / 2.0f;
+        // top status bar, panning-independent
+        float label_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
 #define LABEL_OFFSET 256
         war_vulkan_text_instance* dst = font->instance_mapped;
         for (int i = 0; i < n; i++) {
             unsigned char c = (unsigned char)label[i];
             war_vulkan_text_instance* ti = &dst[LABEL_OFFSET + i];
-            ti->pos[0] = (float)ctx_wayland->gutter_cols + (float)i;
+            ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i;
             ti->pos[1] = label_row;
             ti->pos[2] = 0;
             ti->size[0] = 1.0f;
