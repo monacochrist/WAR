@@ -72,7 +72,7 @@ static inline void war_roll_cursor_goto_right_bound_or_prefix_horizontal(war_env
         if (vis_cols < 1) vis_cols = 1;
         col = (double)(uint32_t)(wl->panning[0] + vis_cols + 0.5);
     } else {
-        col = (double)cur->prefix + 3.0;
+        col = (double)cur->prefix + (double)(wl->gutter_cols - 1);
     }
     if (col < wl->gutter_cols) col = wl->gutter_cols;
     if (col > wl->right_bound) col = wl->right_bound;

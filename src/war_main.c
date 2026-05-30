@@ -935,6 +935,14 @@ static void war_keyboard_key(void* data,
         return;
     }
 
+    // direct $ handler (bypasses keymap for reliability)
+    if (raw_sym == XKB_KEY_dollar && mode == WAR_MODE_ID_ROLL && !env->cmd_active) {
+        war_roll_cursor_goto_right_bound_or_prefix_horizontal(env);
+        ctx_wayland->keymap_state = 0;
+        if (!is_digit) cur->prefix = 0;
+        return;
+    }
+
     uint64_t next = 0;
     // try from stored prefix state first (for multi-key sequences like gg)
     if (ctx_wayland->keymap_state) {

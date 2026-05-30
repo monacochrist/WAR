@@ -2299,7 +2299,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         char label[32];
         int n = snprintf(label, sizeof(label), "%.0f, %.0f",
                          ctx_wayland->env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows,
-                         ctx_wayland->env->ctx_cursor->instance[0].pos[0]);
+                         ctx_wayland->env->ctx_cursor->instance[0].pos[0] - (double)(ctx_wayland->gutter_cols - 1));
         if (n < 0 || n > (int)sizeof(label)) n = 0;
         // top status bar, panning-independent
         float label_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
