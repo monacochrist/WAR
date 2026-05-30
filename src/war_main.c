@@ -918,6 +918,7 @@ static void war_keyboard_key(void* data,
         if (env->active_mode == WAR_MODE_ID_MIDI) {
             env->active_mode = WAR_MODE_ID_ROLL;
             env->recording_active = 0;
+            env->loop_mode = 0;
             cur->prefix = 0;
             return;
         }
