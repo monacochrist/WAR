@@ -2185,6 +2185,13 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                         ctx_wayland,
                         (float)ctx_wayland->width,
                         (float)ctx_wayland->height);
+    if (ctx_wayland->env->ctx_cursor->visual_active) {
+        // override cursor color for visual mode before the render copies it
+        ctx_wayland->env->ctx_cursor->instance[0].color[0] = 1.0f;
+        ctx_wayland->env->ctx_cursor->instance[0].color[1] = 1.0f;
+        ctx_wayland->env->ctx_cursor->instance[0].color[2] = 0.3f;
+        ctx_wayland->env->ctx_cursor->instance[0].color[3] = 0.6f;
+    }
     war_cursor_render(cmd,
                       ctx_wayland->env->ctx_cursor,
                       ctx_wayland,
@@ -2254,9 +2261,9 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             sel.pos[2] = 0.0f;
             sel.color[0] = 0.3f; sel.color[1] = 0.3f; sel.color[2] = 1.0f; sel.color[3] = 0.4f;
             sel.flags = 0;
-            // write to cursor instance buffer after the cursor instances
+            // write to cursor instance buffer (past cursor + 3 status bars)
             memcpy((char*)vcur->instance_mapped +
-                       sizeof(war_vulkan_cursor_instance) * vcur->instance_count,
+                       sizeof(war_vulkan_cursor_instance) * (vcur->instance_count + 3),
                    &sel, sizeof(sel));
             VkViewport svp = {0, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 1};
             int32_t sgutter = (int32_t)(vch * vzoom * ctx_wayland->gutter_rows);
@@ -2277,11 +2284,8 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             VkBuffer bufs[] = {vcur->quad_vbo, vcur->instance_vbo};
             VkDeviceSize offsets[] = {0, 0};
             vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
-            vkCmdDraw(cmd, 4, 1, 0, vcur->instance_count);
+            vkCmdDraw(cmd, 4, 1, 0, vcur->instance_count + 3);
         }
-        // also recolor the cursor to indicate visual mode
-        war_vulkan_cursor_instance* vcm = (war_vulkan_cursor_instance*)vcur->instance_mapped;
-        vcm[0].color[0] = 1.0f; vcm[0].color[1] = 1.0f; vcm[0].color[2] = 0.3f; vcm[0].color[3] = 0.6f;
     }
     if (ctx_wayland->env->ctx_font) {
         war_font_render_cmd(cmd,
@@ -2404,7 +2408,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (ctx_wayland->env->ctx_cursor->visual_active) {
             const char* vis_text = "VISUAL";
             int vis_n = 6;
-            float vis_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
+            float vis_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
 #define VIS_OFFSET 320
             for (int i = 0; i < vis_n; i++) {
                 unsigned char c = (unsigned char)vis_text[i];

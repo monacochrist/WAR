@@ -743,6 +743,11 @@ static inline void war_visual_mode(war_env* env) {
                         cur->visual_anchor_col, cur->visual_anchor_row);
     } else {
         env->active_mode = WAR_MODE_ID_ROLL;
+        // restore cursor color
+        cur->instance[0].color[0] = 1.0f;
+        cur->instance[0].color[1] = 1.0f;
+        cur->instance[0].color[2] = 1.0f;
+        cur->instance[0].color[3] = 1.0f;
         call_king_terry("VISUAL: OFF");
     }
 }
