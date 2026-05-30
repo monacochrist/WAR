@@ -586,6 +586,43 @@ static void war_load_project(war_env* env, const char* filename) {
             path, note_count, slot_count, bpm);
 }
 
+static void war_loop_notes(war_env* env, int quarter_notes, int repeats) {
+    war_note_context* note = env->ctx_note;
+    if (!note || !note->instance_count) {
+        fprintf(stderr, "LOOP: no notes\n");
+        return;
+    }
+    double cursor_col = env->ctx_cursor->instance[0].pos[0];
+    double section_cells = (double)quarter_notes * 4.0;
+    if (section_cells <= 0) {
+        fprintf(stderr, "LOOP: invalid length\n");
+        return;
+    }
+    if (repeats < 2) {
+        fprintf(stderr, "LOOP: repeats must be >= 2\n");
+        return;
+    }
+    int added = 0;
+    uint32_t max = note->max_instances;
+    uint32_t count = note->instance_count;
+    for (int r = 1; r < repeats; r++) {
+        double shift = section_cells * r;
+        for (uint32_t i = 0; i < count; i++) {
+            double ns = note->instance[i].pos[0];
+            if (ns >= cursor_col && ns < cursor_col + section_cells) {
+                if (note->instance_count >= max) break;
+                uint32_t dst = note->instance_count++;
+                note->instance[dst] = note->instance[i];
+                note->instance[dst].pos[0] += (float)shift;
+                note->instance[dst].tick = note->tick_counter++;
+                added++;
+            }
+        }
+    }
+    fprintf(stderr, "LOOP: section=%.1f cells repeats=%d added=%d notes total=%u\n",
+            section_cells, repeats, added, note->instance_count);
+}
+
 static void war_keyboard_key(void* data,
                              struct wl_keyboard* keyboard,
                              uint32_t serial,
@@ -714,7 +751,13 @@ static void war_keyboard_key(void* data,
         }
         if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
             env->cmd_buf[env->cmd_len < 256 ? env->cmd_len : 255] = '\0';
-            if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'd') {
+            if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'o' && env->cmd_buf[4] == 'p') {
+                int x = 0, y = 0;
+                if (sscanf(env->cmd_buf + 5, " %d %d", &x, &y) >= 2 && x > 0 && y > 0)
+                    war_loop_notes(env, x, y);
+                else
+                    fprintf(stderr, "LOOP: usage :loop <quarter_notes> <repeats>\n");
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'd') {
                 const char* name = env->cmd_buf + 5;
                 while (*name == ' ') name++;
                 if (name[0])

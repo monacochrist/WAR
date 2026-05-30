@@ -1796,12 +1796,17 @@ static inline void war_note_render(VkCommandBuffer cmd,
            ctx_note->instance,
            sizeof(war_new_vulkan_note_instance) * ctx_note->instance_count);
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
+    int32_t gutter_right =
+        (int32_t)(ctx_wayland->gutter_cols * ctx_wayland->env->ctx_cursor->cell_width *
+                  ctx_wayland->zoom);
+    if (gutter_right < 0) gutter_right = 0;
+    if (gutter_right > (int32_t)screen_w) gutter_right = (int32_t)screen_w;
     int32_t gutter_bottom =
         (int32_t)(ctx_wayland->env->ctx_cursor->cell_height * ctx_wayland->zoom *
                   ctx_wayland->gutter_rows);
     if (gutter_bottom < 0) gutter_bottom = 0;
     if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
-    VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
+    VkRect2D scissor = {{gutter_right, 0}, {(uint32_t)(screen_w - gutter_right), (uint32_t)(screen_h - gutter_bottom)}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx_note->pipeline);
