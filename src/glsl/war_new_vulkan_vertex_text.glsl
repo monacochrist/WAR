@@ -58,8 +58,9 @@ void main() {
 
     vec2 instancePosPx = (in_instance_pos.xy + pc.cell_offset) * pc.cell_size * pc.zoom;
     vec2 finalPos = localPosPx + instancePosPx + pc.panning * pc.cell_size;
+    vec2 snappedPos = floor(finalPos) + 0.5;
 
-    vec2 ndc = (finalPos / pc.screen_size) * 2.0 - 1.0;
+    vec2 ndc = (snappedPos / pc.screen_size) * 2.0 - 1.0;
     ndc.y = -ndc.y;
 
     gl_Position = vec4(ndc, in_instance_pos.z, 1.0);

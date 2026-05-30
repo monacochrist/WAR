@@ -972,14 +972,14 @@ static inline void war_font_init(war_font_context* font,
     font->glyph_ascent = (float)(face->size->metrics.ascender >> 6);
     font->glyph_descent = (float)(-face->size->metrics.descender >> 6);
 
-    // render all printable ASCII at high resolution for the atlas
-    FT_Set_Pixel_Sizes(face, 0, 384);
+    // render atlas at high resolution for quality downscaling
+    FT_Set_Pixel_Sizes(face, 0, 512);
 
-#define ATLAS_GLYPH_SIZE 384
 #define ATLAS_COLS 10
-#define ATLAS_ROWS 10
-    int atlas_w = ATLAS_COLS * ATLAS_GLYPH_SIZE;
-    int atlas_h = ATLAS_ROWS * ATLAS_GLYPH_SIZE;
+    int atlas_glyph_size = 512;
+    int atlas_rows = 10;
+    int atlas_w = ATLAS_COLS * atlas_glyph_size;
+    int atlas_h = atlas_rows * atlas_glyph_size;
     unsigned char* atlas_data = calloc(1, (size_t)atlas_w * atlas_h);
 
     for (int c = 32; c <= 126; c++) {
@@ -987,8 +987,8 @@ static inline void war_font_init(war_font_context* font,
             continue;
         int col = (c - 32) % ATLAS_COLS;
         int row = (c - 32) / ATLAS_COLS;
-        int dst_x = col * ATLAS_GLYPH_SIZE;
-        int dst_y = row * ATLAS_GLYPH_SIZE;
+        int dst_x = col * atlas_glyph_size;
+        int dst_y = row * atlas_glyph_size;
         unsigned char* src = face->glyph->bitmap.buffer;
         int src_w = face->glyph->bitmap.width;
         int src_h = face->glyph->bitmap.rows;
@@ -1002,7 +1002,6 @@ static inline void war_font_init(war_font_context* font,
         font->glyph_uv[c][2] = (float)(dst_x + src_w) / atlas_w;
         font->glyph_uv[c][3] = (float)(dst_y + src_h) / atlas_h;
     }
-    // fallback for non-printable — use '*' UV
     font->glyph_uv[0][0] = font->glyph_uv['*'][0];
     font->glyph_uv[0][1] = font->glyph_uv['*'][1];
     font->glyph_uv[0][2] = font->glyph_uv['*'][2];
@@ -1027,7 +1026,7 @@ static inline void war_font_init(war_font_context* font,
     font->glyph_norm_descent[0] = font->glyph_norm_descent['*'];
     font->glyph_norm_baseline[0] = font->glyph_norm_baseline['*'];
 
-    // atlas image (R8 at high resolution)
+    // atlas image (R8 at display resolution)
     VkImageCreateInfo ici = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
@@ -1087,8 +1086,8 @@ static inline void war_font_init(war_font_context* font,
     // sampler
     VkSamplerCreateInfo sci = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_NEAREST,
-        .minFilter = VK_FILTER_NEAREST,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
