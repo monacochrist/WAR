@@ -421,7 +421,7 @@ static void war_export_wav(war_env* env, const char* filename) {
 
     // write WAV
     char path[1024];
-    snprintf(path, sizeof(path), "%s.wav", filename);
+    snprintf(path, sizeof(path), "%s", filename);
     FILE* f = fopen(path, "wb");
     if (!f) {
         fprintf(stderr, "EXPORT: failed to open %s\n", path);
@@ -468,6 +468,122 @@ static void war_export_wav(war_env* env, const char* filename) {
     free(mix);
     fprintf(stderr, "EXPORT: wrote %s (%u frames, %.2f sec)\n",
             path, (unsigned)total_frames, total_sec);
+}
+
+static void war_save_project(war_env* env, const char* filename) {
+    char path[1024];
+    snprintf(path, sizeof(path), "%s", filename);
+    FILE* f = fopen(path, "wb");
+    if (!f) {
+        fprintf(stderr, "SAVE: failed to open %s\n", path);
+        return;
+    }
+    fwrite("WARP", 1, 4, f);
+    uint32_t version = 0;
+    fwrite(&version, 4, 1, f);
+    float bpm = env->atomics->bpm;
+    if (bpm <= 0.0f) bpm = 100.0f;
+    fwrite(&bpm, 4, 1, f);
+    uint32_t note_count = env->ctx_note ? env->ctx_note->instance_count : 0;
+    fwrite(&note_count, 4, 1, f);
+    for (uint32_t i = 0; i < note_count; i++) {
+        fwrite(&env->ctx_note->instance[i].pos, sizeof(float), 3, f);
+        fwrite(&env->ctx_note->instance[i].size, sizeof(float), 2, f);
+        fwrite(&env->ctx_note->instance[i].color, sizeof(float), 4, f);
+        fwrite(&env->ctx_note->instance[i].flags, sizeof(war_vulkan_flags), 1, f);
+        fwrite(&env->ctx_note->instance[i].tick, sizeof(uint64_t), 1, f);
+    }
+    // count non-empty capture slots
+    uint32_t slot_count = 0;
+    for (int i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++) {
+        if (env->capture_slots[i].samples && env->capture_slots[i].count > 0)
+            slot_count++;
+    }
+    fwrite(&slot_count, 4, 1, f);
+    for (int i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++) {
+        if (env->capture_slots[i].samples && env->capture_slots[i].count > 0) {
+            uint32_t idx = (uint32_t)i;
+            fwrite(&idx, 4, 1, f);
+            fwrite(&env->capture_slots[i].count, sizeof(uint64_t), 1, f);
+            fwrite(env->capture_slots[i].samples, sizeof(float),
+                   env->capture_slots[i].count, f);
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "SAVE: wrote %s (%u notes, %u slots)\n",
+            path, note_count, slot_count);
+}
+
+static void war_load_project(war_env* env, const char* filename) {
+    char path[1024];
+    snprintf(path, sizeof(path), "%s", filename);
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "LOAD: failed to open %s\n", path);
+        return;
+    }
+    char magic[4];
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "WARP", 4) != 0) {
+        fprintf(stderr, "LOAD: invalid magic\n");
+        fclose(f);
+        return;
+    }
+    uint32_t version;
+    fread(&version, 4, 1, f);
+    float bpm;
+    fread(&bpm, 4, 1, f);
+    if (bpm > 0.0f) env->atomics->bpm = bpm;
+    // clear existing notes
+    if (env->ctx_note) env->ctx_note->instance_count = 0;
+    // clear existing capture slots
+    for (int i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++) {
+        if (env->capture_slots[i].samples) {
+            free(env->capture_slots[i].samples);
+            env->capture_slots[i].samples = NULL;
+            env->capture_slots[i].count = 0;
+            env->capture_slots[i].capacity = 0;
+        }
+    }
+    uint32_t note_count;
+    fread(&note_count, 4, 1, f);
+    if (env->ctx_note) {
+        uint32_t max = env->ctx_note->max_instances;
+        if (note_count > max) note_count = max;
+        for (uint32_t i = 0; i < note_count; i++) {
+            fread(&env->ctx_note->instance[i].pos, sizeof(float), 3, f);
+            fread(&env->ctx_note->instance[i].size, sizeof(float), 2, f);
+            fread(&env->ctx_note->instance[i].color, sizeof(float), 4, f);
+            fread(&env->ctx_note->instance[i].flags, sizeof(war_vulkan_flags), 1, f);
+            fread(&env->ctx_note->instance[i].tick, sizeof(uint64_t), 1, f);
+            env->ctx_note->instance[i].outline_color[3] = 1.0f;
+        }
+        env->ctx_note->instance_count = note_count;
+        env->ctx_note->tick_counter = note_count;
+    }
+    uint32_t slot_count;
+    fread(&slot_count, 4, 1, f);
+    for (uint32_t s = 0; s < slot_count; s++) {
+        uint32_t idx;
+        fread(&idx, 4, 1, f);
+        uint64_t cnt;
+        fread(&cnt, sizeof(uint64_t), 1, f);
+        if (idx < 128 * WAR_CAPTURE_SLOT_LAYERS && cnt > 0) {
+            float* samples = malloc(cnt * sizeof(float));
+            if (samples) {
+                fread(samples, sizeof(float), cnt, f);
+                env->capture_slots[idx].samples = samples;
+                env->capture_slots[idx].count = cnt;
+                env->capture_slots[idx].capacity = cnt;
+            } else {
+                fseek(f, cnt * sizeof(float), SEEK_CUR);
+            }
+        } else {
+            fseek(f, cnt * sizeof(float), SEEK_CUR);
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "LOAD: loaded %s (%u notes, %u slots, bpm=%.1f)\n",
+            path, note_count, slot_count, bpm);
 }
 
 static void war_keyboard_key(void* data,
@@ -597,12 +713,29 @@ static void war_keyboard_key(void* data,
             return;
         }
         if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
-            if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w') {
+            env->cmd_buf[env->cmd_len < 256 ? env->cmd_len : 255] = '\0';
+            if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'd') {
+                const char* name = env->cmd_buf + 5;
+                while (*name == ' ') name++;
+                if (name[0])
+                    war_load_project(env, name);
+                else
+                    fprintf(stderr, "LOAD: usage :load <name>\n");
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'w' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'v') {
+                const char* name = NULL;
+                if (env->cmd_len > 5 && env->cmd_buf[5] == ' ')
+                    name = env->cmd_buf + 6;
+                if (!name || !name[0]) name = "output";
+                war_export_wav(env, name);
+            } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w') {
                 const char* name = NULL;
                 if (env->cmd_len > 2 && env->cmd_buf[2] == ' ')
                     name = env->cmd_buf + 3;
-                if (!name || !name[0]) name = "output";
-                war_export_wav(env, name);
+                if (name && name[0]) {
+                    war_save_project(env, name);
+                } else {
+                    fprintf(stderr, "SAVE: usage :w <name>\n");
+                }
             }
             env->cmd_active = 0;
             env->cmd_len = 0;
@@ -611,6 +744,7 @@ static void war_keyboard_key(void* data,
         }
         if (raw_sym == XKB_KEY_BackSpace) {
             if (env->cmd_len > 1) env->cmd_len--;
+            env->cmd_buf[env->cmd_len] = '\0';
             cur->prefix = 0;
             return;
         }
@@ -618,8 +752,10 @@ static void war_keyboard_key(void* data,
         char utf8[8] = {0};
         int n = xkb_keysym_to_utf8(raw_sym, utf8, sizeof(utf8));
         if (n > 1 && utf8[0] >= 32 && utf8[0] <= 126) {
-            if (env->cmd_len < 255)
+            if (env->cmd_len < 255) {
                 env->cmd_buf[env->cmd_len++] = utf8[0];
+                env->cmd_buf[env->cmd_len] = '\0';
+            }
         }
         cur->prefix = 0;
         return;
@@ -630,6 +766,7 @@ static void war_keyboard_key(void* data,
         env->cmd_active = 1;
         env->cmd_len = 1;
         env->cmd_buf[0] = ':';
+        env->cmd_buf[1] = '\0';
         cur->prefix = 0;
         // suppress repeat — command mode handles text separately
         ctx_wayland->repeat_active = 0;
