@@ -22,6 +22,7 @@ if (strcmp(name, "war_fat") == 0) { return war_fat; }
 else if (strcmp(name, "war_thin") == 0) { return war_thin; }
 else if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
 else if (strcmp(name, "war_goto_col") == 0) { return war_goto_col; }
+else if (strcmp(name, "war_roll_cursor_goto_right_bound_or_prefix_horizontal") == 0) { return war_roll_cursor_goto_right_bound_or_prefix_horizontal; }
 else if (strcmp(name, "war_goto_left_visible_bound") == 0) { return war_goto_left_visible_bound; }
 else if (strcmp(name, "war_pan_center_on_cursor") == 0) { return war_pan_center_on_cursor; }
 else if (strcmp(name, "war_goto_row_127") == 0) { return war_goto_row_127; }

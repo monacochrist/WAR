@@ -63,6 +63,23 @@ static inline void war_goto_col(war_env* env) {
     war_pan_follow(env);
 }
 
+static inline void war_roll_cursor_goto_right_bound_or_prefix_horizontal(war_env* env) {
+    war_wayland_context* wl = env->ctx_wayland;
+    war_cursor_context* cur = env->ctx_cursor;
+    double col;
+    if (cur->prefix == 0) {
+        double vis_cols = (double)wl->width / (cur->cell_width * wl->zoom) - wl->gutter_cols;
+        if (vis_cols < 1) vis_cols = 1;
+        col = (double)(uint32_t)(wl->panning[0] + vis_cols + 0.5);
+    } else {
+        col = (double)cur->prefix + 3.0;
+    }
+    if (col < wl->gutter_cols) col = wl->gutter_cols;
+    if (col > wl->right_bound) col = wl->right_bound;
+    cur->instance->pos[0] = (float)col;
+    war_pan_follow(env);
+}
+
 static inline void war_goto_left_visible_bound(war_env* env) {
     war_wayland_context* wl = env->ctx_wayland;
     war_cursor_context* cur = env->ctx_cursor;
