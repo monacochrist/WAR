@@ -21,11 +21,15 @@ layout(location = 0) out vec4 frag_color;
 flat layout(location = 1) out uint frag_flags;
 layout(location = 2) out vec2 frag_uv;
 flat layout(location = 3) out vec4 frag_outline_color;
+flat layout(location = 4) out vec2 frag_outline_threshold;
 
 void main() {
     frag_flags = in_flags;
     frag_uv = in_pos;
     frag_outline_color = in_outline_color;
+    // constant pixel outline thickness (2px)
+    vec2 pixelSize = in_instance_size * pc.cell_size * pc.zoom;
+    frag_outline_threshold = vec2(2.0 / pixelSize.x, 2.0 / pixelSize.y);
     // Quad size in pixels
     vec2 quadSizePx =
         in_instance_size * pc.cell_size * pc.zoom;
