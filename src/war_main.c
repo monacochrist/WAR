@@ -205,27 +205,27 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
                     uint32_t pitch =
                         (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)ctx_wayland->gutter_rows);
                     if (pitch > 127) pitch = 127;
-                    for (uint32_t l = 1; l <= 9; l++) {
-                        uint32_t idx =
-                            pitch * WAR_CAPTURE_SLOT_LAYERS + (l - 1);
-                        war_capture_slot* slot = &env->capture_slots[idx];
-                        if (slot->samples && slot->count > 0) {
-                            double dur_cells = env->ctx_note->instance[i].size[0];
-                            uint64_t max_floats = (uint64_t)(dur_cells * 60.0 / bpm * 48000.0 * 2.0);
-                            if (max_floats > slot->count) max_floats = slot->count;
-                            if (max_floats & 1) max_floats &= ~1ULL;
-                            for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
-                                if (!env->play_bar_voice_active[v]) {
-                                    env->play_bar_voice_note[v] = pitch;
-                                    env->play_bar_voice_layer[v] = l;
-                                    env->play_bar_voice_read_pos[v] = 0;
-                                    env->play_bar_voice_read_limit[v] = max_floats;
-                                    env->play_bar_voice_active[v] = 1;
-                                    break;
-                                }
+                    uint32_t layer_idx = (env->ctx_note->instance[i].flags >> 4) & 0xF;
+                    if (layer_idx < 1 || layer_idx > 9) layer_idx = 1;
+                    uint32_t idx =
+                        pitch * WAR_CAPTURE_SLOT_LAYERS + (layer_idx - 1);
+                    war_capture_slot* slot = &env->capture_slots[idx];
+                    if (slot->samples && slot->count > 0) {
+                        double dur_cells = env->ctx_note->instance[i].size[0];
+                        uint64_t max_floats = (uint64_t)(dur_cells * 60.0 / bpm * 48000.0 * 2.0);
+                        if (max_floats > slot->count) max_floats = slot->count;
+                        if (max_floats & 1) max_floats &= ~1ULL;
+                        for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
+                            if (!env->play_bar_voice_active[v]) {
+                                env->play_bar_voice_note[v] = pitch;
+                                env->play_bar_voice_layer[v] = layer_idx;
+                                env->play_bar_voice_read_pos[v] = 0;
+                                env->play_bar_voice_read_limit[v] = max_floats;
+                                env->play_bar_voice_active[v] = 1;
+                                break;
                             }
-                            break;
                         }
+                        break;
                     }
                 }
             }

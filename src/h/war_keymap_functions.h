@@ -377,7 +377,7 @@ static inline void _war_record_place_note(war_env* env, uint32_t note, int voice
     note_ctx->instance[i].outline_color[1] = 0.0f;
     note_ctx->instance[i].outline_color[2] = 0.0f;
     note_ctx->instance[i].outline_color[3] = 1.0f;
-    note_ctx->instance[i].flags = 0;
+    note_ctx->instance[i].flags = (uint32_t)env->ctx_cursor->layer << 4;
     note_ctx->instance[i].tick = note_ctx->tick_counter++;
     env->recording_start_col[voice] = env->recording_position;
     env->recording_note_idx[voice] = i;
@@ -941,18 +941,19 @@ static inline void war_place_note(war_env* env) {
     uint32_t i = note->instance_count++;
     note->instance[i].pos[0] = cur->instance[0].pos[0];
     note->instance[i].pos[1] = cur->instance[0].pos[1];
-    note->instance[i].pos[2] = cur->instance[0].pos[2];
+    note->instance[i].pos[2] = 0.0f;
     note->instance[i].size[0] = cur->instance[0].size[0];
     note->instance[i].size[1] = cur->instance[0].size[1];
-    note->instance[i].color[0] = cur->instance[0].color[0];
-    note->instance[i].color[1] = cur->instance[0].color[1];
-    note->instance[i].color[2] = cur->instance[0].color[2];
-    note->instance[i].color[3] = cur->instance[0].color[3];
+    uint32_t col = (&env->ctx_color->layer_none)[env->ctx_cursor->layer];
+    note->instance[i].color[0] = ((col >> 24) & 0xFF) / 255.0f;
+    note->instance[i].color[1] = ((col >> 16) & 0xFF) / 255.0f;
+    note->instance[i].color[2] = ((col >> 8) & 0xFF) / 255.0f;
+    note->instance[i].color[3] = (col & 0xFF) / 255.0f;
     note->instance[i].outline_color[0] = 0.0f;
     note->instance[i].outline_color[1] = 0.0f;
     note->instance[i].outline_color[2] = 0.0f;
     note->instance[i].outline_color[3] = 1.0f;
-    note->instance[i].flags = 0;
+    note->instance[i].flags = (uint32_t)env->ctx_cursor->layer << 4;
     note->instance[i].tick = note->tick_counter++;
     call_king_terry(
         "NOTE: placed #%u at pos=(%.1f,%.1f) size=(%.1f,%.1f) tick=%lu",
