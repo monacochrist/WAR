@@ -399,22 +399,17 @@ static inline void war_record_midi(war_env* env) {
 
 static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t layer) {
     for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
-        if (env->preview_voice_note[v] == note) {
-            // restart voice for this note (handles re-press during follow-through)
-            env->preview_voice_note[v] = note;
-            env->preview_voice_layer[v] = layer;
-            env->preview_voice_read_pos[v] = 0;
-            env->preview_voice_active[v] = 1;
-            if (env->recording_active) _war_record_place_note(env, note, (int)v);
-            return (int)v;
-        }
-        if (!env->preview_voice_active[v]) {
-            env->preview_voice_note[v] = note;
-            env->preview_voice_layer[v] = layer;
-            env->preview_voice_read_pos[v] = 0;
-            env->preview_voice_active[v] = 1;
-            if (env->recording_active) _war_record_place_note(env, note, (int)v);
-            return (int)v;
+        if (env->preview_voice_note[v] == note || !env->preview_voice_active[v]) {
+            uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+            war_capture_slot* slot = &env->capture_slots[idx];
+            if (!slot->samples || slot->count < 2) return -1;
+            uint32_t voice = v;
+            env->preview_voice_note[voice] = note;
+            env->preview_voice_layer[voice] = layer;
+            env->preview_voice_read_pos[voice] = 0;
+            env->preview_voice_active[voice] = 1;
+            if (env->recording_active) _war_record_place_note(env, note, (int)voice);
+            return (int)voice;
         }
     }
     return -1;

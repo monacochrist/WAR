@@ -1132,7 +1132,9 @@ void* war_pipewire(void* args) {
     // --- capture stream (mic in) ---
     {
         struct pw_properties* props =
-            pw_properties_new("media.name", "war-capture", NULL);
+            pw_properties_new("media.name", "war-capture",
+                              "node.latency", "256/48000",
+                              NULL);
         env->ctx_pw->capture_stream = pw_stream_new(core, "war-capture", props);
         struct spa_audio_info_raw capture_info = {
             .format = SPA_AUDIO_FORMAT_F32,
@@ -1163,7 +1165,9 @@ void* war_pipewire(void* args) {
     // --- play stream (speakers out) ---
     {
         struct pw_properties* props =
-            pw_properties_new("media.name", "war-play", NULL);
+            pw_properties_new("media.name", "war-play",
+                              "node.latency", "256/48000",
+                              NULL);
         env->ctx_pw->play_stream = pw_stream_new(core, "war-play", props);
         // format: F32, 48000, stereo
         struct spa_audio_info_raw play_info = {
