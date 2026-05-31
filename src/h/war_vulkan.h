@@ -2215,6 +2215,90 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             vkCmdDraw(cmd, 4, 1, 0, vcur->instance_count + 3);
         }
     }
+    // --- waveform viewer ---
+    if (ctx_wayland->env->wave_view_active) {
+        war_cursor_context* wcur = ctx_wayland->env->ctx_cursor;
+        double wcw = wcur->cell_width, wch = wcur->cell_height;
+        float wz = ctx_wayland->zoom;
+        uint32_t wp = ctx_wayland->env->wave_view_pitch;
+        uint32_t wl = ctx_wayland->env->wave_view_layer;
+        uint32_t widx = wp * WAR_CAPTURE_SLOT_LAYERS + (wl - 1);
+        float* ws = ctx_wayland->env->capture_slots[widx].samples;
+        uint64_t wcnt = ctx_wayland->env->capture_slots[widx].count;
+        if (ws && wcnt >= 4) {
+            double wrows = (double)ctx_wayland->height / (wch * wz) - ctx_wayland->gutter_rows;
+            if (wrows < 2) wrows = 2;
+            uint64_t wframes = wcnt / 2;
+            float nw = ctx_wayland->env->wave_view_note_width;
+            if (nw < 0.5f) nw = 1.0f;
+            // 4 bars per cell so waveform spans exactly the note width
+            #define WAVE_MAX_BARS 1000
+            uint32_t wbars = (uint32_t)(nw * 4.0f);
+            if (wbars < 1) wbars = 1;
+            if (wbars > WAVE_MAX_BARS) wbars = WAVE_MAX_BARS;
+            uint64_t wstep = wframes / wbars;
+            if (wstep < 1) wstep = 1;
+            double wcy = (double)ctx_wayland->env->wave_view_pitch + (double)ctx_wayland->gutter_rows;
+            double was = wrows * 0.45;
+            double wx0 = (double)ctx_wayland->gutter_cols;
+            uint32_t wcount = 0;
+            war_vulkan_cursor_instance wquads[WAVE_MAX_BARS];
+            for (uint32_t b = 0; b < wbars && wcount + 2 < WAVE_MAX_BARS; b++) {
+                uint64_t fs = b * wstep;
+                uint64_t fe = fs + wstep;
+                if (fe > wframes) fe = wframes;
+                float pp = 0.0f, pn = 0.0f;
+                for (uint64_t f = fs; f < fe; f++) {
+                    float m = (ws[f*2] + ws[f*2+1]) * 0.5f;
+                    if (m > pp) pp = m;
+                    if (m < pn) pn = m;
+                }
+                double bx = wx0 + (double)b / 4.0;
+                if (pp > 0.0001f) {
+                    float bh = pp * (float)was;
+                    if (bh < 0.3f) bh = 0.3f;
+                    wquads[wcount].pos[0] = (float)bx;
+                    wquads[wcount].pos[1] = (float)wcy;
+                    wquads[wcount].size[0] = 0.15f;
+                    wquads[wcount].size[1] = bh;
+                    wquads[wcount].color[0] = 0.2f; wquads[wcount].color[1] = 0.9f; wquads[wcount].color[2] = 0.3f; wquads[wcount].color[3] = 1.0f;
+                    wquads[wcount].flags = 0;
+                    wcount++;
+                }
+                if (pn < -0.0001f) {
+                    float bh = -pn * (float)was;
+                    if (bh < 0.3f) bh = 0.3f;
+                    wquads[wcount].pos[0] = (float)bx;
+                    wquads[wcount].pos[1] = (float)(wcy - bh);
+                    wquads[wcount].size[0] = 0.15f;
+                    wquads[wcount].size[1] = bh;
+                    wquads[wcount].color[0] = 0.2f; wquads[wcount].color[1] = 0.9f; wquads[wcount].color[2] = 0.3f; wquads[wcount].color[3] = 1.0f;
+                    wquads[wcount].flags = 0;
+                    wcount++;
+                }
+            }
+            if (wcount > 0) {
+                memcpy((char*)wcur->instance_mapped +
+                           sizeof(war_vulkan_cursor_instance) * (wcur->instance_count + 4),
+                       wquads, sizeof(war_vulkan_cursor_instance) * wcount);
+                VkViewport wvp = {0, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 1};
+                int32_t wgb = (int32_t)(wch * wz * ctx_wayland->gutter_rows);
+                if (wgb < 0) wgb = 0;
+                if (wgb > (int32_t)ctx_wayland->height) wgb = (int32_t)ctx_wayland->height;
+                VkRect2D wsc = {{0, 0}, {(uint32_t)ctx_wayland->width, (uint32_t)(ctx_wayland->height - wgb)}};
+                vkCmdSetViewport(cmd, 0, 1, &wvp);
+                vkCmdSetScissor(cmd, 0, 1, &wsc);
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, wcur->pipeline);
+                float wpc[] = {(float)wcw, (float)wch, -ctx_wayland->panning[0]*wz, -ctx_wayland->panning[1]*wz, wz, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 0};
+                vkCmdPushConstants(cmd, wcur->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(wpc), wpc);
+                VkBuffer wbuf[] = {wcur->quad_vbo, wcur->instance_vbo};
+                VkDeviceSize woffs[] = {0, 0};
+                vkCmdBindVertexBuffers(cmd, 0, 2, wbuf, woffs);
+                vkCmdDraw(cmd, 4, wcount, 0, wcur->instance_count + 4);
+            }
+            #undef WAVE_MAX_BARS
+        }
+    }
     if (ctx_wayland->env->ctx_font) {
         war_font_render_cmd(cmd,
                             ctx_wayland->env->ctx_font,

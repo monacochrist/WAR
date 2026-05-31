@@ -1170,4 +1170,34 @@ static inline void war_delete_note_under_cursor(war_env* env) {
                     note->instance_count);
 }
 
+static inline void war_wave_view(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || env->capture_slots[idx].count < 2) return;
+    // find a note at this pitch to get its width
+    float nw = 1.0f;
+    if (env->ctx_note) {
+        float cy = cur->instance[0].pos[1];
+        for (uint32_t i = 0; i < env->ctx_note->instance_count; i++) {
+            if (fabsf(env->ctx_note->instance[i].pos[1] - cy) < 0.5f) {
+                nw = env->ctx_note->instance[i].size[0];
+                break;
+            }
+        }
+    }
+    env->wave_view_active = 1;
+    env->wave_view_pitch = pitch;
+    env->wave_view_layer = layer;
+    env->wave_view_note_width = nw;
+    env->active_mode = WAR_MODE_ID_WAV;
+    env->ctx_wayland->panning[0] = 0;
+    call_king_terry("WAVE: pitch=%u layer=%u width=%.1f (%llu samples)", pitch, layer, nw,
+                    (unsigned long long)env->capture_slots[idx].count);
+}
+
 #endif // WAR_KEYMAP_FUNCTIONS_H

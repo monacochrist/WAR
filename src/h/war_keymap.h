@@ -582,6 +582,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_GOTO_VIEWPORT_TOP,
                    war_goto_viewport_top,
                    WAR_KEYMAP_UNIQUE_PREFIX);
+    // waveform view — go to definition (gd)
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_ROLL}, 1, (char*[]){"gd"}, WAR_FUNCTION_ID_NONE, war_wave_view, 0);
     // absolute row jumps
     war_keymap_set(keymap,
                    config,

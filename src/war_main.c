@@ -822,7 +822,7 @@ static void war_keyboard_key(void* data,
     }
 
     int is_digit = (mod == 0 && keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9);
-    if (is_digit && mode != WAR_MODE_ID_MIDI) {
+    if (is_digit && mode != WAR_MODE_ID_MIDI && mode != WAR_MODE_ID_WAV) {
         cur->prefix = cur->prefix * 10 + (uint32_t)(keysym - XKB_KEY_0);
     }
 
@@ -917,6 +917,12 @@ static void war_keyboard_key(void* data,
 
     // enter command mode on ':' (check raw sym before normalizer maps it to ';')
     if (raw_sym == XKB_KEY_Escape) {
+        if (env->wave_view_active) {
+            env->wave_view_active = 0;
+            env->active_mode = WAR_MODE_ID_ROLL;
+            cur->prefix = 0;
+            return;
+        }
         if (env->active_mode == WAR_MODE_ID_VISUAL) {
             env->active_mode = WAR_MODE_ID_ROLL;
             env->ctx_cursor->visual_active = 0;
@@ -927,6 +933,41 @@ static void war_keyboard_key(void* data,
             env->active_mode = WAR_MODE_ID_ROLL;
             env->recording_active = 0;
             env->loop_mode = 0;
+            cur->prefix = 0;
+            return;
+        }
+    }
+    // wave mode movement (hjkl moves cursor through waveform)
+    if (mode == WAR_MODE_ID_WAV && env->wave_view_active) {
+        if (raw_sym == XKB_KEY_l || raw_sym == XKB_KEY_Right) {
+            cur->instance[0].pos[0] += 1.0f;
+            war_pan_follow(env);
+            cur->prefix = 0;
+            return;
+        }
+        if (raw_sym == XKB_KEY_h || raw_sym == XKB_KEY_Left) {
+            cur->instance[0].pos[0] -= 1.0f;
+            if (cur->instance[0].pos[0] < 0) cur->instance[0].pos[0] = 0;
+            war_pan_follow(env);
+            cur->prefix = 0;
+            return;
+        }
+        if (raw_sym == XKB_KEY_k || raw_sym == XKB_KEY_Up) {
+            cur->instance[0].pos[1] += 1.0f;
+            war_pan_follow(env);
+            cur->prefix = 0;
+            return;
+        }
+        if (raw_sym == XKB_KEY_j || raw_sym == XKB_KEY_Down) {
+            cur->instance[0].pos[1] -= 1.0f;
+            if (cur->instance[0].pos[1] < ctx_wayland->gutter_rows + 0.5) cur->instance[0].pos[1] = ctx_wayland->gutter_rows + 0.5;
+            war_pan_follow(env);
+            cur->prefix = 0;
+            return;
+        }
+        // preview the waveform note (space or p)
+        if (raw_sym == XKB_KEY_space || raw_sym == XKB_KEY_p || raw_sym == XKB_KEY_P) {
+            _war_preview_start_voice(env, env->wave_view_pitch, env->wave_view_layer);
             cur->prefix = 0;
             return;
         }

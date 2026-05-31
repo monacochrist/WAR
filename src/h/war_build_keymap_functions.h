@@ -103,6 +103,7 @@ else if (strcmp(name, "war_undo") == 0) { return war_undo; }
 else if (strcmp(name, "war_redo") == 0) { return war_redo; }
 else if (strcmp(name, "war_trim_note_under_cursor") == 0) { return war_trim_note_under_cursor; }
 else if (strcmp(name, "war_delete_note_under_cursor") == 0) { return war_delete_note_under_cursor; }
+else if (strcmp(name, "war_wave_view") == 0) { return war_wave_view; }
 return NULL; }
 
 #endif //WAR_BUILD_KEYMAP_FUNCTIONS_H
