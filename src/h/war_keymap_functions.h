@@ -398,6 +398,26 @@ static inline void war_record_midi(war_env* env) {
 }
 
 static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t layer) {
+    if (env->midi_toggle) {
+        // toggle mode: if note is playing, stop it; otherwise start it
+        for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+            if (env->preview_voice_active[v] && env->preview_voice_note[v] == note) {
+                if (env->recording_active && env->ctx_note) {
+                    uint32_t ni = env->recording_note_idx[v];
+                    uint64_t elapsed_us = war_get_monotonic_time_us() - env->recording_press_time_us[v];
+                    double bpm = env->atomics->bpm;
+                    if (bpm <= 0.0) bpm = 100.0;
+                    double sec_per_cell = 60.0 / bpm;
+                    double width = (double)elapsed_us / 1000000.0 / sec_per_cell;
+                    if (width < 1.0) width = 1.0;
+                    if (ni < env->ctx_note->instance_count)
+                        env->ctx_note->instance[ni].size[0] = (float)width;
+                }
+                env->preview_voice_active[v] = 0;
+                return (int)v;
+            }
+        }
+    }
     for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
         if (env->preview_voice_note[v] == note || !env->preview_voice_active[v]) {
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
@@ -828,6 +848,11 @@ static inline void war_playbar_goto_start(war_env* env) {
 static inline void war_toggle_loop(war_env* env) {
     env->loop_mode = !env->loop_mode;
     call_king_terry("LOOP: %s", env->loop_mode ? "ON" : "OFF");
+}
+
+static inline void war_midi_toggle(war_env* env) {
+    env->midi_toggle = !env->midi_toggle;
+    call_king_terry("TOGGLE: %s", env->midi_toggle ? "ON" : "OFF");
 }
 
 static inline void war_toggle_across(war_env* env) {

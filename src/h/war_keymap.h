@@ -871,6 +871,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_toggle_loop,
                    0);
+    // midi toggle (g)
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"g"}, WAR_FUNCTION_ID_NONE, war_midi_toggle, 0);
     // move playback bar to cursor (alt+a)
     war_keymap_set(keymap,
                    config,

@@ -734,6 +734,7 @@ static void war_keyboard_key(void* data,
                 for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
                     if (ctx_wayland->env->preview_voice_active[v] &&
                         ctx_wayland->env->preview_voice_note[v] == rel_note) {
+                        if (ctx_wayland->env->midi_toggle) break; // toggle mode: release does nothing
                         if (ctx_wayland->env->recording_active) {
                             uint32_t ni = ctx_wayland->env->recording_note_idx[v];
                             double start_col = ctx_wayland->env->recording_start_col[v];

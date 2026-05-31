@@ -2331,6 +2331,31 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             vkCmdDraw(cmd, 4, (uint32_t)an, 0, ACROSS_OFFSET);
 #undef ACROSS_OFFSET
         }
+        // toggle label (purple)
+        if (ctx_wayland->env->midi_toggle) {
+            const char* tog_txt = "TOGGLE";
+            int tog_n = 6;
+#define TOG_OFFSET 307
+            for (int i = 0; i < tog_n; i++) {
+                unsigned char c = (unsigned char)tog_txt[i];
+                war_vulkan_text_instance* ti = &dst[TOG_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 8 + i);
+                ti->pos[1] = label_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f; ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0]; ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2]; ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 0.7f; ti->color[1] = 0.3f; ti->color[2] = 0.9f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)tog_n, 0, TOG_OFFSET);
+#undef TOG_OFFSET
+        }
         // midi mode label on middle status bar
         if (ctx_wayland->env->active_mode == WAR_MODE_ID_MIDI) {
             const char* midi_text = "MIDI";

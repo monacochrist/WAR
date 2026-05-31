@@ -92,6 +92,7 @@ else if (strcmp(name, "war_toggle_playback") == 0) { return war_toggle_playback;
 else if (strcmp(name, "war_playbar_goto_cursor") == 0) { return war_playbar_goto_cursor; }
 else if (strcmp(name, "war_playbar_goto_start") == 0) { return war_playbar_goto_start; }
 else if (strcmp(name, "war_toggle_loop") == 0) { return war_toggle_loop; }
+else if (strcmp(name, "war_midi_toggle") == 0) { return war_midi_toggle; }
 else if (strcmp(name, "war_toggle_across") == 0) { return war_toggle_across; }
 else if (strcmp(name, "war_capture_audio") == 0) { return war_capture_audio; }
 else if (strcmp(name, "war_preview_toggle") == 0) { return war_preview_toggle; }
