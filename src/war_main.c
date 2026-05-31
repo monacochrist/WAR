@@ -861,6 +861,12 @@ static void war_keyboard_key(void* data,
                     env->atomics->bpm = (float)val;
                 else
                     fprintf(stderr, "BPM: usage :bpm <value>\n");
+            } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'r' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'd' && env->cmd_buf[4] == 'i' && env->cmd_buf[5] == 'u' && env->cmd_buf[6] == 's') {
+                int val = 0;
+                if (sscanf(env->cmd_buf + 7, " %d", &val) == 1 && val >= 0)
+                    env->across_radius = (uint32_t)val;
+                else
+                    fprintf(stderr, "RADIUS: usage :radius <n>\n");
             } else if (env->cmd_len >= 10 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'r' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 't' && env->cmd_buf[5] == 'e' && env->cmd_buf[6] == 'i' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 's' && env->cmd_buf[9] == 't') {
                 int layer = 0;
                 char name[256];
@@ -1445,6 +1451,7 @@ int main(int argc, char** argv) {
     env->undo_pos = 0;
     env->undo_note_counts = calloc(WAR_UNDO_MAX, sizeof(uint32_t));
     env->undo_notes = calloc(WAR_UNDO_MAX, sizeof(war_new_vulkan_note_instance*));
+    env->across_radius = 64;
     ctx_hot->fn_id[0] = WAR_HOT_ID_COLOR;
     ctx_hot->fn_id[1] = WAR_HOT_ID_KEYMAP;
     ctx_hot->fn_id[2] = WAR_HOT_ID_COMMAND;
