@@ -965,8 +965,17 @@ static void war_keyboard_key(void* data,
             cur->prefix = 0;
             return;
         }
-        // preview the waveform note (space or p)
-        if (raw_sym == XKB_KEY_space || raw_sym == XKB_KEY_p || raw_sym == XKB_KEY_P) {
+        // space = preview note, shift+space = playback bar toggle
+        if (raw_sym == XKB_KEY_space) {
+            if (mod & MOD_SHIFT) {
+                war_toggle_playback(env);
+            } else {
+                _war_preview_start_voice(env, env->wave_view_pitch, env->wave_view_layer);
+            }
+            cur->prefix = 0;
+            return;
+        }
+        if (raw_sym == XKB_KEY_p || raw_sym == XKB_KEY_P) {
             _war_preview_start_voice(env, env->wave_view_pitch, env->wave_view_layer);
             cur->prefix = 0;
             return;
