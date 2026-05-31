@@ -821,7 +821,7 @@ static void war_keyboard_key(void* data,
     }
 
     int is_digit = (mod == 0 && keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9);
-    if (is_digit) {
+    if (is_digit && mode != WAR_MODE_ID_MIDI) {
         cur->prefix = cur->prefix * 10 + (uint32_t)(keysym - XKB_KEY_0);
     }
 
@@ -1031,8 +1031,8 @@ static void war_keyboard_modifiers(void* data,
 static void war_keyboard_repeat_info(void* data,
                                      struct wl_keyboard* keyboard,
                                      int32_t rate,
-                                     int32_t delay) {
-    war_wayland_context* ctx_wayland = data;
+                                      int32_t delay) {
+    (void)data;
     (void)keyboard;
     (void)rate;
     (void)delay;

@@ -59,6 +59,7 @@ static inline void war_wayland_wl_surface_attach(int fd,
     // dump_bytes("wl_surface::attach request", attach, 20);
     ssize_t attach_written = write(fd, attach, 20);
     assert(attach_written == 20);
+    (void)attach_written;
 }
 
 static inline void war_wayland_wl_surface_damage(int fd,
@@ -78,6 +79,7 @@ static inline void war_wayland_wl_surface_damage(int fd,
     // dump_bytes("wl_surface_damage request", damage, 24);
     ssize_t damage_written = write(fd, damage, 24);
     assert(damage_written == 24);
+    (void)damage_written;
 }
 
 static inline void war_wayland_wl_surface_commit(int fd,
@@ -89,6 +91,7 @@ static inline void war_wayland_wl_surface_commit(int fd,
     // dump_bytes("wl_surface_commit request", commit, 8);
     ssize_t commit_written = write(fd, commit, 8);
     assert(commit_written == 8);
+    (void)commit_written;
 }
 
 static inline void
@@ -103,6 +106,7 @@ war_wayland_wl_surface_frame(int fd, uint32_t wl_surface_id, uint32_t new_id) {
     // dump_bytes("wl_surface::frame request", frame, 12);
     ssize_t frame_written = write(fd, frame, 12);
     assert(frame_written == 12);
+    (void)frame_written;
 }
 
 static inline void war_wayland_registry_bind(int fd,
@@ -127,6 +131,7 @@ static inline void war_wayland_registry_bind(int fd,
 
     ssize_t bind_written = write(fd, bind, size + 4);
     assert(bind_written == size + 4);
+    (void)bind_written;
 
     // end("war_wayland_registry_bind");
 }
@@ -150,6 +155,7 @@ war_wayland_set_acquire_point(int fd,
     //            20);
     ssize_t set_acquire_point_written = write(fd, set_acquire_point, 20);
     assert(set_acquire_point_written == 20);
+    (void)set_acquire_point_written;
 }
 
 static inline void
@@ -171,6 +177,7 @@ war_wayland_set_release_point(int fd,
     //            20);
     ssize_t set_release_point_written = write(fd, set_release_point, 20);
     assert(set_release_point_written == 20);
+    (void)set_release_point_written;
 }
 
 static inline void war_holy_trinity(int fd,
@@ -276,6 +283,7 @@ static inline int war_wayland_make_fd() {
 
     int ret = connect(fd, (struct sockaddr*)&addr, addr_len);
     assert(ret >= 0);
+    (void)ret;
 
     // end("war_wayland_make_fd");
     return fd;

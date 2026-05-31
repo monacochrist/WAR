@@ -542,6 +542,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_redo,
                    0);
+    // across mode toggle (i)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"i"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_toggle_across,
+                   0);
     // delete note under cursor (x)
     war_keymap_set(keymap,
                    config,
@@ -700,6 +710,17 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_octave_9,
                    0);
+    // octave in midi mode (numbers)
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"0"}, WAR_FUNCTION_ID_NONE, war_octave_0, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"1"}, WAR_FUNCTION_ID_NONE, war_octave_1, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"2"}, WAR_FUNCTION_ID_NONE, war_octave_2, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"3"}, WAR_FUNCTION_ID_NONE, war_octave_3, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"4"}, WAR_FUNCTION_ID_NONE, war_octave_4, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"5"}, WAR_FUNCTION_ID_NONE, war_octave_5, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"6"}, WAR_FUNCTION_ID_NONE, war_octave_6, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"7"}, WAR_FUNCTION_ID_NONE, war_octave_7, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"8"}, WAR_FUNCTION_ID_NONE, war_octave_8, 0);
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_MIDI}, 1, (char*[]){"9"}, WAR_FUNCTION_ID_NONE, war_octave_9, 0);
 
     // playback (midi mode)
     war_keymap_set(keymap,

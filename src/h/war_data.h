@@ -2713,6 +2713,7 @@ struct war_env {
     // recording state
     uint8_t recording_active;
     uint8_t loop_mode;
+    uint8_t across_mode;
     double recording_position;
     uint32_t recording_last_frame_ms;
     double recording_start_col[WAR_PREVIEW_VOICES];

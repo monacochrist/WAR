@@ -2,9 +2,9 @@ CC := gcc
 TEST ?= 0
 
 ifeq ($(TEST), 1)
-	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O0 -g -march=x86-64 -std=c99 -MMD -DDEBUG -I src
+	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O0 -g -march=x86-64 -std=c99 -MMD -DDEBUG -Wno-unused-parameter -Wno-unused-variable -Wno-comment -I src
 else
-	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O3 -march=x86-64 -std=c99 -MMD -DNDEBUG -I src
+	CFLAGS := -D_GNU_SOURCE -Wall -Wextra -O3 -march=x86-64 -std=c99 -MMD -DNDEBUG -Wno-unused-parameter -Wno-unused-variable -Wno-comment -I src
 endif
 
 LIBSODIUM_DIR := vendor/libsodium-1.0.21

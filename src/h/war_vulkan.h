@@ -1026,7 +1026,7 @@ static inline void war_font_init(war_font_context* font,
     VkSubresourceLayout layout;
     vkGetImageSubresourceLayout(ctx_vk->device, font->atlas_image, &sub, &layout);
     uint8_t* dst = (uint8_t*)mapped + layout.offset;
-    for (int y = 0; y < atlas_h && y < (int)layout.size / layout.rowPitch; y++) {
+    for (int y = 0; y < atlas_h && y < (int)(layout.size / layout.rowPitch); y++) {
         memcpy(dst + y * layout.rowPitch, atlas_data + y * atlas_w, atlas_w);
     }
     vkUnmapMemory(ctx_vk->device, font->atlas_memory);
@@ -2302,6 +2302,34 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             }
             vkCmdDraw(cmd, 4, (uint32_t)loop_n, 0, LOOP_OFFSET);
 #undef LOOP_OFFSET
+        }
+        // across mode label
+        if (ctx_wayland->env->across_mode) {
+            const char* atext = "ACROSS";
+            int an = 6;
+#define ACROSS_OFFSET 305
+            for (int i = 0; i < an; i++) {
+                unsigned char c = (unsigned char)atext[i];
+                war_vulkan_text_instance* ti = &dst[ACROSS_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 1 + i);
+                ti->pos[1] = label_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f;
+                ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0];
+                ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2];
+                ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 1.0f; ti->color[1] = 0.4f; ti->color[2] = 0.4f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)an, 0, ACROSS_OFFSET);
+#undef ACROSS_OFFSET
         }
         // midi mode label on middle status bar
         if (ctx_wayland->env->active_mode == WAR_MODE_ID_MIDI) {
