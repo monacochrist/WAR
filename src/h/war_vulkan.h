@@ -13,6 +13,7 @@
 
 #include "war_data.h"
 #include "war_debug_macros.h"
+#include "war_embed_shaders.h"
 #include "war_functions.h"
 
 #include <assert.h>
@@ -72,38 +73,22 @@ static inline void war_cursor_init(war_cursor_context* ctx_cursor,
     ctx_cursor->instance_count = 0;
 
     //-------------------------------------------------------------------------
-    // LOAD SHADER SPIR-V
+    // LOAD SHADER SPIR-V (embedded)
     //-------------------------------------------------------------------------
-    const char* vert_path = "build/spv/war_new_vulkan_vertex_cursor.spv";
-    const char* frag_path = "build/spv/war_new_vulkan_fragment_cursor.spv";
-
-    uint8_t vert_code[4096];
-    uint8_t frag_code[4096];
-    size_t vert_size = 0, frag_size = 0;
-
-    FILE* f = fopen(vert_path, "rb");
-    if (f) {
-        vert_size = fread(vert_code, 1, sizeof(vert_code), f);
-        fclose(f);
-    }
-    WASSERT(vert_size > 0 && vert_size % 4 == 0);
-    f = fopen(frag_path, "rb");
-    if (f) {
-        frag_size = fread(frag_code, 1, sizeof(frag_code), f);
-        fclose(f);
-    }
-    WASSERT(frag_size > 0 && frag_size % 4 == 0);
-
+    WASSERT(build_spv_war_new_vulkan_vertex_cursor_spv_len > 0 &&
+            build_spv_war_new_vulkan_vertex_cursor_spv_len % 4 == 0);
+    WASSERT(build_spv_war_new_vulkan_fragment_cursor_spv_len > 0 &&
+            build_spv_war_new_vulkan_fragment_cursor_spv_len % 4 == 0);
     VkShaderModuleCreateInfo smci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = vert_size,
-        .pCode = (uint32_t*)vert_code,
+        .codeSize = build_spv_war_new_vulkan_vertex_cursor_spv_len,
+        .pCode = (uint32_t*)build_spv_war_new_vulkan_vertex_cursor_spv,
     };
     VkResult res = vkCreateShaderModule(
         ctx_vk->device, &smci, NULL, &ctx_cursor->vert_module);
     WASSERT(res == VK_SUCCESS);
-    smci.codeSize = frag_size;
-    smci.pCode = (uint32_t*)frag_code;
+    smci.codeSize = build_spv_war_new_vulkan_fragment_cursor_spv_len;
+    smci.pCode = (uint32_t*)build_spv_war_new_vulkan_fragment_cursor_spv;
     res = vkCreateShaderModule(
         ctx_vk->device, &smci, NULL, &ctx_cursor->frag_module);
     WASSERT(res == VK_SUCCESS);
@@ -326,34 +311,21 @@ static inline void war_piano_gutter_init(war_piano_gutter_context* ctx_pg,
         ctx_pool, WAR_POOL_ID_MAIN_CTX_PIANO_GUTTER_INSTANCE);
     ctx_pg->instance_count = 0;
 
-    const char* vert_path = "build/spv/war_new_vulkan_vertex_piano_gutter.spv";
-    const char* frag_path =
-        "build/spv/war_new_vulkan_fragment_piano_gutter.spv";
-    uint8_t vert_code[4096], frag_code[4096];
-    size_t vert_size = 0, frag_size = 0;
-    FILE* f = fopen(vert_path, "rb");
-    if (f) {
-        vert_size = fread(vert_code, 1, sizeof(vert_code), f);
-        fclose(f);
-    }
-    WASSERT(vert_size > 0 && vert_size % 4 == 0);
-    f = fopen(frag_path, "rb");
-    if (f) {
-        frag_size = fread(frag_code, 1, sizeof(frag_code), f);
-        fclose(f);
-    }
-    WASSERT(frag_size > 0 && frag_size % 4 == 0);
+    WASSERT(build_spv_war_new_vulkan_vertex_piano_gutter_spv_len > 0 &&
+            build_spv_war_new_vulkan_vertex_piano_gutter_spv_len % 4 == 0);
+    WASSERT(build_spv_war_new_vulkan_fragment_piano_gutter_spv_len > 0 &&
+            build_spv_war_new_vulkan_fragment_piano_gutter_spv_len % 4 == 0);
 
     VkShaderModuleCreateInfo smci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = vert_size,
-        .pCode = (uint32_t*)vert_code,
+        .codeSize = build_spv_war_new_vulkan_vertex_piano_gutter_spv_len,
+        .pCode = (uint32_t*)build_spv_war_new_vulkan_vertex_piano_gutter_spv,
     };
     WASSERT(vkCreateShaderModule(
                 ctx_vk->device, &smci, NULL, &ctx_pg->vert_module) ==
             VK_SUCCESS);
-    smci.codeSize = frag_size;
-    smci.pCode = (uint32_t*)frag_code;
+    smci.codeSize = build_spv_war_new_vulkan_fragment_piano_gutter_spv_len;
+    smci.pCode = (uint32_t*)build_spv_war_new_vulkan_fragment_piano_gutter_spv;
     WASSERT(vkCreateShaderModule(
                 ctx_vk->device, &smci, NULL, &ctx_pg->frag_module) ==
             VK_SUCCESS);
@@ -634,33 +606,20 @@ static inline void war_gridlines_init(war_gridlines_context* ctx_gl,
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_GRIDLINES_INSTANCE);
     ctx_gl->instance_count = 0;
 
-    const char* vert_path = "build/spv/war_new_vulkan_vertex_gridlines.spv";
-    const char* frag_path = "build/spv/war_new_vulkan_fragment_gridlines.spv";
-    uint8_t vert_code[4096], frag_code[4096];
-    size_t vert_size = 0, frag_size = 0;
-    FILE* f = fopen(vert_path, "rb");
-    if (f) {
-        vert_size = fread(vert_code, 1, sizeof(vert_code), f);
-        fclose(f);
-    }
-    WASSERT(vert_size > 0 && vert_size % 4 == 0);
-    f = fopen(frag_path, "rb");
-    if (f) {
-        frag_size = fread(frag_code, 1, sizeof(frag_code), f);
-        fclose(f);
-    }
-    WASSERT(frag_size > 0 && frag_size % 4 == 0);
-
+    WASSERT(build_spv_war_new_vulkan_vertex_gridlines_spv_len > 0 &&
+            build_spv_war_new_vulkan_vertex_gridlines_spv_len % 4 == 0);
+    WASSERT(build_spv_war_new_vulkan_fragment_gridlines_spv_len > 0 &&
+            build_spv_war_new_vulkan_fragment_gridlines_spv_len % 4 == 0);
     VkShaderModuleCreateInfo smci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = vert_size,
-        .pCode = (uint32_t*)vert_code,
+        .codeSize = build_spv_war_new_vulkan_vertex_gridlines_spv_len,
+        .pCode = (uint32_t*)build_spv_war_new_vulkan_vertex_gridlines_spv,
     };
     WASSERT(vkCreateShaderModule(
                 ctx_vk->device, &smci, NULL, &ctx_gl->vert_module) ==
             VK_SUCCESS);
-    smci.codeSize = frag_size;
-    smci.pCode = (uint32_t*)frag_code;
+    smci.codeSize = build_spv_war_new_vulkan_fragment_gridlines_spv_len;
+    smci.pCode = (uint32_t*)build_spv_war_new_vulkan_fragment_gridlines_spv;
     WASSERT(vkCreateShaderModule(
                 ctx_vk->device, &smci, NULL, &ctx_gl->frag_module) ==
             VK_SUCCESS);
@@ -1151,26 +1110,21 @@ static inline void war_font_init(war_font_context* font,
     };
     vkUpdateDescriptorSets(ctx_vk->device, 1, &wds, 0, NULL);
 
-    // load text vertex/fragment shaders
-    uint8_t vert_code[8192];
-    uint8_t frag_code[8192];
-    size_t vert_size = 0, frag_size = 0;
-    FILE* f = fopen("build/spv/war_new_vulkan_vertex_text.spv", "rb");
-    if (f) { vert_size = fread(vert_code, 1, sizeof(vert_code), f); fclose(f); }
-    WASSERT(vert_size > 0 && vert_size % 4 == 0);
-    f = fopen("build/spv/war_new_vulkan_fragment_text.spv", "rb");
-    if (f) { frag_size = fread(frag_code, 1, sizeof(frag_code), f); fclose(f); }
-    WASSERT(frag_size > 0 && frag_size % 4 == 0);
+    // load text vertex/fragment shaders (embedded)
+    WASSERT(build_spv_war_new_vulkan_vertex_text_spv_len > 0 &&
+            build_spv_war_new_vulkan_vertex_text_spv_len % 4 == 0);
+    WASSERT(build_spv_war_new_vulkan_fragment_text_spv_len > 0 &&
+            build_spv_war_new_vulkan_fragment_text_spv_len % 4 == 0);
 
     VkShaderModuleCreateInfo smci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = vert_size,
-        .pCode = (uint32_t*)vert_code,
+        .codeSize = build_spv_war_new_vulkan_vertex_text_spv_len,
+        .pCode = (uint32_t*)build_spv_war_new_vulkan_vertex_text_spv,
     };
     res = vkCreateShaderModule(ctx_vk->device, &smci, NULL, &font->vert_module);
     WASSERT(res == VK_SUCCESS);
-    smci.codeSize = frag_size;
-    smci.pCode = (uint32_t*)frag_code;
+    smci.codeSize = build_spv_war_new_vulkan_fragment_text_spv_len;
+    smci.pCode = (uint32_t*)build_spv_war_new_vulkan_fragment_text_spv;
     res = vkCreateShaderModule(ctx_vk->device, &smci, NULL, &font->frag_module);
     WASSERT(res == VK_SUCCESS);
 
@@ -1563,33 +1517,20 @@ static inline void war_note_init(war_note_context* ctx_note,
     ctx_note->max_instances = 1024;
     ctx_note->tick_counter = 0;
 
-    const char* vert_path = "build/spv/war_new_vulkan_vertex_note.spv";
-    const char* frag_path = "build/spv/war_new_vulkan_fragment_note.spv";
-    uint8_t vert_code[4096], frag_code[4096];
-    size_t vert_size = 0, frag_size = 0;
-    FILE* f = fopen(vert_path, "rb");
-    if (f) {
-        vert_size = fread(vert_code, 1, sizeof(vert_code), f);
-        fclose(f);
-    }
-    WASSERT(vert_size > 0 && vert_size % 4 == 0);
-    f = fopen(frag_path, "rb");
-    if (f) {
-        frag_size = fread(frag_code, 1, sizeof(frag_code), f);
-        fclose(f);
-    }
-    WASSERT(frag_size > 0 && frag_size % 4 == 0);
-
+    WASSERT(build_spv_war_new_vulkan_vertex_note_spv_len > 0 &&
+            build_spv_war_new_vulkan_vertex_note_spv_len % 4 == 0);
+    WASSERT(build_spv_war_new_vulkan_fragment_note_spv_len > 0 &&
+            build_spv_war_new_vulkan_fragment_note_spv_len % 4 == 0);
     VkShaderModuleCreateInfo smci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = vert_size,
-        .pCode = (uint32_t*)vert_code,
+        .codeSize = build_spv_war_new_vulkan_vertex_note_spv_len,
+        .pCode = (uint32_t*)build_spv_war_new_vulkan_vertex_note_spv,
     };
     WASSERT(vkCreateShaderModule(
                 ctx_vk->device, &smci, NULL, &ctx_note->vert_module) ==
             VK_SUCCESS);
-    smci.codeSize = frag_size;
-    smci.pCode = (uint32_t*)frag_code;
+    smci.codeSize = build_spv_war_new_vulkan_fragment_note_spv_len;
+    smci.pCode = (uint32_t*)build_spv_war_new_vulkan_fragment_note_spv;
     WASSERT(vkCreateShaderModule(
                 ctx_vk->device, &smci, NULL, &ctx_note->frag_module) ==
             VK_SUCCESS);
@@ -1854,33 +1795,20 @@ static inline void war_line_init(war_simple_line_context* ctx_line,
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_LINE_INSTANCE);
     ctx_line->instance_count = 0;
 
-    const char* vert_path = "build/spv/war_new_vulkan_vertex_line.spv";
-    const char* frag_path = "build/spv/war_new_vulkan_fragment_line.spv";
-    uint8_t vert_code[8192], frag_code[8192];
-    size_t vert_size = 0, frag_size = 0;
-    FILE* f = fopen(vert_path, "rb");
-    if (f) {
-        vert_size = fread(vert_code, 1, sizeof(vert_code), f);
-        fclose(f);
-    }
-    WASSERT(vert_size > 0 && vert_size % 4 == 0);
-    f = fopen(frag_path, "rb");
-    if (f) {
-        frag_size = fread(frag_code, 1, sizeof(frag_code), f);
-        fclose(f);
-    }
-    WASSERT(frag_size > 0 && frag_size % 4 == 0);
-
+    WASSERT(build_spv_war_new_vulkan_vertex_line_spv_len > 0 &&
+            build_spv_war_new_vulkan_vertex_line_spv_len % 4 == 0);
+    WASSERT(build_spv_war_new_vulkan_fragment_line_spv_len > 0 &&
+            build_spv_war_new_vulkan_fragment_line_spv_len % 4 == 0);
     VkShaderModuleCreateInfo smci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = vert_size,
-        .pCode = (uint32_t*)vert_code,
+        .codeSize = build_spv_war_new_vulkan_vertex_line_spv_len,
+        .pCode = (uint32_t*)build_spv_war_new_vulkan_vertex_line_spv,
     };
     WASSERT(vkCreateShaderModule(
                 ctx_vk->device, &smci, NULL, &ctx_line->vert_module) ==
             VK_SUCCESS);
-    smci.codeSize = frag_size;
-    smci.pCode = (uint32_t*)frag_code;
+    smci.codeSize = build_spv_war_new_vulkan_fragment_line_spv_len;
+    smci.pCode = (uint32_t*)build_spv_war_new_vulkan_fragment_line_spv;
     WASSERT(vkCreateShaderModule(
                 ctx_vk->device, &smci, NULL, &ctx_line->frag_module) ==
             VK_SUCCESS);

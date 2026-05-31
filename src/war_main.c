@@ -28,6 +28,7 @@
 #include "h/war_pool.h"
 #include "h/war_vulkan.h"
 #include "h/war_wayland.h"
+#include "h/war_embed_font.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -1536,12 +1537,13 @@ int main(int argc, char** argv) {
     war_cursor_context* ctx_cursor =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_MAIN_CTX_CURSOR);
     env->ctx_cursor = ctx_cursor;
-    // init freetype and derive cell size from FreeMono.otf
+    // init freetype and derive cell size from embedded FreeMono.otf
     if (FT_Init_FreeType(&env->ft_lib)) {
         call_king_terry("freetype init failed");
     }
-    if (FT_New_Face(env->ft_lib, "assets/fonts/FreeMono.otf", 0, &env->ft_face)) {
-        call_king_terry("freetype: failed to load FreeMono.otf");
+    if (FT_New_Memory_Face(env->ft_lib, assets_fonts_FreeMono_otf,
+                           assets_fonts_FreeMono_otf_len, 0, &env->ft_face)) {
+        call_king_terry("freetype: failed to load embedded FreeMono.otf");
     }
     FT_Set_Pixel_Sizes(env->ft_face, 0, 24);
     FT_Load_Char(env->ft_face, '*', FT_LOAD_DEFAULT);
