@@ -14,6 +14,8 @@ chmod +x WAR-x86_64.AppImage
 
 **Requirements:** Pipewire, Wayland, and Freetype — present on any modern Linux desktop.
 
+Full keybindings and controls: **[CONTROLS.md](CONTROLS.md)**
+
 # License
 
 See LICENSE
