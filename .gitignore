@@ -24,9 +24,6 @@ build.zig
 !/war/PKGBUILD
 !/war-devel/PKGBUILD
 
-# todo or markdown
-*.md
-
 # music
 *.wav
 
