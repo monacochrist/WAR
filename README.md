@@ -1,4 +1,4 @@
-# WAR
+# WAR DEMO
 
 [![Download](https://img.shields.io/github/v/release/monacochrist/WAR?label=Download%20WAR)](https://github.com/monacochrist/WAR/releases/latest)
 
