@@ -448,7 +448,6 @@ static inline void war_key() {
 
 static inline void* war_pool_alloc_new(war_pool_context* ctx_pool,
                                        war_pool_id id) {
-    war_key();
     for (uint32_t i = 0; i < ctx_pool->count; i++) {
         if (ctx_pool->id[i] == id) {
             assert(ctx_pool->pool + ctx_pool->offset[i]);
@@ -1292,7 +1291,6 @@ war_path_to_unique_filename(const char* path, char* out, size_t out_size) {
 }
 
 static inline void war_override(uint32_t count, war_hot_id* id, war_env* env) {
-    war_key();
     war_hot_context* hot = env->ctx_hot;
     war_color_context* color = env->ctx_color;
     war_pool_context* pool = env->ctx_pool;

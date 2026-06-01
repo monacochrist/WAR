@@ -20,7 +20,6 @@
 
 // sets defaults, no need to call during override since it's called at init
 static inline void war_config_default(war_config_context* config) {
-    war_key();
     config->version = WAR_CONFIG_H_VERSION;
     //
     config->A_BASE_FREQUENCY = 440;

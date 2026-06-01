@@ -118,7 +118,6 @@ static inline void war_command_set(war_command_context* command,
 
 static inline void war_command_default(war_command_context* command,
                                        war_config_context* config) {
-    war_key();
     //war_command_set(command,
     //                config,
     //                3,

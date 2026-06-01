@@ -50,7 +50,6 @@ static inline void war_pool_set(war_pool_context* pool,
 
 static inline void war_pool_default(war_pool_context* pool,
                                     war_config_context* config) {
-    war_key();
     pool->version = WAR_POOL_H_VERSION;
     //-------------------------------------------------------------------------
     // AUDIO
