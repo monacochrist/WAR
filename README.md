@@ -18,6 +18,10 @@ chmod +x WAR-x86_64.AppImage
 
 Full keybindings and controls: **[CONTROLS.md](CONTROLS.md)**
 
+## Feedback & Ideas
+
+Have a feature suggestion? [Open an issue](https://github.com/monacochrist/WAR/issues/new)
+
 # License
 
 See LICENSE
