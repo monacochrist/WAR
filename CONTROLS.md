@@ -45,6 +45,7 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `T` + number | Narrow step size by prefix |
 | `u` | Undo last note modification |
 | `<C-r>` | Redo last undone modification |
+| `p` | Paste yanked notes at cursor position |
 
 ## ROLL Mode — Viewport
 
@@ -73,6 +74,7 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `<S-l>` / `<S-Right>` | Move selected notes right |
 | `t` / `r` | Trim selected note under cursor |
 | `x` | Delete selected note under cursor |
+| `y` | Yank (copy) selected notes |
 | `n` | Save cursor position to HUD slot |
 | `u` | Undo |
 | `<C-r>` | Redo |
@@ -240,6 +242,8 @@ In visual mode, movement keys (`h`/`j`/`k`/`l`, `w`/`b`) extend the selection ra
 | `<S-h>`/`<S-j>`/`<S-k>`/`<S-l>` | Move selected notes |
 | `t` / `r` | Trim selected note |
 | `x` | Delete selected note |
+| `y` | Yank (copy) selected notes |
+| `p` | Paste yanked notes at cursor position |
 | `n` | Save cursor position to HUD |
 | `u` | Undo |
 | `<C-r>` | Redo |

@@ -1229,4 +1229,71 @@ static inline void war_wave_view(war_env* env) {
                     (unsigned long long)env->capture_slots[idx].count);
 }
 
+static inline void war_yank(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->visual_active || !cur->instance_count) return;
+    war_note_context* note = env->ctx_note;
+    if (!note || !note->instance_count) return;
+    float x0 = cur->visual_anchor_col;
+    float x1 = cur->instance[0].pos[0];
+    float y0 = cur->visual_anchor_row;
+    float y1 = cur->instance[0].pos[1];
+    if (x1 < x0) { float t = x0; x0 = x1; x1 = t; }
+    if (y1 < y0) { float t = y0; y0 = y1; y1 = t; }
+    // count notes in selection
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        float nx0 = note->instance[i].pos[0];
+        float nx1 = nx0 + note->instance[i].size[0];
+        float ny = note->instance[i].pos[1];
+        if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1)
+            count++;
+    }
+    if (count == 0) return;
+    // allocate yank buffer
+    if (count > env->yank_capacity) {
+        uint32_t new_cap = env->yank_capacity ? env->yank_capacity * 2 : 64;
+        while (new_cap < count) new_cap *= 2;
+        struct war_vulkan_note_instance* tmp = realloc(env->yank_buffer, new_cap * sizeof(struct war_vulkan_note_instance));
+        if (!tmp) return;
+        env->yank_buffer = tmp;
+        env->yank_capacity = new_cap;
+    }
+    uint32_t j = 0;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        float nx0 = note->instance[i].pos[0];
+        float nx1 = nx0 + note->instance[i].size[0];
+        float ny = note->instance[i].pos[1];
+        if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
+            env->yank_buffer[j] = note->instance[i];
+            env->yank_buffer[j].pos[0] -= cur->visual_anchor_col;
+            env->yank_buffer[j].pos[1] -= cur->visual_anchor_row;
+            j++;
+        }
+    }
+    env->yank_count = count;
+    env->yank_anchor_col = cur->visual_anchor_col;
+    env->yank_anchor_row = cur->visual_anchor_row;
+    call_king_terry("YANK: %u notes", count);
+}
+
+static inline void war_paste(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    war_note_context* note = env->ctx_note;
+    if (!note || env->yank_count == 0 || !env->yank_buffer) return;
+    if (note->instance_count + env->yank_count > note->max_instances) return;
+    war_undo_save(env);
+    float cx = cur->instance[0].pos[0];
+    float cy = cur->instance[0].pos[1];
+    for (uint32_t i = 0; i < env->yank_count; i++) {
+        uint32_t dst = note->instance_count++;
+        note->instance[dst] = env->yank_buffer[i];
+        note->instance[dst].pos[0] += cx;
+        note->instance[dst].pos[1] += cy;
+        note->instance[dst].tick = note->tick_counter++;
+    }
+    call_king_terry("PASTE: %u notes at (%.1f,%.1f)", env->yank_count, cx, cy);
+}
+
 #endif // WAR_KEYMAP_FUNCTIONS_H

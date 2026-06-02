@@ -2738,6 +2738,12 @@ struct war_env {
     // freetype
     FT_Library ft_lib;
     FT_Face ft_face;
+    // yank buffer
+    struct war_vulkan_note_instance* yank_buffer;
+    uint32_t yank_count;
+    uint32_t yank_capacity;
+    float yank_anchor_col;
+    float yank_anchor_row;
     // undo
 #define WAR_UNDO_MAX 100
     uint32_t undo_count;
