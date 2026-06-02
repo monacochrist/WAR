@@ -644,12 +644,9 @@ static void war_write_inst(war_env* env, int layer, const char* filename) {
     fprintf(stderr, "WRITEINST: wrote %s (layer=%d, %u pitches)\n", path, layer, count);
 }
 
-static void war_load_inst(war_env* env, int layer, const char* filename) {
-    if (layer < 1 || layer > 9) {
-        snprintf(env->status_msg, sizeof(env->status_msg), "loadinst FAILED: layer must be 1-9");
-        fprintf(stderr, "LOADINST: layer must be 1-9\n");
-        return;
-    }
+static void war_load_inst(war_env* env, const char* filename) {
+    int layer = (int)env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) layer = 1;
     char path[1024];
     snprintf(path, sizeof(path), "%s", filename);
     FILE* f = fopen(path, "rb");
@@ -914,12 +911,12 @@ static void war_keyboard_key(void* data,
                 } else
                     fprintf(stderr, "LOOP: usage :loop <quarter_notes> <repeats>\n");
             } else if (env->cmd_len >= 9 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'd' && env->cmd_buf[5] == 'i' && env->cmd_buf[6] == 'n' && env->cmd_buf[7] == 's' && env->cmd_buf[8] == 't') {
-                int layer = 0;
-                char name[256];
-                if (sscanf(env->cmd_buf + 9, " %d %255s", &layer, name) >= 2)
-                    war_load_inst(env, layer, name);
+                const char* name = env->cmd_buf + 9;
+                while (*name == ' ') name++;
+                if (name[0])
+                    war_load_inst(env, name);
                 else
-                    fprintf(stderr, "LOADINST: usage :loadinst <layer> <name>\n");
+                    fprintf(stderr, "LOADINST: usage :loadinst <name>\n");
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'd') {
                 const char* name = env->cmd_buf + 5;
                 while (*name == ' ') name++;
