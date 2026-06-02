@@ -216,6 +216,8 @@ Press `Esc` to exit command mode.
 
 | Label | Location | Meaning |
 |-------|----------|---------|
+| `CROP` | Top bar | Crop mode active |
+| `CAPTURE` | Middle bar | Audio capture in progress |
 | `MIDI` | Middle bar | MIDI mode active |
 | `VISUAL` | Middle bar | Visual mode active |
 | `LOOP` | Top bar | Loop mode enabled (MIDI) |
@@ -245,17 +247,18 @@ In visual mode, movement keys (`h`/`j`/`k`/`l`, `w`/`b`) extend the selection ra
 
 ## Crop Mode
 
-Press `c` on a row/layer that has a capture slot to enter crop mode. An orange "CROP" label appears on the status bar.
+Press `c` on a row/layer that has a capture slot to enter crop mode. An orange **CROP** label appears on the top status bar. Arrow keys adjust offset markers freely; the actual crop is applied when exiting.
 
 | Key | Action |
 |-----|--------|
-| `Left` | Trim from start (move start forward) |
-| `Right` | Untrim from start (move start backward) |
-| `Shift+Left` | Untrim from end (extend end) |
-| `Shift+Right` | Trim from end (move end backward) |
-| `Esc` | Exit crop mode |
+| `Left` | Move start marker left (restore/uncrop from start) |
+| `Right` | Move start marker right (crop from start) |
+| `Shift+Left` | Move end marker left (crop from end) |
+| `Shift+Right` | Move end marker right (restore/uncrop from end) |
+| `Space` | Preview the cropped range |
+| `c` / `Esc` | Exit crop mode and apply the crop |
 
-Changes apply immediately to the capture slot data.
+Crop adjustments are preview-only until exit. Left then Right (or vice versa) cancel out.
 
 ---
 
