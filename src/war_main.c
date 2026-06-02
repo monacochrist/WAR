@@ -868,7 +868,96 @@ static void war_keyboard_key(void* data,
                     env->across_radius = (uint32_t)val;
                 else
                     fprintf(stderr, "RADIUS: usage :radius <n>\n");
-            } else if (env->cmd_len >= 10 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'r' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 't' && env->cmd_buf[5] == 'e' && env->cmd_buf[6] == 'i' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 's' && env->cmd_buf[9] == 't') {
+             } else if (env->cmd_len >= 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v') {
+                int to_layer = 0;
+                if (sscanf(env->cmd_buf + 3, " %d", &to_layer) == 1 && to_layer >= 1 && to_layer <= 9) {
+                    double row = env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    uint32_t pitch = row > 0 ? (uint32_t)(row + 0.5) : 0;
+                    if (pitch > 127) pitch = 127;
+                    uint32_t cur_layer = env->ctx_cursor->layer;
+                    if (cur_layer < 1 || cur_layer > 9) cur_layer = 1;
+                    uint32_t src_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (cur_layer - 1);
+                    uint32_t dst_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (to_layer - 1);
+                    if (cur_layer == to_layer) {
+                        fprintf(stderr, "MV: source and destination are the same layer\n");
+                    } else if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
+                        free(env->capture_slots[dst_idx].samples);
+                        env->capture_slots[dst_idx] = env->capture_slots[src_idx];
+                        env->capture_slots[src_idx].samples = NULL;
+                        env->capture_slots[src_idx].count = 0;
+                        env->capture_slots[src_idx].capacity = 0;
+                        fprintf(stderr, "MV: moved pitch=%u from layer %d to layer %d\n", pitch, cur_layer, to_layer);
+                    } else {
+                        fprintf(stderr, "MV: no capture at pitch=%u layer=%d\n", pitch, cur_layer);
+                    }
+                } else {
+                    fprintf(stderr, "MV: usage :mv <layer>\n");
+                }
+             } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'a' && env->cmd_buf[2] == 'c' && env->cmd_buf[3] == 'r' && env->cmd_buf[4] == 'o' && env->cmd_buf[5] == 's' && env->cmd_buf[6] == 's') {
+                int radius = 0;
+                if (sscanf(env->cmd_buf + 7, " %d", &radius) == 1 && radius >= 0) {
+                    double row = env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    uint32_t pitch = row > 0 ? (uint32_t)(row + 0.5) : 0;
+                    if (pitch > 127) pitch = 127;
+                    uint32_t layer = env->ctx_cursor->layer;
+                    if (layer < 1 || layer > 9) layer = 1;
+                    _war_across_pitch_shift(env, pitch, layer, radius);
+                } else {
+                     fprintf(stderr, "ACROSS: usage :across <radius>\n");
+                }
+             } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v' && env->cmd_buf[3] == 'u') {
+                int n = 0;
+                if (sscanf(env->cmd_buf + 4, " %d", &n) == 1 && n > 0) {
+                    double row = env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    uint32_t pitch = row > 0 ? (uint32_t)(row + 0.5) : 0;
+                    if (pitch + (uint32_t)n > 127) n = 127 - pitch;
+                    if (n > 0) {
+                        uint32_t layer = env->ctx_cursor->layer;
+                        if (layer < 1 || layer > 9) layer = 1;
+                        uint32_t src_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        uint32_t dst_pitch = pitch + (uint32_t)n;
+                        uint32_t dst_idx = dst_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
+                            free(env->capture_slots[dst_idx].samples);
+                            env->capture_slots[dst_idx] = env->capture_slots[src_idx];
+                            env->capture_slots[src_idx].samples = NULL;
+                            env->capture_slots[src_idx].count = 0;
+                            env->capture_slots[src_idx].capacity = 0;
+                            fprintf(stderr, "MVU: moved pitch=%u up %d to pitch=%u\n", pitch, n, dst_pitch);
+                        } else {
+                            fprintf(stderr, "MVU: no capture at pitch=%u layer=%d\n", pitch, layer);
+                        }
+                    }
+                } else {
+                    fprintf(stderr, "MVU: usage :mvu <n>\n");
+                }
+             } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v' && env->cmd_buf[3] == 'd') {
+                int n = 0;
+                if (sscanf(env->cmd_buf + 4, " %d", &n) == 1 && n > 0) {
+                    double row = env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    uint32_t pitch = row > 0 ? (uint32_t)(row + 0.5) : 0;
+                    if ((int32_t)pitch - n < 0) n = (int32_t)pitch;
+                    if (n > 0) {
+                        uint32_t layer = env->ctx_cursor->layer;
+                        if (layer < 1 || layer > 9) layer = 1;
+                        uint32_t src_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        uint32_t dst_pitch = pitch - (uint32_t)n;
+                        uint32_t dst_idx = dst_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
+                            free(env->capture_slots[dst_idx].samples);
+                            env->capture_slots[dst_idx] = env->capture_slots[src_idx];
+                            env->capture_slots[src_idx].samples = NULL;
+                            env->capture_slots[src_idx].count = 0;
+                            env->capture_slots[src_idx].capacity = 0;
+                            fprintf(stderr, "MVD: moved pitch=%u down %d to pitch=%u\n", pitch, n, dst_pitch);
+                        } else {
+                            fprintf(stderr, "MVD: no capture at pitch=%u layer=%d\n", pitch, layer);
+                        }
+                    }
+                } else {
+                    fprintf(stderr, "MVD: usage :mvd <n>\n");
+                }
+             } else if (env->cmd_len >= 10 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'r' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 't' && env->cmd_buf[5] == 'e' && env->cmd_buf[6] == 'i' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 's' && env->cmd_buf[9] == 't') {
                 int layer = 0;
                 char name[256];
                 if (sscanf(env->cmd_buf + 10, " %d %255s", &layer, name) >= 2)

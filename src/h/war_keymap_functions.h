@@ -860,6 +860,49 @@ static inline void war_toggle_across(war_env* env) {
     call_king_terry("ACROSS: %s", env->across_mode ? "ON" : "OFF");
 }
 
+static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint32_t layer, int32_t radius) {
+    uint32_t li = layer - 1;
+    float* src_data = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].samples;
+    uint64_t src_cnt = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].count;
+    if (!src_data || src_cnt < 4) {
+        call_king_terry("ACROSS: no data at note=%u layer=%u", src_note, layer);
+        return;
+    }
+    uint64_t src_frames = src_cnt / 2;
+    int32_t rad = radius > 0 ? radius : (int32_t)env->across_radius;
+    uint32_t t_start = src_note > (uint32_t)rad ? src_note - (uint32_t)rad : 0;
+    uint32_t t_end = src_note + (uint32_t)rad + 1;
+    if (t_end > 128) t_end = 128;
+    for (uint32_t t = t_start; t < t_end; t++) {
+        if (t == src_note) continue;
+        int32_t semi = (int32_t)t - (int32_t)src_note;
+        double ratio = pow(2.0, (double)semi / 12.0);
+        uint64_t dst_frames = (uint64_t)((double)src_frames / ratio);
+        if (dst_frames < 1) dst_frames = 1;
+        uint64_t dst_cnt = dst_frames * 2;
+        float* dst = malloc(dst_cnt * sizeof(float));
+        if (!dst) continue;
+        for (uint64_t i = 0; i < dst_frames; i++) {
+            double sp = (double)i * ratio;
+            uint64_t si = (uint64_t)sp;
+            double fr = sp - (double)si;
+            if (si >= src_frames - 1) {
+                dst[i*2] = src_data[(src_frames-1)*2];
+                dst[i*2+1] = src_data[(src_frames-1)*2+1];
+            } else {
+                dst[i*2] = (float)(src_data[si*2]*(1.0-fr) + src_data[(si+1)*2]*fr);
+                dst[i*2+1] = (float)(src_data[si*2+1]*(1.0-fr) + src_data[(si+1)*2+1]*fr);
+            }
+        }
+        uint32_t tidx = t * WAR_CAPTURE_SLOT_LAYERS + li;
+        free(env->capture_slots[tidx].samples);
+        env->capture_slots[tidx].samples = dst;
+        env->capture_slots[tidx].count = dst_cnt;
+        env->capture_slots[tidx].capacity = dst_cnt;
+    }
+    call_king_terry("ACROSS: pitch-shifted note=%u radius=%d", src_note, rad);
+}
+
 static inline void war_capture_audio(war_env* env) {
     if (env->atomics->capture) {
         // second press: stop capture and save to current note/layer
@@ -899,45 +942,7 @@ static inline void war_capture_audio(war_env* env) {
             env->capture_accumulator_capacity = 0;
             // ACROSS: pitch-shift within radius
             if (env->across_mode) {
-                uint32_t src_note = note;
-                uint32_t li = layer - 1;
-                float* src_data = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].samples;
-                uint64_t src_cnt = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].count;
-                if (src_data && src_cnt >= 4) {
-                    uint64_t src_frames = src_cnt / 2;
-                    int32_t rad = (int32_t)env->across_radius;
-                    uint32_t t_start = src_note > (uint32_t)rad ? src_note - (uint32_t)rad : 0;
-                    uint32_t t_end = src_note + (uint32_t)rad + 1;
-                    if (t_end > 128) t_end = 128;
-                    for (uint32_t t = t_start; t < t_end; t++) {
-                        if (t == src_note) continue;
-                        int32_t semi = (int32_t)t - (int32_t)src_note;
-                        double ratio = pow(2.0, (double)semi / 12.0);
-                        uint64_t dst_frames = (uint64_t)((double)src_frames / ratio);
-                        if (dst_frames < 1) dst_frames = 1;
-                        uint64_t dst_cnt = dst_frames * 2;
-                        float* dst = malloc(dst_cnt * sizeof(float));
-                        if (!dst) continue;
-                        for (uint64_t i = 0; i < dst_frames; i++) {
-                            double sp = (double)i * ratio;
-                            uint64_t si = (uint64_t)sp;
-                            double fr = sp - (double)si;
-                            if (si >= src_frames - 1) {
-                                dst[i*2] = src_data[(src_frames-1)*2];
-                                dst[i*2+1] = src_data[(src_frames-1)*2+1];
-                            } else {
-                                dst[i*2] = (float)(src_data[si*2]*(1.0-fr) + src_data[(si+1)*2]*fr);
-                                dst[i*2+1] = (float)(src_data[si*2+1]*(1.0-fr) + src_data[(si+1)*2+1]*fr);
-                            }
-                        }
-                        uint32_t tidx = t * WAR_CAPTURE_SLOT_LAYERS + li;
-                        free(env->capture_slots[tidx].samples);
-                        env->capture_slots[tidx].samples = dst;
-                        env->capture_slots[tidx].count = dst_cnt;
-                        env->capture_slots[tidx].capacity = dst_cnt;
-                    }
-                    call_king_terry("ACROSS: pitch-shifted note=%u to all 128", src_note);
-                }
+                _war_across_pitch_shift(env, note, layer, env->across_radius);
             }
         }
         env->atomics->capture = 0;

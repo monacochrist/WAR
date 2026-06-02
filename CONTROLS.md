@@ -202,6 +202,10 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `:radius <n>` | Set ACROSS pitch-shift radius (notes above/below) |
 | `:writeinst <layer> <name>` | Save instrument file for a layer |
 | `:loadinst <layer> <name>` | Load instrument file into a layer |
+| `:mv <layer>` | Move capture slot at cursor row/layer to another layer |
+| `:mvu <n>` | Move capture slot at cursor up n pitches |
+| `:mvd <n>` | Move capture slot at cursor down n pitches |
+| `:across <radius>` | Pitch-shift capture slot at cursor to nearby notes (within radius) |
 
 Press `Esc` to exit command mode.
 
