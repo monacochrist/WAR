@@ -590,6 +590,7 @@ static inline void war_reset_step(war_env* env) {
 }
 
 static inline void war_midi_mode(war_env* env) {
+    env->status_msg[0] = '\0';
     env->active_mode = (env->active_mode == WAR_MODE_ID_MIDI)
                            ? WAR_MODE_ID_ROLL
                            : WAR_MODE_ID_MIDI;
@@ -750,6 +751,7 @@ static inline void war_zoom_reset(war_env* env) {
 static inline void war_visual_mode(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur->instance_count) return;
+    env->status_msg[0] = '\0';
     cur->visual_active = !cur->visual_active;
     if (cur->visual_active) {
         env->active_mode = WAR_MODE_ID_VISUAL;
