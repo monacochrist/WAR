@@ -1925,7 +1925,7 @@ int main(int argc, char** argv) {
     while (ctx_wayland->running) {
         wl_display_flush(ctx_wayland->display);
         if (wl_display_prepare_read(ctx_wayland->display) == 0) {
-            poll(pfds, 2, -1);
+            poll(pfds, 2, 10);
             if (pfds[0].revents & POLLIN)
                 wl_display_read_events(ctx_wayland->display);
             else
