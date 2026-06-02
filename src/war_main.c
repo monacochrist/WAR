@@ -476,6 +476,8 @@ static void war_save_project(war_env* env, const char* filename) {
     snprintf(path, sizeof(path), "%s", filename);
     FILE* f = fopen(path, "wb");
     if (!f) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "save FAILED: %s",
+                 strlen(path) > 85 ? path + strlen(path) - 85 : path);
         fprintf(stderr, "SAVE: failed to open %s\n", path);
         return;
     }
@@ -511,6 +513,8 @@ static void war_save_project(war_env* env, const char* filename) {
         }
     }
     fclose(f);
+    snprintf(env->status_msg, sizeof(env->status_msg), "%s saved (%u notes, %u slots)",
+             strlen(path) > 75 ? path + strlen(path) - 75 : path, note_count, slot_count);
     fprintf(stderr, "SAVE: wrote %s (%u notes, %u slots)\n",
             path, note_count, slot_count);
 }
@@ -520,11 +524,14 @@ static void war_load_project(war_env* env, const char* filename) {
     snprintf(path, sizeof(path), "%s", filename);
     FILE* f = fopen(path, "rb");
     if (!f) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "load FAILED: %s",
+                 strlen(path) > 85 ? path + strlen(path) - 85 : path);
         fprintf(stderr, "LOAD: failed to open %s\n", path);
         return;
     }
     char magic[4];
     if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "WARP", 4) != 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "load FAILED: bad magic");
         fprintf(stderr, "LOAD: invalid magic\n");
         fclose(f);
         return;
@@ -583,6 +590,8 @@ static void war_load_project(war_env* env, const char* filename) {
         }
     }
     fclose(f);
+    snprintf(env->status_msg, sizeof(env->status_msg), "%s loaded (%u notes, %u slots)",
+             strlen(path) > 75 ? path + strlen(path) - 75 : path, note_count, slot_count);
     fprintf(stderr, "LOAD: loaded %s (%u notes, %u slots, bpm=%.1f)\n",
             path, note_count, slot_count, bpm);
 }
@@ -1135,6 +1144,7 @@ static void war_keyboard_key(void* data,
     }
     if (raw_sym == XKB_KEY_colon) {
         env->cmd_active = 1;
+        env->status_msg[0] = '\0';
         env->cmd_len = 1;
         env->cmd_buf[0] = ':';
         env->cmd_buf[1] = '\0';

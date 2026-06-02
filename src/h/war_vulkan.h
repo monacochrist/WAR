@@ -2549,6 +2549,37 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             vkCmdDraw(cmd, 4, (uint32_t)vis_n, 0, VIS_OFFSET);
 #undef VIS_OFFSET
         }
+        // status message on middle status bar (e.g. "test loaded")
+        if (ctx_wayland->env->status_msg[0]) {
+            const char* sm = ctx_wayland->env->status_msg;
+            int sm_n = (int)strlen(sm);
+            if (sm_n > 60) sm_n = 60;
+            float sm_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+#define SM_OFFSET 330
+            for (int i = 0; i < sm_n; i++) {
+                unsigned char c = (unsigned char)sm[i];
+                if (c < 32 || c > 126) c = '?';
+                war_vulkan_text_instance* ti = &dst[SM_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i;
+                ti->pos[1] = sm_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f;
+                ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0];
+                ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2];
+                ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 1.0f; ti->color[1] = 1.0f; ti->color[2] = 1.0f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)sm_n, 0, SM_OFFSET);
+#undef SM_OFFSET
+        }
     }
     vkCmdEndRenderPass(cmd);
     vkEndCommandBuffer(cmd);
