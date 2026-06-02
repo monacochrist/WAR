@@ -341,6 +341,7 @@ static void war_keyboard_leave(void* data,
 }
 static void war_export_wav(war_env* env, const char* filename) {
     if (!env->ctx_note || !env->ctx_note->instance_count) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "wwav FAILED: no notes");
         fprintf(stderr, "EXPORT: no notes to export\n");
         return;
     }
@@ -371,6 +372,7 @@ static void war_export_wav(war_env* env, const char* filename) {
         if (end > total_sec) total_sec = end;
     }
     if (total_sec <= 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "wwav FAILED: no audio data");
         fprintf(stderr, "EXPORT: no audio data found for any note\n");
         return;
     }
@@ -379,6 +381,7 @@ static void war_export_wav(war_env* env, const char* filename) {
     uint64_t total_floats = total_frames * 2;
     float* mix = calloc(total_floats, sizeof(float));
     if (!mix) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "wwav FAILED: out of memory");
         fprintf(stderr, "EXPORT: out of memory\n");
         return;
     }
@@ -425,6 +428,8 @@ static void war_export_wav(war_env* env, const char* filename) {
     snprintf(path, sizeof(path), "%s", filename);
     FILE* f = fopen(path, "wb");
     if (!f) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "wwav FAILED: %s",
+                 strlen(path) > 85 ? path + strlen(path) - 85 : path);
         fprintf(stderr, "EXPORT: failed to open %s\n", path);
         free(mix);
         return;
@@ -467,6 +472,8 @@ static void war_export_wav(war_env* env, const char* filename) {
 
     fclose(f);
     free(mix);
+    snprintf(env->status_msg, sizeof(env->status_msg), "%s written (%.1fs)",
+             strlen(path) > 80 ? path + strlen(path) - 80 : path, total_sec);
     fprintf(stderr, "EXPORT: wrote %s (%u frames, %.2f sec)\n",
             path, (unsigned)total_frames, total_sec);
 }
@@ -598,13 +605,19 @@ static void war_load_project(war_env* env, const char* filename) {
 
 static void war_write_inst(war_env* env, int layer, const char* filename) {
     if (layer < 1 || layer > 9) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "writeinst FAILED: layer must be 1-9");
         fprintf(stderr, "WRITEINST: layer must be 1-9\n");
         return;
     }
     char path[1024];
     snprintf(path, sizeof(path), "%s", filename);
     FILE* f = fopen(path, "wb");
-    if (!f) { fprintf(stderr, "WRITEINST: failed to open %s\n", path); return; }
+    if (!f) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "writeinst FAILED: %s",
+                 strlen(path) > 85 ? path + strlen(path) - 85 : path);
+        fprintf(stderr, "WRITEINST: failed to open %s\n", path);
+        return;
+    }
     fwrite("WARI", 1, 4, f);
     uint32_t ver = 0;
     fwrite(&ver, 4, 1, f);
@@ -626,20 +639,29 @@ static void war_write_inst(war_env* env, int layer, const char* filename) {
         }
     }
     fclose(f);
+    snprintf(env->status_msg, sizeof(env->status_msg), "%s written (layer %d, %u pitches)",
+             strlen(path) > 65 ? path + strlen(path) - 65 : path, layer, count);
     fprintf(stderr, "WRITEINST: wrote %s (layer=%d, %u pitches)\n", path, layer, count);
 }
 
 static void war_load_inst(war_env* env, int layer, const char* filename) {
     if (layer < 1 || layer > 9) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "loadinst FAILED: layer must be 1-9");
         fprintf(stderr, "LOADINST: layer must be 1-9\n");
         return;
     }
     char path[1024];
     snprintf(path, sizeof(path), "%s", filename);
     FILE* f = fopen(path, "rb");
-    if (!f) { fprintf(stderr, "LOADINST: failed to open %s\n", path); return; }
+    if (!f) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "loadinst FAILED: %s",
+                 strlen(path) > 85 ? path + strlen(path) - 85 : path);
+        fprintf(stderr, "LOADINST: failed to open %s\n", path);
+        return;
+    }
     char magic[4];
     if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "WARI", 4) != 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "loadinst FAILED: bad magic");
         fprintf(stderr, "LOADINST: invalid magic\n");
         fclose(f);
         return;
@@ -676,6 +698,8 @@ static void war_load_inst(war_env* env, int layer, const char* filename) {
         }
     }
     fclose(f);
+    snprintf(env->status_msg, sizeof(env->status_msg), "%s loaded (layer %d, %u pitches)",
+             strlen(path) > 65 ? path + strlen(path) - 65 : path, layer, count);
     fprintf(stderr, "LOADINST: loaded %s (layer=%d, %u pitches)\n", path, layer, count);
 }
 
@@ -884,9 +908,10 @@ static void war_keyboard_key(void* data,
             env->cmd_buf[env->cmd_len < 256 ? env->cmd_len : 255] = '\0';
             if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'o' && env->cmd_buf[4] == 'p') {
                 int x = 0, y = 0;
-                if (sscanf(env->cmd_buf + 5, " %d %d", &x, &y) >= 2 && x > 0 && y > 0)
+                if (sscanf(env->cmd_buf + 5, " %d %d", &x, &y) >= 2 && x > 0 && y > 0) {
                     war_loop_notes(env, x, y);
-                else
+                    snprintf(env->status_msg, sizeof(env->status_msg), "loop %d x %d", x, y);
+                } else
                     fprintf(stderr, "LOOP: usage :loop <quarter_notes> <repeats>\n");
             } else if (env->cmd_len >= 9 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'l' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'd' && env->cmd_buf[5] == 'i' && env->cmd_buf[6] == 'n' && env->cmd_buf[7] == 's' && env->cmd_buf[8] == 't') {
                 int layer = 0;
@@ -904,15 +929,17 @@ static void war_keyboard_key(void* data,
                     fprintf(stderr, "LOAD: usage :load <name>\n");
             } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'b' && env->cmd_buf[2] == 'p' && env->cmd_buf[3] == 'm') {
                 double val = 0;
-                if (sscanf(env->cmd_buf + 4, " %lf", &val) == 1 && val > 0)
+                if (sscanf(env->cmd_buf + 4, " %lf", &val) == 1 && val > 0) {
                     env->atomics->bpm = (float)val;
-                else
+                    snprintf(env->status_msg, sizeof(env->status_msg), "bpm = %.1f", val);
+                } else
                     fprintf(stderr, "BPM: usage :bpm <value>\n");
             } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'r' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'd' && env->cmd_buf[4] == 'i' && env->cmd_buf[5] == 'u' && env->cmd_buf[6] == 's') {
                 int val = 0;
-                if (sscanf(env->cmd_buf + 7, " %d", &val) == 1 && val >= 0)
+                if (sscanf(env->cmd_buf + 7, " %d", &val) == 1 && val >= 0) {
                     env->across_radius = (uint32_t)val;
-                else
+                    snprintf(env->status_msg, sizeof(env->status_msg), "radius = %d", val);
+                } else
                     fprintf(stderr, "RADIUS: usage :radius <n>\n");
              } else if (env->cmd_len >= 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v') {
                 int to_layer = 0;
@@ -925,6 +952,7 @@ static void war_keyboard_key(void* data,
                     uint32_t src_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (cur_layer - 1);
                     uint32_t dst_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (to_layer - 1);
                     if (cur_layer == to_layer) {
+                        snprintf(env->status_msg, sizeof(env->status_msg), "mv FAILED: same layer");
                         fprintf(stderr, "MV: source and destination are the same layer\n");
                     } else if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
                         free(env->capture_slots[dst_idx].samples);
@@ -932,8 +960,10 @@ static void war_keyboard_key(void* data,
                         env->capture_slots[src_idx].samples = NULL;
                         env->capture_slots[src_idx].count = 0;
                         env->capture_slots[src_idx].capacity = 0;
+                        snprintf(env->status_msg, sizeof(env->status_msg), "mv: pitch %u layer %d -> %d", pitch, cur_layer, to_layer);
                         fprintf(stderr, "MV: moved pitch=%u from layer %d to layer %d\n", pitch, cur_layer, to_layer);
                     } else {
+                        snprintf(env->status_msg, sizeof(env->status_msg), "mv FAILED: no capture at pitch %u", pitch);
                         fprintf(stderr, "MV: no capture at pitch=%u layer=%d\n", pitch, cur_layer);
                     }
                 } else {
@@ -948,6 +978,7 @@ static void war_keyboard_key(void* data,
                     uint32_t layer = env->ctx_cursor->layer;
                     if (layer < 1 || layer > 9) layer = 1;
                     _war_across_pitch_shift(env, pitch, layer, radius);
+                    snprintf(env->status_msg, sizeof(env->status_msg), "across radius %d", radius);
                 } else {
                      fprintf(stderr, "ACROSS: usage :across <radius>\n");
                 }
@@ -963,16 +994,18 @@ static void war_keyboard_key(void* data,
                         uint32_t src_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                         uint32_t dst_pitch = pitch + (uint32_t)n;
                         uint32_t dst_idx = dst_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-                        if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
-                            free(env->capture_slots[dst_idx].samples);
-                            env->capture_slots[dst_idx] = env->capture_slots[src_idx];
-                            env->capture_slots[src_idx].samples = NULL;
-                            env->capture_slots[src_idx].count = 0;
-                            env->capture_slots[src_idx].capacity = 0;
-                            fprintf(stderr, "MVU: moved pitch=%u up %d to pitch=%u\n", pitch, n, dst_pitch);
-                        } else {
-                            fprintf(stderr, "MVU: no capture at pitch=%u layer=%d\n", pitch, layer);
-                        }
+                         if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
+                             free(env->capture_slots[dst_idx].samples);
+                             env->capture_slots[dst_idx] = env->capture_slots[src_idx];
+                             env->capture_slots[src_idx].samples = NULL;
+                             env->capture_slots[src_idx].count = 0;
+                             env->capture_slots[src_idx].capacity = 0;
+                             snprintf(env->status_msg, sizeof(env->status_msg), "mvu: pitch %u -> %u", pitch, dst_pitch);
+                             fprintf(stderr, "MVU: moved pitch=%u up %d to pitch=%u\n", pitch, n, dst_pitch);
+                         } else {
+                             snprintf(env->status_msg, sizeof(env->status_msg), "mvu FAILED: no capture at pitch %u", pitch);
+                             fprintf(stderr, "MVU: no capture at pitch=%u layer=%d\n", pitch, layer);
+                         }
                     }
                 } else {
                     fprintf(stderr, "MVU: usage :mvu <n>\n");
@@ -989,16 +1022,18 @@ static void war_keyboard_key(void* data,
                         uint32_t src_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                         uint32_t dst_pitch = pitch - (uint32_t)n;
                         uint32_t dst_idx = dst_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-                        if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
-                            free(env->capture_slots[dst_idx].samples);
-                            env->capture_slots[dst_idx] = env->capture_slots[src_idx];
-                            env->capture_slots[src_idx].samples = NULL;
-                            env->capture_slots[src_idx].count = 0;
-                            env->capture_slots[src_idx].capacity = 0;
-                            fprintf(stderr, "MVD: moved pitch=%u down %d to pitch=%u\n", pitch, n, dst_pitch);
-                        } else {
-                            fprintf(stderr, "MVD: no capture at pitch=%u layer=%d\n", pitch, layer);
-                        }
+                         if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
+                             free(env->capture_slots[dst_idx].samples);
+                             env->capture_slots[dst_idx] = env->capture_slots[src_idx];
+                             env->capture_slots[src_idx].samples = NULL;
+                             env->capture_slots[src_idx].count = 0;
+                             env->capture_slots[src_idx].capacity = 0;
+                             snprintf(env->status_msg, sizeof(env->status_msg), "mvd: pitch %u -> %u", pitch, dst_pitch);
+                             fprintf(stderr, "MVD: moved pitch=%u down %d to pitch=%u\n", pitch, n, dst_pitch);
+                         } else {
+                             snprintf(env->status_msg, sizeof(env->status_msg), "mvd FAILED: no capture at pitch %u", pitch);
+                             fprintf(stderr, "MVD: no capture at pitch=%u layer=%d\n", pitch, layer);
+                         }
                     }
                 } else {
                     fprintf(stderr, "MVD: usage :mvd <n>\n");
