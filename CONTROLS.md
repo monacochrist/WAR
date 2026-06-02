@@ -242,6 +242,7 @@ In visual mode, movement keys (`h`/`j`/`k`/`l`, `w`/`b`) extend the selection ra
 | `<S-h>`/`<S-j>`/`<S-k>`/`<S-l>` | Move selected notes |
 | `t` / `r` | Trim selected note |
 | `x` | Delete selected note |
+| `o` | Swap cursor to opposite end of selection |
 | `y` | Yank (copy) selected notes |
 | `p` | Paste yanked notes at cursor position |
 | `n` | Save cursor position to HUD |

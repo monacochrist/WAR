@@ -84,6 +84,7 @@ else if (strcmp(name, "war_zoom_in") == 0) { return war_zoom_in; }
 else if (strcmp(name, "war_zoom_out") == 0) { return war_zoom_out; }
 else if (strcmp(name, "war_zoom_reset") == 0) { return war_zoom_reset; }
 else if (strcmp(name, "war_visual_mode") == 0) { return war_visual_mode; }
+else if (strcmp(name, "war_visual_swap_anchor") == 0) { return war_visual_swap_anchor; }
 else if (strcmp(name, "war_visual_move_right") == 0) { return war_visual_move_right; }
 else if (strcmp(name, "war_visual_move_left") == 0) { return war_visual_move_left; }
 else if (strcmp(name, "war_visual_move_up") == 0) { return war_visual_move_up; }
@@ -98,6 +99,7 @@ else if (strcmp(name, "war_toggle_crop") == 0) { return war_toggle_crop; }
 else if (strcmp(name, "war_capture_audio") == 0) { return war_capture_audio; }
 else if (strcmp(name, "war_preview_toggle") == 0) { return war_preview_toggle; }
 else if (strcmp(name, "war_set_width_to_duration") == 0) { return war_set_width_to_duration; }
+else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_place_note") == 0) { return war_place_note; }
 else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_undo") == 0) { return war_undo; }

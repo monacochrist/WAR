@@ -759,13 +759,24 @@ static inline void war_visual_mode(war_env* env) {
                         cur->visual_anchor_col, cur->visual_anchor_row);
     } else {
         env->active_mode = WAR_MODE_ID_ROLL;
-        // restore cursor color
-        cur->instance[0].color[0] = 1.0f;
-        cur->instance[0].color[1] = 1.0f;
-        cur->instance[0].color[2] = 1.0f;
-        cur->instance[0].color[3] = 1.0f;
+        uint32_t lc = (&env->ctx_color->layer_none)[cur->layer];
+        cur->instance[0].color[0] = ((lc >> 24) & 0xFF) / 255.0f;
+        cur->instance[0].color[1] = ((lc >> 16) & 0xFF) / 255.0f;
+        cur->instance[0].color[2] = ((lc >> 8) & 0xFF) / 255.0f;
+        cur->instance[0].color[3] = (lc & 0xFF) / 255.0f;
         call_king_terry("VISUAL: OFF");
     }
+}
+
+static inline void war_visual_swap_anchor(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->visual_active || !cur->instance_count) return;
+    float tmp_col = cur->instance[0].pos[0];
+    float tmp_row = cur->instance[0].pos[1];
+    cur->instance[0].pos[0] = cur->visual_anchor_col;
+    cur->instance[0].pos[1] = cur->visual_anchor_row;
+    cur->visual_anchor_col = tmp_col;
+    cur->visual_anchor_row = tmp_row;
 }
 
 static inline void _war_visual_move_selection(war_env* env, float dx, float dy) {
@@ -1033,12 +1044,16 @@ static inline void war_set_width_to_duration(war_env* env) {
     env->ctx_cursor->instance[0].size[0] = new_w;
 }
 
+// forward decl for undo functions used by place/delete
+static inline void war_undo_save(war_env* env);
+
 static inline void war_place_note(war_env* env) {
     war_note_context* note = env->ctx_note;
     if (!note) return;
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur->instance_count) return;
     if (note->instance_count >= note->max_instances) return;
+    war_undo_save(env);
     uint32_t i = note->instance_count++;
     note->instance[i].pos[0] = cur->instance[0].pos[0];
     note->instance[i].pos[1] = cur->instance[0].pos[1];
@@ -1169,6 +1184,7 @@ static inline void war_delete_note_under_cursor(war_env* env) {
     if (!note || !note->instance_count) return;
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur->instance_count) return;
+    war_undo_save(env);
     float cx0 = cur->instance[0].pos[0];
     float cx1 = cx0 + cur->instance[0].size[0];
     float cy0 = cur->instance[0].pos[1];

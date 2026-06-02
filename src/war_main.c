@@ -1057,6 +1057,11 @@ static void war_keyboard_key(void* data,
         if (env->active_mode == WAR_MODE_ID_VISUAL) {
             env->active_mode = WAR_MODE_ID_ROLL;
             env->ctx_cursor->visual_active = 0;
+            uint32_t lc = (&env->ctx_color->layer_none)[env->ctx_cursor->layer];
+            cur->instance[0].color[0] = ((lc >> 24) & 0xFF) / 255.0f;
+            cur->instance[0].color[1] = ((lc >> 16) & 0xFF) / 255.0f;
+            cur->instance[0].color[2] = ((lc >> 8) & 0xFF) / 255.0f;
+            cur->instance[0].color[3] = (lc & 0xFF) / 255.0f;
             cur->prefix = 0;
             return;
         }

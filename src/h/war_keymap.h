@@ -552,6 +552,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_yank,
                    0);
+    // swap anchor (o in visual mode — like neovim)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_VISUAL},
+                   1,
+                   (char*[]){"o"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_visual_swap_anchor,
+                   0);
     // paste (p in roll mode)
     war_keymap_set(keymap,
                    config,
