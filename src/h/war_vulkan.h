@@ -2440,6 +2440,31 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             vkCmdDraw(cmd, 4, (uint32_t)tog_n, 0, TOG_OFFSET);
 #undef TOG_OFFSET
         }
+        // crop label
+        if (ctx_wayland->env->crop_active) {
+            const char* croptxt = "CROP";
+            int cropn = 4;
+#define CROP_OFFSET 309
+            for (int i = 0; i < cropn; i++) {
+                unsigned char c = (unsigned char)croptxt[i];
+                war_vulkan_text_instance* ti = &dst[CROP_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 1 + i);
+                ti->pos[1] = label_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f; ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0]; ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2]; ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 1.0f; ti->color[1] = 0.7f; ti->color[2] = 0.2f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)cropn, 0, CROP_OFFSET);
+#undef CROP_OFFSET
+        }
         // capture label on middle status bar
         if (ctx_wayland->env->atomics->capture) {
             const char* captxt = "CAPTURE";

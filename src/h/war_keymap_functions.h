@@ -427,6 +427,7 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_note[voice] = note;
             env->preview_voice_layer[voice] = layer;
             env->preview_voice_read_pos[voice] = 0;
+            env->preview_voice_read_limit[voice] = 0;
             env->preview_voice_active[voice] = 1;
             if (env->recording_active) _war_record_place_note(env, note, (int)voice);
             return (int)voice;
@@ -860,7 +861,51 @@ static inline void war_toggle_across(war_env* env) {
     call_king_terry("ACROSS: %s", env->across_mode ? "ON" : "OFF");
 }
 
+static inline void war_toggle_crop(war_env* env) {
+    if (!env || !env->ctx_cursor || !env->ctx_wayland) return;
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count || !cur->instance) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (!env->capture_slots[idx].samples || env->capture_slots[idx].count < 2) return;
+    uint64_t frames = env->capture_slots[idx].count / 2;
+    env->crop_active = !env->crop_active;
+    if (env->crop_active) {
+        env->crop_pitch = pitch;
+        env->crop_layer = layer;
+        env->crop_start_frame = 0;
+        env->crop_end_frame = frames;
+        call_king_terry("CROP: note=%u layer=%u (%llu frames)", pitch, layer,
+                        (unsigned long long)frames);
+    } else {
+        uint64_t start = env->crop_start_frame;
+        uint64_t end = env->crop_end_frame;
+        if (start < end) {
+            uint64_t new_frames = end - start;
+            if (new_frames > 0 && new_frames < frames) {
+                uint64_t new_count = new_frames * 2;
+                float* new_data = malloc(new_count * sizeof(float));
+                if (new_data) {
+                    memcpy(new_data, env->capture_slots[idx].samples + start * 2,
+                           new_count * sizeof(float));
+                    free(env->capture_slots[idx].samples);
+                    env->capture_slots[idx].samples = new_data;
+                    env->capture_slots[idx].count = new_count;
+                    env->capture_slots[idx].capacity = new_count;
+                    call_king_terry("CROP: applied [%llu, %llu) -> %llu frames",
+                                    (unsigned long long)start, (unsigned long long)end,
+                                    (unsigned long long)new_frames);
+                }
+            }
+        }
+    }
+}
+
 static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint32_t layer, int32_t radius) {
+    if (!env || src_note > 127 || layer < 1 || layer > 9) return;
     uint32_t li = layer - 1;
     float* src_data = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].samples;
     uint64_t src_cnt = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].count;
@@ -910,27 +955,6 @@ static inline void war_capture_audio(war_env* env) {
         if (layer >= 1 && layer <= 9) {
             uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
             if (note > 127) note = 127;
-            // trim trailing silence
-            if (env->capture_accumulator_count >= 2) {
-                uint64_t i = env->capture_accumulator_count - 2;
-                while (i >= 2) {
-                    float l = env->capture_accumulator[i];
-                    float r = env->capture_accumulator[i + 1];
-                    if (fabsf(l) >= 0.001f || fabsf(r) >= 0.001f)
-                        break;
-                    i -= 2;
-                }
-                i += 2; // last frame with signal
-                uint64_t tail = 48000; // ~1s at 48kHz — preserves natural decay
-                uint64_t keep = i + (tail > (env->capture_accumulator_count - i) ?
-                                      env->capture_accumulator_count - i : tail);
-                if (keep < env->capture_accumulator_count) {
-                    call_king_terry("TRIM: %llu -> %llu floats",
-                                    (unsigned long long)env->capture_accumulator_count,
-                                    (unsigned long long)keep);
-                    env->capture_accumulator_count = keep;
-                }
-            }
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             free(env->capture_slots[idx].samples);
             env->capture_slots[idx].samples = env->capture_accumulator;

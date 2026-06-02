@@ -36,6 +36,7 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `z` | Place a note at cursor position |
 | `x` | Delete note under cursor |
 | `t` / `r` | Trim note under cursor to cursor position |
+| `c` | Toggle crop mode for capture slot at cursor |
 | `a` | Set cursor width to match capture slot duration |
 | `s` | Reset step size to 1.0 |
 | `f` + number | Multiply cursor width by prefix (fat) |
@@ -241,6 +242,20 @@ In visual mode, movement keys (`h`/`j`/`k`/`l`, `w`/`b`) extend the selection ra
 | `u` | Undo |
 | `<C-r>` | Redo |
 | `Esc` | Exit visual mode |
+
+## Crop Mode
+
+Press `c` on a row/layer that has a capture slot to enter crop mode. An orange "CROP" label appears on the status bar.
+
+| Key | Action |
+|-----|--------|
+| `Left` | Trim from start (move start forward) |
+| `Right` | Untrim from start (move start backward) |
+| `Shift+Left` | Untrim from end (extend end) |
+| `Shift+Right` | Trim from end (move end backward) |
+| `Esc` | Exit crop mode |
+
+Changes apply immediately to the capture slot data.
 
 ---
 

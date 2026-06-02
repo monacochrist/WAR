@@ -2710,6 +2710,7 @@ struct war_env {
     uint32_t preview_voice_note[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_pos[WAR_PREVIEW_VOICES];
+    uint64_t preview_voice_read_limit[WAR_PREVIEW_VOICES];
     // recording state
     uint8_t recording_active;
     uint8_t loop_mode;
@@ -2719,6 +2720,11 @@ struct war_env {
     uint32_t wave_view_pitch;
     uint32_t wave_view_layer;
     float wave_view_note_width;
+    uint8_t crop_active;
+    uint32_t crop_pitch;
+    uint32_t crop_layer;
+    uint64_t crop_start_frame;
+    uint64_t crop_end_frame;
     uint32_t across_radius;
     double recording_position;
     uint32_t recording_last_frame_ms;

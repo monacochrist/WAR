@@ -707,6 +707,43 @@ static void war_loop_notes(war_env* env, int quarter_notes, int repeats) {
             section_cells, repeats, added, note->instance_count);
 }
 
+// handle crop mode arrow key adjustment (returns 1 if handled)
+static int _war_crop_adjust(war_env* env, uint32_t raw_sym, uint32_t mod) {
+    if (!env->crop_active) return 0;
+    if (env->crop_pitch > 127 || env->crop_layer < 1 || env->crop_layer > 9) {
+        env->crop_active = 0; return 1;
+    }
+    uint32_t cidx = env->crop_pitch * WAR_CAPTURE_SLOT_LAYERS + (env->crop_layer - 1);
+    float* csamples = env->capture_slots[cidx].samples;
+    uint64_t ctotal = env->capture_slots[cidx].count / 2;
+    if (!csamples || ctotal < 1) { env->crop_active = 0; return 1; }
+    int trim_amount = 480;
+    int modded = 0;
+    if (raw_sym == XKB_KEY_Left && !(mod & MOD_SHIFT)) {
+        if (env->crop_start_frame >= (uint64_t)trim_amount) {
+            env->crop_start_frame -= trim_amount; modded = 1;
+        }
+    } else if (raw_sym == XKB_KEY_Right && !(mod & MOD_SHIFT)) {
+        if (env->crop_start_frame + trim_amount < env->crop_end_frame) {
+            env->crop_start_frame += trim_amount; modded = 1;
+        }
+    } else if (raw_sym == XKB_KEY_Left && (mod & MOD_SHIFT)) {
+        if (env->crop_end_frame > env->crop_start_frame + trim_amount) {
+            env->crop_end_frame -= trim_amount; modded = 1;
+        }
+    } else if (raw_sym == XKB_KEY_Right && (mod & MOD_SHIFT)) {
+        if (env->crop_end_frame + trim_amount <= ctotal) {
+            env->crop_end_frame += trim_amount; modded = 1;
+        }
+    }
+    if (modded)
+        call_king_terry("CROP: [%llu, %llu) of %llu frames",
+                        (unsigned long long)env->crop_start_frame,
+                        (unsigned long long)env->crop_end_frame,
+                        (unsigned long long)(env->crop_end_frame - env->crop_start_frame));
+    return modded;
+}
+
 static void war_keyboard_key(void* data,
                              struct wl_keyboard* keyboard,
                              uint32_t serial,
@@ -1006,6 +1043,11 @@ static void war_keyboard_key(void* data,
 
     // enter command mode on ':' (check raw sym before normalizer maps it to ';')
     if (raw_sym == XKB_KEY_Escape) {
+        if (env->crop_active) {
+            env->crop_active = 0;
+            cur->prefix = 0;
+            return;
+        }
         if (env->wave_view_active) {
             env->wave_view_active = 0;
             env->active_mode = WAR_MODE_ID_ROLL;
@@ -1066,6 +1108,22 @@ static void war_keyboard_key(void* data,
         }
         if (raw_sym == XKB_KEY_p || raw_sym == XKB_KEY_P) {
             _war_preview_start_voice(env, env->wave_view_pitch, env->wave_view_layer);
+            cur->prefix = 0;
+            return;
+        }
+    }
+    // crop mode: arrow keys adjust offset markers, space previews cropped range
+    if (env->crop_active) {
+        if (raw_sym == XKB_KEY_space) {
+            int voice = _war_preview_start_voice(env, env->crop_pitch, env->crop_layer);
+            if (voice >= 0) {
+                env->preview_voice_read_pos[voice] = env->crop_start_frame * 2;
+                env->preview_voice_read_limit[voice] = env->crop_end_frame * 2;
+            }
+            cur->prefix = 0;
+            return;
+        }
+        if (_war_crop_adjust(env, raw_sym, mod)) {
             cur->prefix = 0;
             return;
         }
@@ -1898,6 +1956,15 @@ int main(int argc, char** argv) {
                     continue;
                 for (uint64_t i = 0; i < exp; i++) {
                     war_env* env = ctx_wayland->env;
+                    // crop mode: arrow keys handled inline, skip keymap dispatch
+                    if (env->crop_active) {
+                        uint32_t rsym = ctx_wayland->repeat_sym;
+                        uint32_t rmod = ctx_wayland->repeat_mod;
+                        if (rsym == XKB_KEY_Left || rsym == XKB_KEY_Right) {
+                            _war_crop_adjust(env, rsym, rmod);
+                            continue;
+                        }
+                    }
                     war_keymap_context* keymap = env->ctx_keymap;
                     war_config_context* config = env->ctx_config;
                     size_t ti = (size_t)ctx_wayland->repeat_sym *
@@ -1971,6 +2038,9 @@ int main(int argc, char** argv) {
                     }
                     uint64_t read_pos = env->preview_voice_read_pos[v];
                     uint64_t slot_avail = slot->samples ? slot->count : 0;
+                    uint64_t read_limit = env->preview_voice_read_limit[v];
+                    if (read_limit > 0 && read_limit < slot_avail)
+                        slot_avail = read_limit;
                     if (read_pos >= slot_avail) {
                         if (env->loop_mode) {
                             env->preview_voice_read_pos[v] = 0;
