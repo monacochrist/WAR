@@ -1062,6 +1062,8 @@ static void war_keyboard_key(void* data,
                     name = env->cmd_buf + 6;
                 if (!name || !name[0]) name = "output";
                 war_export_wav(env, name);
+            } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
+                ctx_wayland->running = 0;
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w') {
                 const char* name = NULL;
                 if (env->cmd_len > 2 && env->cmd_buf[2] == ' ')
