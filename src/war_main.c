@@ -390,35 +390,26 @@ static void war_export_wav(war_env* env, const char* filename) {
     for (uint32_t i = 0; i < num_notes; i++) {
         uint32_t pitch = (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)env->ctx_wayland->gutter_rows);
         if (pitch > 127) pitch = 127;
-        float* src = NULL;
-        uint64_t src_count = 0;
-        float src_gain = 1.0f;
-        int src_pan = 0;
-        for (uint32_t l = 0; l < WAR_CAPTURE_SLOT_LAYERS; l++) {
-            uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + l;
-            if (env->capture_slots[idx].samples && env->capture_slots[idx].count > 0) {
-                src = env->capture_slots[idx].samples;
-                src_count = env->capture_slots[idx].count;
-                src_gain = env->capture_slots[idx].gain / 100.0f;
-                src_pan = env->capture_slots[idx].pan;
-                break;
-            }
-        }
-        if (!src) continue;
-
-        float _pe = (float)(src_pan + 100) / 200.0f;
+        uint32_t _nlayer = (env->ctx_note->instance[i].flags >> 4) & 0xF;
+        if (_nlayer < 1 || _nlayer > 9) continue;
+        uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (_nlayer - 1);
+        if (!env->capture_slots[idx].samples || env->capture_slots[idx].count < 2) continue;
+        float* _s = env->capture_slots[idx].samples;
+        uint64_t _sc = env->capture_slots[idx].count;
+        float _sg = env->capture_slots[idx].gain / 100.0f;
+        int _sp = env->capture_slots[idx].pan;
+        float _pe = (float)(_sp + 100) / 200.0f;
         float _ple = sinf((1.0f - _pe) * (float)(M_PI / 2.0));
         float _pre = sinf(_pe * (float)(M_PI / 2.0));
-
-        double start_sec = (double)env->ctx_note->instance[i].pos[0] * sec_per_cell;
-        uint64_t start_frame = (uint64_t)(start_sec * sr);
-        double dur_sec = env->ctx_note->instance[i].size[0] * sec_per_cell;
-        uint64_t dur_frames = (uint64_t)(dur_sec * sr);
-        uint64_t src_frames = src_count / 2;
-        if (dur_frames < src_frames) src_frames = dur_frames;
-        for (uint64_t f = 0; f < src_frames && start_frame + f < total_frames; f++) {
-            mix[(start_frame + f) * 2 + 0] += src[f * 2 + 0] * src_gain * _ple;
-            mix[(start_frame + f) * 2 + 1] += src[f * 2 + 1] * src_gain * _pre;
+        double _start_sec = (double)env->ctx_note->instance[i].pos[0] * sec_per_cell;
+        uint64_t _start_frame = (uint64_t)(_start_sec * sr);
+        double _dur_sec = env->ctx_note->instance[i].size[0] * sec_per_cell;
+        uint64_t _dur_frames = (uint64_t)(_dur_sec * sr);
+        uint64_t _src_frames = _sc / 2;
+        if (_dur_frames < _src_frames) _src_frames = _dur_frames;
+        for (uint64_t f = 0; f < _src_frames && _start_frame + f < total_frames; f++) {
+            mix[(_start_frame + f) * 2 + 0] += _s[f * 2 + 0] * _sg * _ple;
+            mix[(_start_frame + f) * 2 + 1] += _s[f * 2 + 1] * _sg * _pre;
         }
     }
 
@@ -2184,17 +2175,23 @@ int main(int argc, char** argv) {
                 env->capture_accumulator_count += n_floats;
             }
         }
-        // preview playback: mix all active preview voices → pc_play
+        // unified audio mixing: both preview (MIDI) and playbar voices
         {
             enum { PW_CHUNK_FLOATS = 64 };
-            uint64_t voice_batch[WAR_PREVIEW_VOICES];
+            enum { _TOTAL_VOICES = WAR_PREVIEW_VOICES + WAR_PLAY_BAR_VOICES };
+            uint64_t voice_batch[_TOTAL_VOICES];
             int any_active = 0;
             for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
                 if (env->preview_voice_active[v]) { any_active = 1; break; }
+            if (!any_active && env->play_bar_playing) {
+                for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++)
+                    if (env->play_bar_voice_active[v]) { any_active = 1; break; }
+            }
             while (any_active) {
                 float mix[PW_CHUNK_FLOATS];
                 memset(mix, 0, sizeof(mix));
                 any_active = 0;
+                // mix preview voices
                 for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
                     voice_batch[v] = 0;
                     if (!env->preview_voice_active[v]) continue;
@@ -2252,11 +2249,63 @@ int main(int argc, char** argv) {
                     }
                     any_active = 1;
                 }
+                // mix playbar voices
+                if (env->play_bar_playing) {
+                    for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
+                        uint32_t vi = WAR_PREVIEW_VOICES + v;
+                        voice_batch[vi] = 0;
+                        if (!env->play_bar_voice_active[v]) continue;
+                        uint32_t note = env->play_bar_voice_note[v];
+                        if (note > 127) note = 127;
+                        uint32_t layer = env->play_bar_voice_layer[v];
+                        if (layer < 1 || layer > 9) {
+                            env->play_bar_voice_active[v] = 0;
+                            continue;
+                        }
+                        uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        war_capture_slot* slot = &env->capture_slots[idx];
+                        uint64_t read_pos = env->play_bar_voice_read_pos[v];
+                        uint64_t read_limit = env->play_bar_voice_read_limit[v];
+                        if (read_pos >= read_limit) {
+                            env->play_bar_voice_active[v] = 0;
+                            continue;
+                        }
+                        uint64_t slot_avail = slot->samples ? slot->count : 0;
+                        if (read_pos >= slot_avail) {
+                            env->play_bar_voice_active[v] = 0;
+                            continue;
+                        }
+                        uint64_t avail = (read_limit < slot_avail ? read_limit : slot_avail) - read_pos;
+                        if (avail < 2) {
+                            env->play_bar_voice_active[v] = 0;
+                            continue;
+                        }
+                        uint64_t batch = avail < PW_CHUNK_FLOATS ?
+                                             (avail & ~1ULL) :
+                                             PW_CHUNK_FLOATS;
+                        voice_batch[vi] = batch;
+                        float _gm = slot->gain / 100.0f;
+                        float _pp2 = (float)(slot->pan + 100) / 200.0f;
+                        float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
+                        float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
+                        for (uint64_t f = 0; f < batch; f += 2) {
+                            mix[f]   += slot->samples[read_pos + f]   * _gm * _pl2;
+                            mix[f+1] += slot->samples[read_pos + f+1] * _gm * _pr2;
+                        }
+                        any_active = 1;
+                    }
+                }
                 if (!any_active) break;
                 if (!war_pc_to_a(env->pc_play, 0, PW_CHUNK_FLOATS * 4, mix))
                     break;
+                // advance preview read positions
                 for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
                     env->preview_voice_read_pos[v] += voice_batch[v];
+                // advance playbar read positions
+                if (env->play_bar_playing) {
+                    for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++)
+                        env->play_bar_voice_read_pos[v] += voice_batch[WAR_PREVIEW_VOICES + v];
+                }
                 // continuously update note widths during recording
                 if (env->recording_active) {
                     uint64_t now_us = war_get_monotonic_time_us();
@@ -2273,66 +2322,6 @@ int main(int argc, char** argv) {
                         env->ctx_note->instance[ni].size[0] = (float)width;
                     }
                 }
-            }
-        }
-        // playback bar streaming: mix all active voices → pc_play
-        if (env->play_bar_playing) {
-            enum { PW_CHUNK_FLOATS = 64 };
-            uint64_t voice_batch[WAR_PLAY_BAR_VOICES];
-            int any_active = 0;
-            for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++)
-                if (env->play_bar_voice_active[v]) { any_active = 1; break; }
-            while (any_active) {
-                float mix[PW_CHUNK_FLOATS];
-                memset(mix, 0, sizeof(mix));
-                any_active = 0;
-                for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
-                    voice_batch[v] = 0;
-                    if (!env->play_bar_voice_active[v]) continue;
-                    uint32_t note = env->play_bar_voice_note[v];
-                    if (note > 127) note = 127;
-                    uint32_t layer = env->play_bar_voice_layer[v];
-                    if (layer < 1 || layer > 9) {
-                        env->play_bar_voice_active[v] = 0;
-                        continue;
-                    }
-                    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-                    war_capture_slot* slot = &env->capture_slots[idx];
-                    uint64_t read_pos = env->play_bar_voice_read_pos[v];
-                    uint64_t read_limit = env->play_bar_voice_read_limit[v];
-                    if (read_pos >= read_limit) {
-                        env->play_bar_voice_active[v] = 0;
-                        continue;
-                    }
-                    uint64_t slot_avail = slot->samples ? slot->count : 0;
-                    if (read_pos >= slot_avail) {
-                        env->play_bar_voice_active[v] = 0;
-                        continue;
-                    }
-                    uint64_t avail = (read_limit < slot_avail ? read_limit : slot_avail) - read_pos;
-                    if (avail < 2) {
-                        env->play_bar_voice_active[v] = 0;
-                        continue;
-                    }
-                    uint64_t batch = avail < PW_CHUNK_FLOATS ?
-                                         (avail & ~1ULL) :
-                                         PW_CHUNK_FLOATS;
-                    voice_batch[v] = batch;
-                    float _gm = slot->gain / 100.0f;
-                    float _pp2 = (float)(slot->pan + 100) / 200.0f;
-                    float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
-                    float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
-                    for (uint64_t f = 0; f < batch; f += 2) {
-                        mix[f]   += slot->samples[env->play_bar_voice_read_pos[v] + f]   * _gm * _pl2;
-                        mix[f+1] += slot->samples[env->play_bar_voice_read_pos[v] + f+1] * _gm * _pr2;
-                    }
-                    any_active = 1;
-                }
-                if (!any_active) break;
-                if (!war_pc_to_a(env->pc_play, 0, PW_CHUNK_FLOATS * 4, mix))
-                    break;
-                for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++)
-                    env->play_bar_voice_read_pos[v] += voice_batch[v];
             }
         }
         // playback bar advancement (runs even without frame callbacks)
