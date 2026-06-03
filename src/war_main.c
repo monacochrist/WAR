@@ -392,11 +392,13 @@ static void war_export_wav(war_env* env, const char* filename) {
         if (pitch > 127) pitch = 127;
         float* src = NULL;
         uint64_t src_count = 0;
+        float src_gain = 1.0f;
         for (uint32_t l = 0; l < WAR_CAPTURE_SLOT_LAYERS; l++) {
             uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + l;
             if (env->capture_slots[idx].samples && env->capture_slots[idx].count > 0) {
                 src = env->capture_slots[idx].samples;
                 src_count = env->capture_slots[idx].count;
+                src_gain = env->capture_slots[idx].gain / 100.0f;
                 break;
             }
         }
@@ -409,8 +411,8 @@ static void war_export_wav(war_env* env, const char* filename) {
         uint64_t src_frames = src_count / 2;
         if (dur_frames < src_frames) src_frames = dur_frames;
         for (uint64_t f = 0; f < src_frames && start_frame + f < total_frames; f++) {
-            mix[(start_frame + f) * 2 + 0] += src[f * 2 + 0];
-            mix[(start_frame + f) * 2 + 1] += src[f * 2 + 1];
+            mix[(start_frame + f) * 2 + 0] += src[f * 2 + 0] * src_gain;
+            mix[(start_frame + f) * 2 + 1] += src[f * 2 + 1] * src_gain;
         }
     }
 
