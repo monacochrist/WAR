@@ -2436,6 +2436,35 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef PAN_OFFSET
             }
         }
+        // playbar loop label on bottom status bar
+        if (ctx_wayland->env->play_bar_loop) {
+            const char* _plt = "PB LOOP";
+            int _pln = 7;
+            float _plr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+#define PBLOOP_OFFSET 290
+            for (int _pli = 0; _pli < _pln; _pli++) {
+                unsigned char _pc = (unsigned char)_plt[_pli];
+                war_vulkan_text_instance* _ti = &dst[PBLOOP_OFFSET + _pli];
+                _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 12 + _pli);
+                _ti->pos[1] = _plr;
+                _ti->pos[2] = 0;
+                _ti->size[0] = 1.0f;
+                _ti->size[1] = 1.0f;
+                _ti->uv[0] = font->glyph_uv[_pc][0];
+                _ti->uv[1] = font->glyph_uv[_pc][1];
+                _ti->uv[2] = font->glyph_uv[_pc][2];
+                _ti->uv[3] = font->glyph_uv[_pc][3];
+                _ti->glyph_scale[0] = font->glyph_norm_width[_pc];
+                _ti->glyph_scale[1] = font->glyph_norm_height[_pc];
+                _ti->ascent = font->glyph_norm_ascent[_pc];
+                _ti->descent = font->glyph_norm_descent[_pc];
+                _ti->baseline = font->glyph_norm_baseline[_pc];
+                _ti->color[0] = 0.2f; _ti->color[1] = 1.0f; _ti->color[2] = 0.2f; _ti->color[3] = 1.0f;
+                _ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)_pln, 0, PBLOOP_OFFSET);
+#undef PBLOOP_OFFSET
+        }
         // loop mode label
         if (ctx_wayland->env->loop_mode) {
             const char* loop_text = "LOOP";

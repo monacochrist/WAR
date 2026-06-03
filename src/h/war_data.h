@@ -2697,6 +2697,7 @@ struct war_env {
     war_font_context* ctx_font;
     // playback bar
     uint8_t play_bar_playing;
+    uint8_t play_bar_loop;
     double play_bar_position_seconds;
     uint32_t play_bar_last_frame_ms;
     double play_bar_prev_cell_pos;

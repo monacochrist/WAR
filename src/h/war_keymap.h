@@ -360,7 +360,17 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    1,
                    (char*[]){"<S-d>"},
                    WAR_FUNCTION_ID_NONE,
-                   war_playbar_goto_start,
+                    war_playbar_goto_start,
+                    0);
+    // toggle playbar loop (shift+L)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<S-l>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_toggle_playbar_loop,
                    0);
     // layers
     war_keymap_set(keymap,

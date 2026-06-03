@@ -91,6 +91,7 @@ else if (strcmp(name, "war_visual_move_up") == 0) { return war_visual_move_up; }
 else if (strcmp(name, "war_visual_move_down") == 0) { return war_visual_move_down; }
 else if (strcmp(name, "war_toggle_playback") == 0) { return war_toggle_playback; }
 else if (strcmp(name, "war_playbar_goto_cursor") == 0) { return war_playbar_goto_cursor; }
+else if (strcmp(name, "war_toggle_playbar_loop") == 0) { return war_toggle_playbar_loop; }
 else if (strcmp(name, "war_playbar_goto_start") == 0) { return war_playbar_goto_start; }
 else if (strcmp(name, "war_toggle_loop") == 0) { return war_toggle_loop; }
 else if (strcmp(name, "war_midi_toggle") == 0) { return war_midi_toggle; }

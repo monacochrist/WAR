@@ -848,6 +848,12 @@ static inline void war_playbar_goto_cursor(war_env* env) {
     line->instance[0].pos[0] = cursor_col;
 }
 
+static inline void war_toggle_playbar_loop(war_env* env) {
+    if (!env) return;
+    env->play_bar_loop = !env->play_bar_loop;
+    call_king_terry("PLAYBAR LOOP: %s", env->play_bar_loop ? "ON" : "OFF");
+}
+
 static inline void war_playbar_goto_start(war_env* env) {
     war_simple_line_context* line = env->ctx_line;
     if (!line) return;

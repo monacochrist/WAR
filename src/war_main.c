@@ -233,6 +233,22 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
         }
         env->play_bar_prev_cell_pos = current_cell_pos;
         env->ctx_line->instance[0].pos[0] = (float)current_cell_pos;
+        if (env->play_bar_loop && env->ctx_note && env->ctx_note->instance_count > 0) {
+            double _rmax = 0.0;
+            for (uint32_t _ri = 0; _ri < env->ctx_note->instance_count; _ri++) {
+                double _re = env->ctx_note->instance[_ri].pos[0] + env->ctx_note->instance[_ri].size[0];
+                if (_re > _rmax) _rmax = _re;
+            }
+            double _gc = (double)ctx_wayland->gutter_cols;
+            if (current_cell_pos >= _rmax) {
+                env->play_bar_position_seconds = 0.0;
+                env->play_bar_last_frame_ms = 0;
+                env->play_bar_prev_cell_pos = _gc;
+                env->ctx_line->instance[0].pos[0] = (float)_gc;
+                memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+                call_king_terry("PLAYBAR LOOP: restart");
+            }
+        }
     }
     // advance recording position based on real-time delta
     if (env->recording_active) {
@@ -2370,6 +2386,20 @@ int main(int argc, char** argv) {
                 }
                 env->play_bar_prev_cell_pos = _ccp;
                 env->ctx_line->instance[0].pos[0] = (float)_ccp;
+                if (env->play_bar_loop && env->ctx_note && env->ctx_note->instance_count > 0) {
+                    double _rmax = 0.0;
+                    for (uint32_t _ri = 0; _ri < env->ctx_note->instance_count; _ri++) {
+                        double _re = env->ctx_note->instance[_ri].pos[0] + env->ctx_note->instance[_ri].size[0];
+                        if (_re > _rmax) _rmax = _re;
+                    }
+                    if (_ccp >= _rmax) {
+                        env->play_bar_position_seconds = 0.0;
+                        env->play_bar_last_frame_ms = 0;
+                        env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
+                        env->ctx_line->instance[0].pos[0] = (float)ctx_wayland->gutter_cols;
+                        memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+                    }
+                }
             }
         }
     }

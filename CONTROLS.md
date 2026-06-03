@@ -80,6 +80,7 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | Key | Action |
 |-----|--------|
 | `<S-Space>` | Toggle playback bar (play/stop) |
+| `<S-l>` | Toggle playback bar loop (restart after last note) |
 | `<S-d>` | Reset playback bar to beginning |
 | `<A-a>` | Move playback bar to cursor position |
 
