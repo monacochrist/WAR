@@ -45,6 +45,8 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `T` + number | Narrow step size by prefix |
 | `u` | Undo last note modification |
 | `<C-r>` | Redo last undone modification |
+| `<C-Up>` | Increase gain for capture slot under cursor (+10) |
+| `<C-Down>` | Decrease gain for capture slot under cursor (-10) |
 | `p` | Paste yanked notes at cursor position |
 
 ## ROLL Mode — Viewport
@@ -62,30 +64,12 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `_` | Zoom out |
 | `)` | Reset zoom |
 
-## ROLL Mode — Visual Mode
-
-| Key | Action |
-|-----|--------|
-| `v` | Toggle visual mode |
-| `h`/`j`/`k`/`l` | Extend selection (same as cursor movement) |
-| `<S-h>` / `<S-Left>` | Move selected notes left |
-| `<S-j>` / `<S-Down>` | Move selected notes down |
-| `<S-k>` / `<S-Up>` | Move selected notes up |
-| `<S-l>` / `<S-Right>` | Move selected notes right |
-| `t` / `r` | Trim selected note under cursor |
-| `x` | Delete selected note under cursor |
-| `y` | Yank (copy) selected notes |
-| `n` | Save cursor position to HUD slot |
-| `u` | Undo |
-| `<C-r>` | Redo |
-| `Esc` | Exit visual mode |
-
 ## ROLL Mode — Audio Capture
 
 | Key | Action |
 |-----|--------|
 | `Q` / `<S-q>` | Toggle capture — starts/stops recording audio to the current note/layer |
-| `Space` / `p` / `P` | Preview the captured audio at cursor position |
+| `Space` | Preview the captured audio at cursor position |
 | `i` | Toggle ACROSS mode (pitch-shifts capture to all 128 notes) |
 | `:` | Enter command mode |
 
@@ -209,6 +193,8 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `:mvu <n>` | Move capture slot at cursor up n pitches |
 | `:mvd <n>` | Move capture slot at cursor down n pitches |
 | `:across <radius>` | Pitch-shift capture slot at cursor to nearby notes (within radius) |
+| `:gain <0-200>` | Set gain for capture slot under cursor (100 = 1.0x) |
+| `:q` | Quit the application |
 
 Press `Esc` to exit command mode.
 
@@ -218,6 +204,7 @@ Press `Esc` to exit command mode.
 
 | Label | Location | Meaning |
 |-------|----------|---------|
+| `G<value>` | Bottom bar | Gain for capture slot under cursor |
 | `CROP` | Top bar | Crop mode active |
 | `CAPTURE` | Middle bar | Audio capture in progress |
 | `MIDI` | Middle bar | MIDI mode active |
@@ -239,7 +226,7 @@ In visual mode, movement keys (`h`/`j`/`k`/`l`, `w`/`b`) extend the selection ra
 | `v` | Toggle visual mode on/off |
 | `h`/`j`/`k`/`l` | Extend selection |
 | `w`/`b` | Extend selection to next/prev note |
-| `<S-h>`/`<S-j>`/`<S-k>`/`<S-l>` | Move selected notes |
+| `<S-h>`/`<S-j>`/`<S-k>`/`<S-l>` | Move selected notes by step size |
 | `t` / `r` | Trim selected note |
 | `x` | Delete selected note |
 | `o` | Swap cursor to opposite end of selection |
