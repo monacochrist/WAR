@@ -47,6 +47,8 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `<C-r>` | Redo last undone modification |
 | `<C-Up>` | Increase gain for capture slot under cursor (+10) |
 | `<C-Down>` | Decrease gain for capture slot under cursor (-10) |
+| `<C-Left>` | Pan left for capture slot under cursor (-5) |
+| `<C-Right>` | Pan right for capture slot under cursor (+5) |
 | `p` | Paste yanked notes at cursor position |
 
 ## ROLL Mode — Viewport
@@ -194,6 +196,7 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `:mvd <n>` | Move capture slot at cursor down n pitches |
 | `:across <radius>` | Pitch-shift capture slot at cursor to nearby notes (within radius) |
 | `:gain <0-200>` | Set gain for capture slot under cursor (100 = 1.0x) |
+| `:pan <-100..100>` | Set pan for capture slot under cursor (0 = center) |
 | `:q` | Quit the application |
 
 Press `Esc` to exit command mode.
@@ -205,6 +208,7 @@ Press `Esc` to exit command mode.
 | Label | Location | Meaning |
 |-------|----------|---------|
 | `G<value>` | Bottom bar | Gain for capture slot under cursor |
+| `P<value>` | Bottom bar | Pan for capture slot under cursor |
 | `CROP` | Top bar | Crop mode active |
 | `CAPTURE` | Middle bar | Audio capture in progress |
 | `MIDI` | Middle bar | MIDI mode active |

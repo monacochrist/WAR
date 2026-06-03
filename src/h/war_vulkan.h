@@ -2398,6 +2398,44 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                 }
             }
         }
+        // pan label on bottom status bar
+        {
+            double _pr2 = ctx_wayland->env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+            uint32_t _pp2 = _pr2 > 0 ? (uint32_t)(_pr2 + 0.5) : 0;
+            if (_pp2 > 127) _pp2 = 127;
+            uint32_t _pl2 = ctx_wayland->env->ctx_cursor->layer;
+            if (_pl2 < 1 || _pl2 > 9) _pl2 = 1;
+            uint32_t _pi2 = _pp2 * WAR_CAPTURE_SLOT_LAYERS + (_pl2 - 1);
+            war_capture_slot* _ps2 = &ctx_wayland->env->capture_slots[_pi2];
+            char _pt2[16];
+            int _pn2 = snprintf(_pt2, sizeof(_pt2), "P%d", _ps2->pan);
+            if (_pn2 > 0) {
+                float _prow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+#define PAN_OFFSET 285
+                for (int _pi3 = 0; _pi3 < _pn2; _pi3++) {
+                    unsigned char _pc2 = (unsigned char)_pt2[_pi3];
+                    war_vulkan_text_instance* _ti2 = &dst[PAN_OFFSET + _pi3];
+                    _ti2->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 6 + _pi3);
+                    _ti2->pos[1] = _prow2;
+                    _ti2->pos[2] = 0;
+                    _ti2->size[0] = 1.0f;
+                    _ti2->size[1] = 1.0f;
+                    _ti2->uv[0] = font->glyph_uv[_pc2][0];
+                    _ti2->uv[1] = font->glyph_uv[_pc2][1];
+                    _ti2->uv[2] = font->glyph_uv[_pc2][2];
+                    _ti2->uv[3] = font->glyph_uv[_pc2][3];
+                    _ti2->glyph_scale[0] = font->glyph_norm_width[_pc2];
+                    _ti2->glyph_scale[1] = font->glyph_norm_height[_pc2];
+                    _ti2->ascent = font->glyph_norm_ascent[_pc2];
+                    _ti2->descent = font->glyph_norm_descent[_pc2];
+                    _ti2->baseline = font->glyph_norm_baseline[_pc2];
+                    _ti2->color[0] = 0.2f; _ti2->color[1] = 0.8f; _ti2->color[2] = 1.0f; _ti2->color[3] = 1.0f;
+                    _ti2->flags = 0;
+                }
+                vkCmdDraw(cmd, 4, (uint32_t)_pn2, 0, PAN_OFFSET);
+#undef PAN_OFFSET
+            }
+        }
         // loop mode label
         if (ctx_wayland->env->loop_mode) {
             const char* loop_text = "LOOP";

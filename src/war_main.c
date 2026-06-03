@@ -393,16 +393,22 @@ static void war_export_wav(war_env* env, const char* filename) {
         float* src = NULL;
         uint64_t src_count = 0;
         float src_gain = 1.0f;
+        int src_pan = 0;
         for (uint32_t l = 0; l < WAR_CAPTURE_SLOT_LAYERS; l++) {
             uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + l;
             if (env->capture_slots[idx].samples && env->capture_slots[idx].count > 0) {
                 src = env->capture_slots[idx].samples;
                 src_count = env->capture_slots[idx].count;
                 src_gain = env->capture_slots[idx].gain / 100.0f;
+                src_pan = env->capture_slots[idx].pan;
                 break;
             }
         }
         if (!src) continue;
+
+        float _pe = (float)(src_pan + 100) / 200.0f;
+        float _ple = sinf((1.0f - _pe) * (float)(M_PI / 2.0));
+        float _pre = sinf(_pe * (float)(M_PI / 2.0));
 
         double start_sec = (double)env->ctx_note->instance[i].pos[0] * sec_per_cell;
         uint64_t start_frame = (uint64_t)(start_sec * sr);
@@ -411,8 +417,8 @@ static void war_export_wav(war_env* env, const char* filename) {
         uint64_t src_frames = src_count / 2;
         if (dur_frames < src_frames) src_frames = dur_frames;
         for (uint64_t f = 0; f < src_frames && start_frame + f < total_frames; f++) {
-            mix[(start_frame + f) * 2 + 0] += src[f * 2 + 0] * src_gain;
-            mix[(start_frame + f) * 2 + 1] += src[f * 2 + 1] * src_gain;
+            mix[(start_frame + f) * 2 + 0] += src[f * 2 + 0] * src_gain * _ple;
+            mix[(start_frame + f) * 2 + 1] += src[f * 2 + 1] * src_gain * _pre;
         }
     }
 
@@ -1023,6 +1029,20 @@ static void war_keyboard_key(void* data,
                 } else {
                     fprintf(stderr, "GAIN: usage :gain <0-200>\n");
                 }
+             } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'p' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'n') {
+                int _pv = 0;
+                if (sscanf(env->cmd_buf + 4, " %d", &_pv) == 1 && _pv >= -100 && _pv <= 100) {
+                    double _pr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    uint32_t _pp = _pr > 0 ? (uint32_t)(_pr + 0.5) : 0;
+                    if (_pp > 127) _pp = 127;
+                    uint32_t _pl = cur->layer;
+                    if (_pl < 1 || _pl > 9) _pl = 1;
+                    uint32_t _pi = _pp * WAR_CAPTURE_SLOT_LAYERS + (_pl - 1);
+                    env->capture_slots[_pi].pan = _pv;
+                    snprintf(env->status_msg, sizeof(env->status_msg), "P%d", _pv);
+                } else {
+                    fprintf(stderr, "PAN: usage :pan <-100..100>\n");
+                }
              } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v' && env->cmd_buf[3] == 'd') {
                 int n = 0;
                 if (sscanf(env->cmd_buf + 4, " %d", &n) == 1 && n > 0) {
@@ -1213,6 +1233,20 @@ static void war_keyboard_key(void* data,
                 _gs->gain -= 10.0f;
                 if (_gs->gain < 0.0f) _gs->gain = 0.0f;
                 snprintf(env->status_msg, sizeof(env->status_msg), "G%.0f", _gs->gain);
+                cur->prefix = 0;
+                return;
+            }
+            if (raw_sym == XKB_KEY_Left && (mod & MOD_CTRL)) {
+                _gs->pan -= 5;
+                if (_gs->pan < -100) _gs->pan = -100;
+                snprintf(env->status_msg, sizeof(env->status_msg), "P%d", _gs->pan);
+                cur->prefix = 0;
+                return;
+            }
+            if (raw_sym == XKB_KEY_Right && (mod & MOD_CTRL)) {
+                _gs->pan += 5;
+                if (_gs->pan > 100) _gs->pan = 100;
+                snprintf(env->status_msg, sizeof(env->status_msg), "P%d", _gs->pan);
                 cur->prefix = 0;
                 return;
             }
@@ -2174,10 +2208,14 @@ int main(int argc, char** argv) {
                                          PW_CHUNK_FLOATS;
                     voice_batch[v] = batch;
                     float _gm = slot->gain / 100.0f;
-                    for (uint64_t f = 0; f < batch; f++) {
+                    float _pp = (float)(slot->pan + 100) / 200.0f;
+                    float _pl = sinf((1.0f - _pp) * (float)(M_PI / 2.0));
+                    float _pr = sinf(_pp * (float)(M_PI / 2.0));
+                    for (uint64_t f = 0; f < batch; f += 2) {
                         float _a = _gm;
                         if (read_pos + f < 64) _a *= (float)(read_pos + f + 1) / 64.0f;
-                        mix[f] += slot->samples[read_pos + f] * _a;
+                        mix[f]   += slot->samples[read_pos + f]   * _a * _pl;
+                        mix[f+1] += slot->samples[read_pos + f+1] * _a * _pr;
                     }
                     any_active = 1;
                 }
@@ -2248,8 +2286,13 @@ int main(int argc, char** argv) {
                                          PW_CHUNK_FLOATS;
                     voice_batch[v] = batch;
                     float _gm = slot->gain / 100.0f;
-                    for (uint64_t f = 0; f < batch; f++)
-                        mix[f] += slot->samples[env->play_bar_voice_read_pos[v] + f] * _gm;
+                    float _pp2 = (float)(slot->pan + 100) / 200.0f;
+                    float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
+                    float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
+                    for (uint64_t f = 0; f < batch; f += 2) {
+                        mix[f]   += slot->samples[env->play_bar_voice_read_pos[v] + f]   * _gm * _pl2;
+                        mix[f+1] += slot->samples[env->play_bar_voice_read_pos[v] + f+1] * _gm * _pr2;
+                    }
                     any_active = 1;
                 }
                 if (!any_active) break;

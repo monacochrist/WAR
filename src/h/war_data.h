@@ -364,6 +364,7 @@ typedef struct war_capture_slot {
     uint64_t count;
     uint64_t capacity;
     float gain; // 0-200 scale (100 = 1.0x multiplier)
+    int pan;    // -100 to +100 (0 = center)
 } war_capture_slot;
 
 typedef struct war_glyph_info {
