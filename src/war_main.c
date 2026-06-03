@@ -938,7 +938,7 @@ static void war_keyboard_key(void* data,
                     snprintf(env->status_msg, sizeof(env->status_msg), "radius = %d", val);
                 } else
                     fprintf(stderr, "RADIUS: usage :radius <n>\n");
-             } else if (env->cmd_len >= 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v') {
+             } else if (env->cmd_len >= 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v' && env->cmd_buf[3] != 'u' && env->cmd_buf[3] != 'd') {
                 int to_layer = 0;
                 if (sscanf(env->cmd_buf + 3, " %d", &to_layer) == 1 && to_layer >= 1 && to_layer <= 9) {
                     double row = env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
