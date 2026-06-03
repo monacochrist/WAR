@@ -2102,6 +2102,39 @@ int main(int argc, char** argv) {
                             continue;
                         }
                     }
+                    // gain/pan repeat: ctrl+arrows handled inline
+                    if (ctx_wayland->repeat_mod & MOD_CTRL) {
+                        uint32_t _rsym = ctx_wayland->repeat_sym;
+                        war_cursor_context* _rcur = env->ctx_cursor;
+                        if ((_rsym == XKB_KEY_Up || _rsym == XKB_KEY_Down ||
+                             _rsym == XKB_KEY_Left || _rsym == XKB_KEY_Right) &&
+                            _rcur && _rcur->instance_count &&
+                            (env->active_mode == WAR_MODE_ID_ROLL || env->active_mode == WAR_MODE_ID_VISUAL)) {
+                            double _rgr = _rcur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows;
+                            uint32_t _rgp = _rgr > 0 ? (uint32_t)(_rgr + 0.5) : 0;
+                            if (_rgp > 127) _rgp = 127;
+                            uint32_t _rgl = _rcur->layer;
+                            if (_rgl < 1 || _rgl > 9) _rgl = 1;
+                            uint32_t _rgi = _rgp * WAR_CAPTURE_SLOT_LAYERS + (_rgl - 1);
+                            war_capture_slot* _rgs = &env->capture_slots[_rgi];
+                            if (_rgs->samples && _rgs->count > 0) {
+                                if (_rsym == XKB_KEY_Up) {
+                                    _rgs->gain += 10.0f;
+                                    if (_rgs->gain > 200.0f) _rgs->gain = 200.0f;
+                                } else if (_rsym == XKB_KEY_Down) {
+                                    _rgs->gain -= 10.0f;
+                                    if (_rgs->gain < 0.0f) _rgs->gain = 0.0f;
+                                } else if (_rsym == XKB_KEY_Left) {
+                                    _rgs->pan -= 5;
+                                    if (_rgs->pan < -100) _rgs->pan = -100;
+                                } else if (_rsym == XKB_KEY_Right) {
+                                    _rgs->pan += 5;
+                                    if (_rgs->pan > 100) _rgs->pan = 100;
+                                }
+                            }
+                            continue;
+                        }
+                    }
                     war_keymap_context* keymap = env->ctx_keymap;
                     war_config_context* config = env->ctx_config;
                     size_t ti = (size_t)ctx_wayland->repeat_sym *
