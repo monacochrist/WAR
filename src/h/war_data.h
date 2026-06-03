@@ -363,6 +363,7 @@ typedef struct war_capture_slot {
     float* samples;
     uint64_t count;
     uint64_t capacity;
+    float gain; // 0-200 scale (100 = 1.0x multiplier)
 } war_capture_slot;
 
 typedef struct war_glyph_info {
@@ -2799,6 +2800,7 @@ typedef struct war_wayland_context {
     uint8_t repeat_active;
     struct timespec repeat_time;
     int repeat_timer_fd;
+    int audio_timer_fd;
     // keymap FSM state for multi-key sequences (e.g. gg)
     uint64_t keymap_state;
     uint32_t keymap_state_time;

@@ -1317,15 +1317,15 @@ static inline void war_font_render(VkCommandBuffer cmd,
     VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, font->pipeline);
-    float pc_data[] = {
-        (float)cw, (float)ch,
-        -ctx_wayland->panning[0] * zoom, -ctx_wayland->panning[1] * zoom,
-        zoom, 0, screen_w, screen_h, 0, 0,
-    };
-    vkCmdPushConstants(cmd, font->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            font->pipeline_layout, 0, 1, &font->desc_set, 0, NULL);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, font->pipeline);
+        float pc_data[] = {
+            (float)cw, (float)ch,
+            -ctx_wayland->panning[0] * zoom, -ctx_wayland->panning[1] * zoom,
+            zoom, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 0,
+        };
+        vkCmdPushConstants(cmd, font->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                font->pipeline_layout, 0, 1, &font->desc_set, 0, NULL);
     VkBuffer bufs[] = {font->quad_vbo, font->instance_vbo};
     VkDeviceSize offsets[] = {0, 0};
     vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
@@ -1355,7 +1355,7 @@ static inline void war_font_render_cmd(VkCommandBuffer cmd,
     for (uint32_t i = 0; i < count; i++) {
         unsigned char c = (unsigned char)env->cmd_buf[i];
         war_vulkan_text_instance* ti = &inst[1 + i];
-        ti->pos[0] = (float)ctx_wayland->gutter_cols + (float)i - 4.0f;
+        ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i - 4.0f;
         ti->pos[1] = gutter_row;
         ti->pos[2] = 0;
         ti->size[0] = 1.0f;
@@ -1386,7 +1386,6 @@ static inline void war_font_render_cmd(VkCommandBuffer cmd,
     }
 
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
-    // full-screen scissor (no bottom clip) so command text appears on gutter
     VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)screen_h}};
     vkCmdSetViewport(cmd, 0, 1, &vp);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
@@ -2359,6 +2358,46 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
         vkCmdDraw(cmd, 4, (uint32_t)n, 0, LABEL_OFFSET);
 #undef LABEL_OFFSET
+        // gain label on top status bar
+        {
+            double _gr = ctx_wayland->env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+            uint32_t _gp = _gr > 0 ? (uint32_t)(_gr + 0.5) : 0;
+            if (_gp > 127) _gp = 127;
+            uint32_t _gl = ctx_wayland->env->ctx_cursor->layer;
+            if (_gl < 1 || _gl > 9) _gl = 1;
+            uint32_t _gi = _gp * WAR_CAPTURE_SLOT_LAYERS + (_gl - 1);
+            war_capture_slot* _gs = &ctx_wayland->env->capture_slots[_gi];
+            if (_gs->gain > 0.0f) {
+                char _gt[16];
+                int _gn = snprintf(_gt, sizeof(_gt), "G%.0f", _gs->gain);
+                if (_gn > 0) {
+                    float _grow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+#define GAIN_OFFSET 280
+                    for (int _gi2 = 0; _gi2 < _gn; _gi2++) {
+                        unsigned char _gc = (unsigned char)_gt[_gi2];
+                        war_vulkan_text_instance* _ti = &dst[GAIN_OFFSET + _gi2];
+                        _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 1 + _gi2);
+                        _ti->pos[1] = _grow;
+                        _ti->pos[2] = 0;
+                        _ti->size[0] = 1.0f;
+                        _ti->size[1] = 1.0f;
+                        _ti->uv[0] = font->glyph_uv[_gc][0];
+                        _ti->uv[1] = font->glyph_uv[_gc][1];
+                        _ti->uv[2] = font->glyph_uv[_gc][2];
+                        _ti->uv[3] = font->glyph_uv[_gc][3];
+                        _ti->glyph_scale[0] = font->glyph_norm_width[_gc];
+                        _ti->glyph_scale[1] = font->glyph_norm_height[_gc];
+                        _ti->ascent = font->glyph_norm_ascent[_gc];
+                        _ti->descent = font->glyph_norm_descent[_gc];
+                        _ti->baseline = font->glyph_norm_baseline[_gc];
+                        _ti->color[0] = 0.2f; _ti->color[1] = 1.0f; _ti->color[2] = 0.6f; _ti->color[3] = 1.0f;
+                        _ti->flags = 0;
+                    }
+                    vkCmdDraw(cmd, 4, (uint32_t)_gn, 0, GAIN_OFFSET);
+#undef GAIN_OFFSET
+                }
+            }
+        }
         // loop mode label
         if (ctx_wayland->env->loop_mode) {
             const char* loop_text = "LOOP";

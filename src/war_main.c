@@ -144,8 +144,8 @@ static void war_xdg_toplevel_configure(void* data,
             ctx_wayland->num_rows =
                 (uint32_t)((double)height / ch) - ctx_wayland->gutter_rows;
         }
+        }
     }
-}
 static void war_xdg_toplevel_configure_bounds(void* data,
                                               struct xdg_toplevel* toplevel,
                                               int32_t width,
@@ -1007,6 +1007,20 @@ static void war_keyboard_key(void* data,
                 } else {
                     fprintf(stderr, "MVU: usage :mvu <n>\n");
                 }
+             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 'n') {
+                double _gv = 100.0;
+                if (sscanf(env->cmd_buf + 5, " %lf", &_gv) == 1 && _gv >= 0 && _gv <= 200) {
+                    double _gr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    uint32_t _gp = _gr > 0 ? (uint32_t)(_gr + 0.5) : 0;
+                    if (_gp > 127) _gp = 127;
+                    uint32_t _gl = cur->layer;
+                    if (_gl < 1 || _gl > 9) _gl = 1;
+                    uint32_t _gi = _gp * WAR_CAPTURE_SLOT_LAYERS + (_gl - 1);
+                    env->capture_slots[_gi].gain = (float)_gv;
+                    snprintf(env->status_msg, sizeof(env->status_msg), "G%.0f", (float)_gv);
+                } else {
+                    fprintf(stderr, "GAIN: usage :gain <0-200>\n");
+                }
              } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v' && env->cmd_buf[3] == 'd') {
                 int n = 0;
                 if (sscanf(env->cmd_buf + 4, " %d", &n) == 1 && n > 0) {
@@ -1172,6 +1186,32 @@ static void war_keyboard_key(void* data,
         if (_war_crop_adjust(env, raw_sym, mod)) {
             cur->prefix = 0;
             return;
+        }
+    }
+    // gain adjust: ctrl+up / ctrl+down
+    if ((mode == WAR_MODE_ID_ROLL || mode == WAR_MODE_ID_VISUAL) && env->ctx_cursor->instance_count) {
+        double _gr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+        uint32_t _gp = _gr > 0 ? (uint32_t)(_gr + 0.5) : 0;
+        if (_gp > 127) _gp = 127;
+        uint32_t _gl = cur->layer;
+        if (_gl < 1 || _gl > 9) _gl = 1;
+        uint32_t _gi = _gp * WAR_CAPTURE_SLOT_LAYERS + (_gl - 1);
+        war_capture_slot* _gs = &env->capture_slots[_gi];
+        if (_gs->samples && _gs->count > 0) {
+            if (raw_sym == XKB_KEY_Up && (mod & MOD_CTRL)) {
+                _gs->gain += 10.0f;
+                if (_gs->gain > 200.0f) _gs->gain = 200.0f;
+                snprintf(env->status_msg, sizeof(env->status_msg), "G%.0f", _gs->gain);
+                cur->prefix = 0;
+                return;
+            }
+            if (raw_sym == XKB_KEY_Down && (mod & MOD_CTRL)) {
+                _gs->gain -= 10.0f;
+                if (_gs->gain < 0.0f) _gs->gain = 0.0f;
+                snprintf(env->status_msg, sizeof(env->status_msg), "G%.0f", _gs->gain);
+                cur->prefix = 0;
+                return;
+            }
         }
     }
     if (raw_sym == XKB_KEY_colon) {
@@ -1757,6 +1797,14 @@ int main(int argc, char** argv) {
     ctx_wayland->repeat_timer_fd =
         timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     WASSERT(ctx_wayland->repeat_timer_fd >= 0);
+    ctx_wayland->audio_timer_fd =
+        timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    WASSERT(ctx_wayland->audio_timer_fd >= 0);
+    struct itimerspec ats = {
+        .it_value = {0, 5000000L},    // 5ms first shot
+        .it_interval = {0, 10000000L}, // 10ms period
+    };
+    timerfd_settime(ctx_wayland->audio_timer_fd, 0, &ats, NULL);
 
     //-------------------------------------------------------------------------
     // VULKAN + DMABUF SETUP
@@ -1874,6 +1922,8 @@ int main(int argc, char** argv) {
 
     // init capture slots and accumulator
     memset(env->capture_slots, 0, sizeof(env->capture_slots));
+    for (int _gi = 0; _gi < 128 * WAR_CAPTURE_SLOT_LAYERS; _gi++)
+        env->capture_slots[_gi].gain = 100.0f;
     env->capture_accumulator = NULL;
     env->capture_accumulator_count = 0;
     env->capture_accumulator_capacity = 0;
@@ -1960,14 +2010,15 @@ int main(int argc, char** argv) {
     // MAIN LOOP
     //-------------------------------------------------------------------------
     int wayland_fd = wl_display_get_fd(ctx_wayland->display);
-    struct pollfd pfds[2] = {
+    struct pollfd pfds[3] = {
         {.fd = wayland_fd, .events = POLLIN},
         {.fd = ctx_wayland->repeat_timer_fd, .events = POLLIN},
+        {.fd = ctx_wayland->audio_timer_fd, .events = POLLIN},
     };
     while (ctx_wayland->running) {
         wl_display_flush(ctx_wayland->display);
         if (wl_display_prepare_read(ctx_wayland->display) == 0) {
-            poll(pfds, 2, 10);
+            poll(pfds, 3, 100);
             if (pfds[0].revents & POLLIN)
                 wl_display_read_events(ctx_wayland->display);
             else
@@ -2029,6 +2080,11 @@ int main(int argc, char** argv) {
                     }
                 }
             }
+        }
+        // drain audio timerfd (keep main loop cycling for playback)
+        {
+            uint64_t _ax;
+            read(ctx_wayland->audio_timer_fd, &_ax, sizeof(_ax));
         }
         // drain loopback (system audio) ring buffer into accumulator
         if (env->atomics->capture) {
@@ -2112,8 +2168,9 @@ int main(int argc, char** argv) {
                                          (avail & ~1ULL) :
                                          PW_CHUNK_FLOATS;
                     voice_batch[v] = batch;
+                    float _gm = slot->gain / 100.0f;
                     for (uint64_t f = 0; f < batch; f++)
-                        mix[f] += slot->samples[read_pos + f];
+                        mix[f] += slot->samples[read_pos + f] * _gm;
                     any_active = 1;
                 }
                 if (!any_active) break;
@@ -2182,8 +2239,9 @@ int main(int argc, char** argv) {
                                          (avail & ~1ULL) :
                                          PW_CHUNK_FLOATS;
                     voice_batch[v] = batch;
+                    float _gm = slot->gain / 100.0f;
                     for (uint64_t f = 0; f < batch; f++)
-                        mix[f] += slot->samples[env->play_bar_voice_read_pos[v] + f];
+                        mix[f] += slot->samples[env->play_bar_voice_read_pos[v] + f] * _gm;
                     any_active = 1;
                 }
                 if (!any_active) break;
@@ -2191,6 +2249,53 @@ int main(int argc, char** argv) {
                     break;
                 for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++)
                     env->play_bar_voice_read_pos[v] += voice_batch[v];
+            }
+        }
+        // playback bar advancement (runs even without frame callbacks)
+        if (env->play_bar_playing) {
+            uint64_t _now_us = war_get_monotonic_time_us();
+            uint32_t _now_ms = (uint32_t)(_now_us / 1000);
+            if (env->play_bar_last_frame_ms != 0 &&
+                _now_ms - env->play_bar_last_frame_ms > 15) {
+                uint32_t _delta_ms = _now_ms - env->play_bar_last_frame_ms;
+                env->play_bar_last_frame_ms = _now_ms;
+                env->play_bar_position_seconds += (double)_delta_ms / 1000.0;
+                double _bpm = env->atomics->bpm;
+                if (_bpm <= 0.0) _bpm = 100.0;
+                double _spc = 60.0 / _bpm;
+                double _ccp = (double)ctx_wayland->gutter_cols + env->play_bar_position_seconds / _spc;
+                if (env->ctx_note) {
+                    uint32_t _nc = env->ctx_note->instance_count;
+                    for (uint32_t _i = 0; _i < _nc; _i++) {
+                        double _ns = env->ctx_note->instance[_i].pos[0];
+                        if (_ns >= env->play_bar_prev_cell_pos && _ns < _ccp) {
+                            uint32_t _pp = (uint32_t)(env->ctx_note->instance[_i].pos[1] - (double)ctx_wayland->gutter_rows);
+                            if (_pp > 127) _pp = 127;
+                            uint32_t _li = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
+                            if (_li < 1 || _li > 9) _li = 1;
+                            uint32_t _si = _pp * WAR_CAPTURE_SLOT_LAYERS + (_li - 1);
+                            war_capture_slot* _sl = &env->capture_slots[_si];
+                            if (_sl->samples && _sl->count > 0) {
+                                double _dc = env->ctx_note->instance[_i].size[0];
+                                uint64_t _mf = (uint64_t)(_dc * 60.0 / _bpm * 48000.0 * 2.0);
+                                if (_mf > _sl->count) _mf = _sl->count;
+                                if (_mf & 1) _mf &= ~1ULL;
+                                for (uint32_t _v = 0; _v < WAR_PLAY_BAR_VOICES; _v++) {
+                                    if (!env->play_bar_voice_active[_v]) {
+                                        env->play_bar_voice_note[_v] = _pp;
+                                        env->play_bar_voice_layer[_v] = _li;
+                                        env->play_bar_voice_read_pos[_v] = 0;
+                                        env->play_bar_voice_read_limit[_v] = _mf;
+                                        env->play_bar_voice_active[_v] = 1;
+                                        break;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                env->play_bar_prev_cell_pos = _ccp;
             }
         }
     }
@@ -2259,6 +2364,7 @@ int main(int argc, char** argv) {
     vkDestroyDevice(ctx_vk->device, NULL);
     vkDestroyInstance(ctx_vk->instance, NULL);
     if (ctx_wayland->repeat_timer_fd >= 0) close(ctx_wayland->repeat_timer_fd);
+    if (ctx_wayland->audio_timer_fd >= 0) close(ctx_wayland->audio_timer_fd);
     wl_buffer_destroy(ctx_wayland->buffer);
     xkb_state_unref(ctx_wayland->xkb_state);
     xkb_keymap_unref(ctx_wayland->xkb_keymap);
