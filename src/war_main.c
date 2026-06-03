@@ -1427,7 +1427,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-capture",
-                              "node.latency", "64/48000",
+                              "node.latency", "256/48000",
                               NULL);
         env->ctx_pw->capture_stream = pw_stream_new(core, "war-capture", props);
         struct spa_audio_info_raw capture_info = {
@@ -1460,7 +1460,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-play",
-                              "node.latency", "64/48000",
+                              "node.latency", "256/48000",
                               NULL);
         env->ctx_pw->play_stream = pw_stream_new(core, "war-play", props);
         // format: F32, 48000, stereo
@@ -1496,6 +1496,7 @@ void* war_pipewire(void* args) {
                               "true",
                               "media.name",
                               "war-loopback",
+                              "node.latency", "256/48000",
                               NULL);
         env->ctx_pw->loopback_capture_stream =
             pw_stream_new(core, "war-loopback", props);
@@ -2115,7 +2116,7 @@ int main(int argc, char** argv) {
             }
         }
         // preview playback: mix all active preview voices → pc_play
-        if (!env->play_bar_playing) {
+        {
             enum { PW_CHUNK_FLOATS = 64 };
             uint64_t voice_batch[WAR_PREVIEW_VOICES];
             int any_active = 0;
@@ -2171,8 +2172,11 @@ int main(int argc, char** argv) {
                                          PW_CHUNK_FLOATS;
                     voice_batch[v] = batch;
                     float _gm = slot->gain / 100.0f;
-                    for (uint64_t f = 0; f < batch; f++)
-                        mix[f] += slot->samples[read_pos + f] * _gm;
+                    for (uint64_t f = 0; f < batch; f++) {
+                        float _a = _gm;
+                        if (read_pos + f < 64) _a *= (float)(read_pos + f + 1) / 64.0f;
+                        mix[f] += slot->samples[read_pos + f] * _a;
+                    }
                     any_active = 1;
                 }
                 if (!any_active) break;
@@ -2258,7 +2262,7 @@ int main(int argc, char** argv) {
             uint64_t _now_us = war_get_monotonic_time_us();
             uint32_t _now_ms = (uint32_t)(_now_us / 1000);
             if (env->play_bar_last_frame_ms != 0 &&
-                _now_ms - env->play_bar_last_frame_ms > 15) {
+                _now_ms - env->play_bar_last_frame_ms > 25) {
                 uint32_t _delta_ms = _now_ms - env->play_bar_last_frame_ms;
                 env->play_bar_last_frame_ms = _now_ms;
                 env->play_bar_position_seconds += (double)_delta_ms / 1000.0;
@@ -2298,6 +2302,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 env->play_bar_prev_cell_pos = _ccp;
+                env->ctx_line->instance[0].pos[0] = (float)_ccp;
             }
         }
     }
