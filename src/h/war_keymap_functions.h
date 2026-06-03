@@ -809,10 +809,10 @@ static inline void _war_visual_move_selection(war_env* env, float dx, float dy) 
     call_king_terry("VISUAL: moved %u notes (%.0f,%.0f)", moved, dx, dy);
 }
 
-static inline void war_visual_move_right(war_env* env) { _war_visual_move_selection(env, 1.0f, 0.0f); }
-static inline void war_visual_move_left(war_env* env)  { _war_visual_move_selection(env, -1.0f, 0.0f); }
-static inline void war_visual_move_up(war_env* env)    { _war_visual_move_selection(env, 0.0f, 1.0f); }
-static inline void war_visual_move_down(war_env* env)  { _war_visual_move_selection(env, 0.0f, -1.0f); }
+static inline void war_visual_move_right(war_env* env) { _war_visual_move_selection(env, (float)env->ctx_cursor->step, 0.0f); }
+static inline void war_visual_move_left(war_env* env)  { _war_visual_move_selection(env, -(float)env->ctx_cursor->step, 0.0f); }
+static inline void war_visual_move_up(war_env* env)    { _war_visual_move_selection(env, 0.0f, (float)env->ctx_cursor->step); }
+static inline void war_visual_move_down(war_env* env)  { _war_visual_move_selection(env, 0.0f, -(float)env->ctx_cursor->step); }
 
 static inline void war_toggle_playback(war_env* env) {
     war_simple_line_context* line = env->ctx_line;
@@ -1187,34 +1187,58 @@ static inline void war_delete_note_under_cursor(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur->instance_count) return;
     war_undo_save(env);
-    float cx0 = cur->instance[0].pos[0];
-    float cx1 = cx0 + cur->instance[0].size[0];
-    float cy0 = cur->instance[0].pos[1];
-    float cy1 = cy0 + cur->instance[0].size[1];
-    // find candidates whose rect overlaps cursor rect
-    uint32_t best = UINT32_MAX;
-    uint64_t best_tick = 0;
-    for (uint32_t i = 0; i < note->instance_count; i++) {
-        float nx0 = note->instance[i].pos[0];
-        float nx1 = nx0 + note->instance[i].size[0];
-        float ny0 = note->instance[i].pos[1];
-        float ny1 = ny0 + note->instance[i].size[1];
-        if (cx0 < nx1 && cx1 > nx0 && cy0 < ny1 && cy1 > ny0) {
-            if (best == UINT32_MAX || note->instance[i].tick > best_tick) {
-                best = i;
-                best_tick = note->instance[i].tick;
+    if (cur->visual_active) {
+        // visual mode: delete all notes in selection rectangle
+        float x0 = cur->visual_anchor_col;
+        float x1 = cur->instance[0].pos[0];
+        float y0 = cur->visual_anchor_row;
+        float y1 = cur->instance[0].pos[1];
+        if (x1 < x0) { float t = x0; x0 = x1; x1 = t; }
+        if (y1 < y0) { float t = y0; y0 = y1; y1 = t; }
+        uint32_t deleted = 0;
+        for (int32_t i = (int32_t)note->instance_count - 1; i >= 0; i--) {
+            float nx0 = note->instance[i].pos[0];
+            float nx1 = nx0 + note->instance[i].size[0];
+            float ny = note->instance[i].pos[1];
+            if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
+                uint32_t last = note->instance_count - 1;
+                if ((uint32_t)i != last)
+                    note->instance[i] = note->instance[last];
+                note->instance_count--;
+                deleted++;
             }
         }
+        call_king_terry("VISUAL DELETE: removed %u notes", deleted);
+    } else {
+        // normal mode: delete single note under cursor
+        float cx0 = cur->instance[0].pos[0];
+        float cx1 = cx0 + cur->instance[0].size[0];
+        float cy0 = cur->instance[0].pos[1];
+        float cy1 = cy0 + cur->instance[0].size[1];
+        uint32_t best = UINT32_MAX;
+        uint64_t best_tick = 0;
+        for (uint32_t i = 0; i < note->instance_count; i++) {
+            float nx0 = note->instance[i].pos[0];
+            float nx1 = nx0 + note->instance[i].size[0];
+            float ny0 = note->instance[i].pos[1];
+            float ny1 = ny0 + note->instance[i].size[1];
+            if (cx0 < nx1 && cx1 > nx0 && cy0 < ny1 && cy1 > ny0) {
+                if (best == UINT32_MAX || note->instance[i].tick > best_tick) {
+                    best = i;
+                    best_tick = note->instance[i].tick;
+                }
+            }
+        }
+        if (best == UINT32_MAX) return;
+        uint32_t last = note->instance_count - 1;
+        if (best != last) { note->instance[best] = note->instance[last]; }
+        note->instance_count--;
+        call_king_terry("NOTE: deleted #%u at pos=(%.1f,%.1f), remaining=%u",
+                        best,
+                        note->instance[best].pos[0],
+                        note->instance[best].pos[1],
+                        note->instance_count);
     }
-    if (best == UINT32_MAX) return;
-    uint32_t last = note->instance_count - 1;
-    if (best != last) { note->instance[best] = note->instance[last]; }
-    note->instance_count--;
-    call_king_terry("NOTE: deleted #%u at pos=(%.1f,%.1f), remaining=%u",
-                    best,
-                    note->instance[best].pos[0],
-                    note->instance[best].pos[1],
-                    note->instance_count);
 }
 
 static inline void war_wave_view(war_env* env) {
