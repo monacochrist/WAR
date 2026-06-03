@@ -1427,7 +1427,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-capture",
-                              "node.latency", "256/48000",
+                              "node.latency", "64/48000",
                               NULL);
         env->ctx_pw->capture_stream = pw_stream_new(core, "war-capture", props);
         struct spa_audio_info_raw capture_info = {
@@ -1460,7 +1460,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-play",
-                              "node.latency", "256/48000",
+                              "node.latency", "64/48000",
                               NULL);
         env->ctx_pw->play_stream = pw_stream_new(core, "war-play", props);
         // format: F32, 48000, stereo
@@ -1803,8 +1803,8 @@ int main(int argc, char** argv) {
         timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     WASSERT(ctx_wayland->audio_timer_fd >= 0);
     struct itimerspec ats = {
-        .it_value = {0, 5000000L},    // 5ms first shot
-        .it_interval = {0, 10000000L}, // 10ms period
+        .it_value = {0, 1000000L},    // 1ms first shot
+        .it_interval = {0, 2000000L}, // 2ms period
     };
     timerfd_settime(ctx_wayland->audio_timer_fd, 0, &ats, NULL);
 
@@ -2116,7 +2116,7 @@ int main(int argc, char** argv) {
         }
         // preview playback: mix all active preview voices → pc_play
         if (!env->play_bar_playing) {
-            enum { PW_CHUNK_FLOATS = 256 };
+            enum { PW_CHUNK_FLOATS = 64 };
             uint64_t voice_batch[WAR_PREVIEW_VOICES];
             int any_active = 0;
             for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
@@ -2200,7 +2200,7 @@ int main(int argc, char** argv) {
         }
         // playback bar streaming: mix all active voices → pc_play
         if (env->play_bar_playing) {
-            enum { PW_CHUNK_FLOATS = 256 };
+            enum { PW_CHUNK_FLOATS = 64 };
             uint64_t voice_batch[WAR_PLAY_BAR_VOICES];
             int any_active = 0;
             for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++)
