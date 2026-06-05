@@ -201,6 +201,7 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `:mvu <n>` | Move capture slot at cursor up n pitches |
 | `:mvd <n>` | Move capture slot at cursor down n pitches |
 | `:across <radius>` | Pitch-shift capture slot at cursor to nearby notes (within radius); respects RESAMPLE toggle |
+| `:maj7` | Place a major 7th chord (root, +4, +7, +11) at cursor using cursor width |
 | `:gain <0-200>` | Set gain for capture slot under cursor (100 = 1.0x) |
 | `:pan <-100..100>` | Set pan for capture slot under cursor (0 = center) |
 | `:q` | Quit the application |
