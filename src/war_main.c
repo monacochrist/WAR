@@ -192,7 +192,7 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
         env->play_bar_last_frame_ms = time;
         double bpm = env->atomics->bpm;
         if (bpm <= 0.0) bpm = 100.0;
-        double seconds_per_cell = 60.0 / bpm;
+        double seconds_per_cell = 15.0 / bpm;
         double current_cell_pos =
             (double)ctx_wayland->gutter_cols +
             env->play_bar_position_seconds / seconds_per_cell;
@@ -213,7 +213,7 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
                     war_capture_slot* slot = &env->capture_slots[idx];
                     if (slot->samples && slot->count > 0) {
                         double dur_cells = env->ctx_note->instance[i].size[0];
-                        uint64_t max_floats = (uint64_t)(dur_cells * 60.0 / bpm * 48000.0 * 2.0);
+                        uint64_t max_floats = (uint64_t)(dur_cells * 15.0 / bpm * 48000.0 * 2.0);
                         if (max_floats > slot->count) max_floats = slot->count;
                         if (max_floats & 1) max_floats &= ~1ULL;
                         for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
@@ -256,7 +256,7 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
             uint32_t delta_ms = time - env->recording_last_frame_ms;
             double bpm = env->atomics->bpm;
             if (bpm <= 0.0) bpm = 100.0;
-            double seconds_per_cell = 60.0 / bpm;
+            double seconds_per_cell = 15.0 / bpm;
             env->recording_position += (double)delta_ms / 1000.0 / seconds_per_cell;
         }
         env->recording_last_frame_ms = time;
@@ -363,7 +363,7 @@ static void war_export_wav(war_env* env, const char* filename) {
     }
     double bpm = env->atomics->bpm;
     if (bpm <= 0.0) bpm = 100.0;
-    double sec_per_cell = 60.0 / bpm;
+    double sec_per_cell = 15.0 / bpm;
     uint32_t sr = 48000;
     uint32_t num_notes = env->ctx_note->instance_count;
 
@@ -824,7 +824,7 @@ static void war_keyboard_key(void* data,
                                 ctx_wayland->env->recording_press_time_us[v];
                             double bpm = ctx_wayland->env->atomics->bpm;
                             if (bpm <= 0.0) bpm = 100.0;
-                            double sec_per_cell = 60.0 / bpm;
+                            double sec_per_cell = 15.0 / bpm;
                             double width = (double)elapsed_us / 1000000.0 / sec_per_cell;
                             if (width < 1.0) width = 1.0;
                             call_king_terry("RECORD: release note=%u ni=%u start=%.2f elapsed_us=%lu width=%.2f",
@@ -2328,7 +2328,7 @@ int main(int argc, char** argv) {
                     uint64_t now_us = war_get_monotonic_time_us();
                     double bpm = env->atomics->bpm;
                     if (bpm <= 0.0) bpm = 100.0;
-                    double sec_per_cell = 60.0 / bpm;
+                    double sec_per_cell = 15.0 / bpm;
                     for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
                         if (!env->preview_voice_active[v]) continue;
                         uint32_t ni = env->recording_note_idx[v];

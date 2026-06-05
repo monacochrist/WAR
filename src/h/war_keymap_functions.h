@@ -407,7 +407,7 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
                     uint64_t elapsed_us = war_get_monotonic_time_us() - env->recording_press_time_us[v];
                     double bpm = env->atomics->bpm;
                     if (bpm <= 0.0) bpm = 100.0;
-                    double sec_per_cell = 60.0 / bpm;
+                    double sec_per_cell = 15.0 / bpm;
                     double width = (double)elapsed_us / 1000000.0 / sec_per_cell;
                     if (width < 1.0) width = 1.0;
                     if (ni < env->ctx_note->instance_count)
@@ -714,6 +714,40 @@ static inline void war_next_note_same_row(war_env* env) {
     }
 }
 
+static inline void war_go_to_note_end(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_note_context* note = env->ctx_note;
+    if (!cur->instance_count || !note || !note->instance_count) return;
+    float cy = cur->instance[0].pos[1];
+    float cx = cur->instance[0].pos[0];
+    // check if cursor is inside a note on this row
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        if (note->instance[i].pos[1] != cy) continue;
+        float ns = note->instance[i].pos[0];
+        float ne = ns + note->instance[i].size[0];
+        if (cx >= ns && cx < ne) {
+            cur->instance[0].pos[0] = ne;
+            war_pan_follow(env);
+            return;
+        }
+    }
+    // not inside a note — find next note on this row and go to its end
+    float best = 1e9f;
+    float best_end = 0;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        if (note->instance[i].pos[1] != cy) continue;
+        float ns = note->instance[i].pos[0];
+        if (ns > cx && ns < best) {
+            best = ns;
+            best_end = ns + note->instance[i].size[0];
+        }
+    }
+    if (best < 1e9f) {
+        cur->instance[0].pos[0] = best_end;
+        war_pan_follow(env);
+    }
+}
+
 static inline void war_prev_note_same_row(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     war_note_context* note = env->ctx_note;
@@ -825,7 +859,7 @@ static inline void war_toggle_playback(war_env* env) {
         env->play_bar_last_frame_ms = 0;
         double bpm = env->atomics->bpm;
         if (bpm <= 0.0) bpm = 100.0;
-        double sec_per_cell = 60.0 / bpm;
+        double sec_per_cell = 15.0 / bpm;
         double gc = (double)env->ctx_wayland->gutter_cols;
         env->play_bar_prev_cell_pos = gc + env->play_bar_position_seconds / sec_per_cell;
         memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
@@ -838,7 +872,7 @@ static inline void war_playbar_goto_cursor(war_env* env) {
     float cursor_col = env->ctx_cursor->instance[0].pos[0];
     double bpm = env->atomics->bpm;
     if (bpm <= 0.0) bpm = 100.0;
-    double sec_per_cell = 60.0 / bpm;
+    double sec_per_cell = 15.0 / bpm;
     double gc = (double)env->ctx_wayland->gutter_cols;
     env->play_bar_position_seconds = ((double)cursor_col - gc) * sec_per_cell;
     if (env->play_bar_position_seconds < 0.0) env->play_bar_position_seconds = 0.0;
@@ -1069,7 +1103,7 @@ static inline void war_set_width_to_duration(war_env* env) {
     if (env->capture_slots[idx].samples && env->capture_slots[idx].count > 0) {
         double bpm = env->atomics->bpm;
         if (bpm <= 0.0) bpm = 100.0;
-        double sec_per_cell = 60.0 / bpm;
+        double sec_per_cell = 15.0 / bpm;
         double duration_sec = (double)env->capture_slots[idx].count / 48000.0 / 2.0;
         new_w = (float)(duration_sec / sec_per_cell);
         call_king_terry(

@@ -79,6 +79,7 @@ else if (strcmp(name, "war_goto_viewport_top") == 0) { return war_goto_viewport_
 else if (strcmp(name, "war_move_cursor_left_leap") == 0) { return war_move_cursor_left_leap; }
 else if (strcmp(name, "war_move_cursor_right_leap") == 0) { return war_move_cursor_right_leap; }
 else if (strcmp(name, "war_next_note_same_row") == 0) { return war_next_note_same_row; }
+else if (strcmp(name, "war_go_to_note_end") == 0) { return war_go_to_note_end; }
 else if (strcmp(name, "war_prev_note_same_row") == 0) { return war_prev_note_same_row; }
 else if (strcmp(name, "war_zoom_in") == 0) { return war_zoom_in; }
 else if (strcmp(name, "war_zoom_out") == 0) { return war_zoom_out; }

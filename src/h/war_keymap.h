@@ -255,7 +255,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    1,
                    (char*[]){"b"},
                    WAR_FUNCTION_ID_NONE,
-                   war_prev_note_same_row,
+                    war_prev_note_same_row,
+                    0);
+    war_keymap_set(keymap,
+                   config,
+                   2,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                   1,
+                   (char*[]){"e"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_go_to_note_end,
                    0);
     // visual mode toggle (v) — bound in both ROLL and VISUAL modes
     war_keymap_set(keymap,
