@@ -14,6 +14,9 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 
 ---
 
+The grid uses **1 cell = 1 sixteenth note**.
+BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
+
 ## ROLL Mode — Cursor Movement
 
 | Key | Action |
@@ -23,6 +26,7 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `k` / `Up` | Move cursor up (increase pitch) |
 | `l` / `Right` | Move cursor right |
 | `w` | Jump to next note start on same row |
+| `e` | Jump to end of current note, or end of next note on same row |
 | `b` | Jump to previous note start on same row |
 | `<A-h>` / `<A-Left>` | Leap left (one octave) |
 | `<A-j>` / `<A-Down>` | Leap down (one octave) |
