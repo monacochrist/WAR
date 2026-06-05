@@ -946,8 +946,8 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
         if (t == src_note) continue;
         int32_t semi = (int32_t)t - (int32_t)src_note;
         double ratio = pow(2.0, (double)semi / 12.0);
-        if (env->across_resample) {
-            // resample: changes duration to match pitch
+        if (!env->across_resample) {
+            // resample: changes pitch and duration
             uint64_t dst_frames = (uint64_t)((double)src_frames / ratio);
             if (dst_frames < 1) dst_frames = 1;
             uint64_t dst_cnt = dst_frames * 2;
@@ -971,7 +971,7 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
             env->capture_slots[tidx].count = dst_cnt;
             env->capture_slots[tidx].capacity = dst_cnt;
         } else {
-            // non-resample: preserves duration, pitch-shifts via sample-rate interpolation
+            // non-resample: changes pitch, preserves duration
             uint64_t dst_frames = src_frames;
             uint64_t dst_cnt = dst_frames * 2;
             float* dst = malloc(dst_cnt * sizeof(float));

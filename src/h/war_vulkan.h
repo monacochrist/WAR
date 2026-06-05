@@ -2466,7 +2466,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef PBLOOP_OFFSET
         }
         // resample label on bottom status bar
-        if (ctx_wayland->env->across_resample) {
+        if (!ctx_wayland->env->across_resample) {
             const char* _rst = "RESAMPLE";
             int _rsn = 8;
             float _rsr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
