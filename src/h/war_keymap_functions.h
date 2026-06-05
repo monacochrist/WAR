@@ -418,8 +418,25 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             }
         }
     }
+    // first try to find a completely free slot
     for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
-        if (env->preview_voice_note[v] == note || !env->preview_voice_active[v]) {
+        if (!env->preview_voice_active[v]) {
+            uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+            war_capture_slot* slot = &env->capture_slots[idx];
+            if (!slot->samples || slot->count < 2) return -1;
+            uint32_t voice = v;
+            env->preview_voice_note[voice] = note;
+            env->preview_voice_layer[voice] = layer;
+            env->preview_voice_read_pos[voice] = 0;
+            env->preview_voice_read_limit[voice] = 0;
+            env->preview_voice_active[voice] = 1;
+            if (env->recording_active) _war_record_place_note(env, note, (int)voice);
+            return (int)voice;
+        }
+    }
+    // no free slots — steal the slot for the same note if already playing (retrigger)
+    for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+        if (env->preview_voice_note[v] == note) {
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             war_capture_slot* slot = &env->capture_slots[idx];
             if (!slot->samples || slot->count < 2) return -1;
@@ -916,7 +933,7 @@ static inline void war_toggle_across(war_env* env) {
 
 static inline void war_toggle_resample(war_env* env) {
     env->across_resample = !env->across_resample;
-    call_king_terry("RESAMPLE: %s", env->across_resample ? "ON" : "OFF");
+    call_king_terry("RESAMPLE: %s", env->across_resample ? "OFF" : "ON");
 }
 
 static inline void war_toggle_crop(war_env* env) {
@@ -1119,6 +1136,47 @@ static inline void war_set_width_to_duration(war_env* env) {
 
 // forward decl for undo functions used by place/delete
 static inline void war_undo_save(war_env* env);
+
+static inline void war_chord_maj7(war_env* env) {
+    war_note_context* note = env->ctx_note;
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!note || !cur->instance_count) return;
+    float root_row = cur->instance[0].pos[1];
+    float col = cur->instance[0].pos[0];
+    float w = cur->instance[0].size[0];
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t col32 = (&env->ctx_color->layer_none)[layer];
+    float r = ((col32 >> 24) & 0xFF) / 255.0f;
+    float g = ((col32 >> 16) & 0xFF) / 255.0f;
+    float b = ((col32 >> 8) & 0xFF) / 255.0f;
+    float a = (col32 & 0xFF) / 255.0f;
+    int intervals[] = {0, 4, 7, 11};
+    int n_intervals = 4;
+    war_undo_save(env);
+    for (int j = 0; j < n_intervals; j++) {
+        float row = root_row + (float)intervals[j];
+        if (row < 0 || row > 127.0f + (float)env->ctx_wayland->gutter_rows) continue;
+        if (note->instance_count >= note->max_instances) break;
+        uint32_t i = note->instance_count++;
+        note->instance[i].pos[0] = col;
+        note->instance[i].pos[1] = row;
+        note->instance[i].pos[2] = 0.0f;
+        note->instance[i].size[0] = w;
+        note->instance[i].size[1] = cur->instance[0].size[1];
+        note->instance[i].color[0] = r;
+        note->instance[i].color[1] = g;
+        note->instance[i].color[2] = b;
+        note->instance[i].color[3] = a;
+        note->instance[i].outline_color[0] = 0.0f;
+        note->instance[i].outline_color[1] = 0.0f;
+        note->instance[i].outline_color[2] = 0.0f;
+        note->instance[i].outline_color[3] = 1.0f;
+        note->instance[i].flags = (uint32_t)layer << 4;
+        note->instance[i].tick = note->tick_counter++;
+    }
+    call_king_terry("MAJ7: root=%.0f width=%.1f", root_row - (double)env->ctx_wayland->gutter_rows, w);
+}
 
 static inline void war_place_note(war_env* env) {
     war_note_context* note = env->ctx_note;

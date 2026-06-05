@@ -226,7 +226,6 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
                                 break;
                             }
                         }
-                        break;
                     }
                 }
             }
@@ -1093,6 +1092,9 @@ static void war_keyboard_key(void* data,
                 war_export_wav(env, name);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'j' && env->cmd_buf[4] == '7') {
+                war_chord_maj7(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "maj7");
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w') {
                 const char* name = NULL;
                 if (env->cmd_len > 2 && env->cmd_buf[2] == ' ')
@@ -2367,7 +2369,7 @@ int main(int argc, char** argv) {
                             war_capture_slot* _sl = &env->capture_slots[_si];
                             if (_sl->samples && _sl->count > 0) {
                                 double _dc = env->ctx_note->instance[_i].size[0];
-                                uint64_t _mf = (uint64_t)(_dc * 60.0 / _bpm * 48000.0 * 2.0);
+                                uint64_t _mf = (uint64_t)(_dc * 15.0 / _bpm * 48000.0 * 2.0);
                                 if (_mf > _sl->count) _mf = _sl->count;
                                 if (_mf & 1) _mf &= ~1ULL;
                                 for (uint32_t _v = 0; _v < WAR_PLAY_BAR_VOICES; _v++) {
@@ -2380,7 +2382,6 @@ int main(int argc, char** argv) {
                                         break;
                                     }
                                 }
-                                break;
                             }
                         }
                     }

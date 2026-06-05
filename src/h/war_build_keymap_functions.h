@@ -103,6 +103,7 @@ else if (strcmp(name, "war_capture_audio") == 0) { return war_capture_audio; }
 else if (strcmp(name, "war_preview_toggle") == 0) { return war_preview_toggle; }
 else if (strcmp(name, "war_set_width_to_duration") == 0) { return war_set_width_to_duration; }
 else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
+else if (strcmp(name, "war_chord_maj7") == 0) { return war_chord_maj7; }
 else if (strcmp(name, "war_place_note") == 0) { return war_place_note; }
 else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_undo") == 0) { return war_undo; }
