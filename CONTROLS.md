@@ -56,7 +56,7 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | Key | Action |
 |-----|--------|
 | `G` | Go to bottom of viewport |
-| `gg` | Go to top of viewport |
+| `gg` | Go to top of viewport (or row `{n}` with prefix, e.g. `60gg`) |
 | `gt` | Jump to row 127 |
 | `gm` | Jump to row 60 |
 | `gb` | Jump to row 0 |
@@ -72,7 +72,8 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 |-----|--------|
 | `Q` / `<S-q>` | Toggle capture — starts/stops recording audio to the current note/layer |
 | `Space` | Preview the captured audio at cursor position |
-| `i` | Toggle ACROSS mode (pitch-shifts capture to all 128 notes) |
+| `i` | Toggle ACROSS mode (pitch-shifts capture within radius) |
+| `<A-r>` | Toggle RESAMPLE mode (ON: resample changes pitch+length, OFF: pitch shift preserves duration) |
 | `:` | Enter command mode |
 
 ## ROLL Mode — Playback Bar
@@ -195,7 +196,7 @@ WAR has several modes. Press `Esc` to return to ROLL mode from any mode.
 | `:mv <layer>` | Move capture slot at cursor row/layer to another layer |
 | `:mvu <n>` | Move capture slot at cursor up n pitches |
 | `:mvd <n>` | Move capture slot at cursor down n pitches |
-| `:across <radius>` | Pitch-shift capture slot at cursor to nearby notes (within radius) |
+| `:across <radius>` | Pitch-shift capture slot at cursor to nearby notes (within radius); respects RESAMPLE toggle |
 | `:gain <0-200>` | Set gain for capture slot under cursor (100 = 1.0x) |
 | `:pan <-100..100>` | Set pan for capture slot under cursor (0 = center) |
 | `:q` | Quit the application |
@@ -217,6 +218,7 @@ Press `Esc` to exit command mode.
 | `LOOP` | Top bar | Loop mode enabled (MIDI) |
 | `ACROSS` | Top bar | ACROSS pitch-shift enabled |
 | `TOGGLE` | Top bar | Toggle key mode enabled (MIDI) |
+| `RESAMPLE` | Bottom bar | RESAMPLE mode enabled (pitch+length change); Alt+R toggles |
 | CWD path | Top bar | Current working directory |
 | `row, col` | Top bar | Cursor position |
 
