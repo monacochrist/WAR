@@ -913,6 +913,7 @@ static void war_keyboard_key(void* data,
             env->cmd_active = 0;
             env->cmd_len = 0;
             cur->prefix = 0;
+            memset(env->preview_voice_active, 0, sizeof(env->preview_voice_active));
             return;
         }
         if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
@@ -1160,6 +1161,10 @@ static void war_keyboard_key(void* data,
             cur->prefix = 0;
             return;
         }
+        // stop all preview voices (Space/P)
+        memset(env->preview_voice_active, 0, sizeof(env->preview_voice_active));
+        cur->prefix = 0;
+        return;
     }
     // wave mode movement (hjkl moves cursor through waveform)
     if (mode == WAR_MODE_ID_WAV && env->wave_view_active) {
