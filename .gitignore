@@ -26,6 +26,7 @@ build.zig
 
 # music
 *.wav
+*.mp3
 
 # lua
 .lua*
@@ -65,6 +66,7 @@ Session.vim
 test
 testinst
 testwav
+*.war
 
 # mistake
 \'

@@ -2718,6 +2718,7 @@ struct war_env {
     uint8_t recording_active;
     uint8_t loop_mode;
     uint8_t across_mode;
+    uint8_t across_resample;
     uint8_t midi_toggle;
     uint8_t wave_view_active;
     uint32_t wave_view_pitch;

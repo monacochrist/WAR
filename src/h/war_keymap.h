@@ -592,6 +592,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_toggle_across,
                    0);
+    // resample toggle (alt+r)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<A-r>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_toggle_resample,
+                   0);
     // crop mode toggle (c)
     war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_ROLL}, 1, (char*[]){"c"}, WAR_FUNCTION_ID_NONE, war_toggle_crop, 0);
     // delete note under cursor (x)

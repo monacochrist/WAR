@@ -683,7 +683,7 @@ static inline void war_goto_viewport_top(war_env* env) {
         double row = (double)cur->prefix;
         if (row < 0) row = 0;
         if (row > wl->top_bound) row = wl->top_bound;
-        cur->instance[0].pos[1] = (float)row;
+        cur->instance[0].pos[1] = (float)(row + (double)wl->gutter_rows);
         war_pan_center_on_cursor(env);
     }
 }
@@ -880,6 +880,11 @@ static inline void war_toggle_across(war_env* env) {
     call_king_terry("ACROSS: %s", env->across_mode ? "ON" : "OFF");
 }
 
+static inline void war_toggle_resample(war_env* env) {
+    env->across_resample = !env->across_resample;
+    call_king_terry("RESAMPLE: %s", env->across_resample ? "ON" : "OFF");
+}
+
 static inline void war_toggle_crop(war_env* env) {
     if (!env || !env->ctx_cursor || !env->ctx_wayland) return;
     war_cursor_context* cur = env->ctx_cursor;
@@ -941,30 +946,56 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
         if (t == src_note) continue;
         int32_t semi = (int32_t)t - (int32_t)src_note;
         double ratio = pow(2.0, (double)semi / 12.0);
-        uint64_t dst_frames = (uint64_t)((double)src_frames / ratio);
-        if (dst_frames < 1) dst_frames = 1;
-        uint64_t dst_cnt = dst_frames * 2;
-        float* dst = malloc(dst_cnt * sizeof(float));
-        if (!dst) continue;
-        for (uint64_t i = 0; i < dst_frames; i++) {
-            double sp = (double)i * ratio;
-            uint64_t si = (uint64_t)sp;
-            double fr = sp - (double)si;
-            if (si >= src_frames - 1) {
-                dst[i*2] = src_data[(src_frames-1)*2];
-                dst[i*2+1] = src_data[(src_frames-1)*2+1];
-            } else {
-                dst[i*2] = (float)(src_data[si*2]*(1.0-fr) + src_data[(si+1)*2]*fr);
-                dst[i*2+1] = (float)(src_data[si*2+1]*(1.0-fr) + src_data[(si+1)*2+1]*fr);
+        if (env->across_resample) {
+            // resample: changes duration to match pitch
+            uint64_t dst_frames = (uint64_t)((double)src_frames / ratio);
+            if (dst_frames < 1) dst_frames = 1;
+            uint64_t dst_cnt = dst_frames * 2;
+            float* dst = malloc(dst_cnt * sizeof(float));
+            if (!dst) continue;
+            for (uint64_t i = 0; i < dst_frames; i++) {
+                double sp = (double)i * ratio;
+                uint64_t si = (uint64_t)sp;
+                double fr = sp - (double)si;
+                if (si >= src_frames - 1) {
+                    dst[i*2] = src_data[(src_frames-1)*2];
+                    dst[i*2+1] = src_data[(src_frames-1)*2+1];
+                } else {
+                    dst[i*2] = (float)(src_data[si*2]*(1.0-fr) + src_data[(si+1)*2]*fr);
+                    dst[i*2+1] = (float)(src_data[si*2+1]*(1.0-fr) + src_data[(si+1)*2+1]*fr);
+                }
             }
+            uint32_t tidx = t * WAR_CAPTURE_SLOT_LAYERS + li;
+            free(env->capture_slots[tidx].samples);
+            env->capture_slots[tidx].samples = dst;
+            env->capture_slots[tidx].count = dst_cnt;
+            env->capture_slots[tidx].capacity = dst_cnt;
+        } else {
+            // non-resample: preserves duration, pitch-shifts via sample-rate interpolation
+            uint64_t dst_frames = src_frames;
+            uint64_t dst_cnt = dst_frames * 2;
+            float* dst = malloc(dst_cnt * sizeof(float));
+            if (!dst) continue;
+            for (uint64_t i = 0; i < dst_frames; i++) {
+                double sp = (double)i * ratio;
+                uint64_t si = (uint64_t)sp;
+                double fr = sp - (double)si;
+                if (si >= src_frames - 1) {
+                    dst[i*2] = src_data[(src_frames-1)*2];
+                    dst[i*2+1] = src_data[(src_frames-1)*2+1];
+                } else {
+                    dst[i*2] = (float)(src_data[si*2]*(1.0-fr) + src_data[(si+1)*2]*fr);
+                    dst[i*2+1] = (float)(src_data[si*2+1]*(1.0-fr) + src_data[(si+1)*2+1]*fr);
+                }
+            }
+            uint32_t tidx = t * WAR_CAPTURE_SLOT_LAYERS + li;
+            free(env->capture_slots[tidx].samples);
+            env->capture_slots[tidx].samples = dst;
+            env->capture_slots[tidx].count = dst_cnt;
+            env->capture_slots[tidx].capacity = dst_cnt;
         }
-        uint32_t tidx = t * WAR_CAPTURE_SLOT_LAYERS + li;
-        free(env->capture_slots[tidx].samples);
-        env->capture_slots[tidx].samples = dst;
-        env->capture_slots[tidx].count = dst_cnt;
-        env->capture_slots[tidx].capacity = dst_cnt;
     }
-    call_king_terry("ACROSS: pitch-shifted note=%u radius=%d", src_note, rad);
+    call_king_terry("ACROSS: pitch-shifted note=%u radius=%d resample=%d", src_note, rad, env->across_resample);
 }
 
 static inline void war_capture_audio(war_env* env) {

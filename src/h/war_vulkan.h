@@ -2465,6 +2465,35 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             vkCmdDraw(cmd, 4, (uint32_t)_pln, 0, PBLOOP_OFFSET);
 #undef PBLOOP_OFFSET
         }
+        // resample label on bottom status bar
+        if (ctx_wayland->env->across_resample) {
+            const char* _rst = "RESAMPLE";
+            int _rsn = 8;
+            float _rsr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+#define RSMP_OFFSET 295
+            for (int _rsi = 0; _rsi < _rsn; _rsi++) {
+                unsigned char _rsc = (unsigned char)_rst[_rsi];
+                war_vulkan_text_instance* _ti = &dst[RSMP_OFFSET + _rsi];
+                _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 20 + _rsi);
+                _ti->pos[1] = _rsr;
+                _ti->pos[2] = 0;
+                _ti->size[0] = 1.0f;
+                _ti->size[1] = 1.0f;
+                _ti->uv[0] = font->glyph_uv[_rsc][0];
+                _ti->uv[1] = font->glyph_uv[_rsc][1];
+                _ti->uv[2] = font->glyph_uv[_rsc][2];
+                _ti->uv[3] = font->glyph_uv[_rsc][3];
+                _ti->glyph_scale[0] = font->glyph_norm_width[_rsc];
+                _ti->glyph_scale[1] = font->glyph_norm_height[_rsc];
+                _ti->ascent = font->glyph_norm_ascent[_rsc];
+                _ti->descent = font->glyph_norm_descent[_rsc];
+                _ti->baseline = font->glyph_norm_baseline[_rsc];
+                _ti->color[0] = 0.2f; _ti->color[1] = 0.8f; _ti->color[2] = 1.0f; _ti->color[3] = 1.0f;
+                _ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)_rsn, 0, RSMP_OFFSET);
+#undef RSMP_OFFSET
+        }
         // loop mode label
         if (ctx_wayland->env->loop_mode) {
             const char* loop_text = "LOOP";
