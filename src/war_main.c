@@ -366,13 +366,17 @@ static void war_keyboard_enter(void* data,
     (void)keys;
 }
 static void war_keyboard_leave(void* data,
-                               struct wl_keyboard* keyboard,
-                               uint32_t serial,
-                               struct wl_surface* surface) {
-    (void)data;
+                                struct wl_keyboard* keyboard,
+                                uint32_t serial,
+                                struct wl_surface* surface) {
     (void)keyboard;
     (void)serial;
     (void)surface;
+    war_wayland_context* _ctx = data;
+    if (_ctx && _ctx->env) {
+        _ctx->env->play_bar_playing = 0;
+        memset(_ctx->env->play_bar_voice_active, 0, sizeof(_ctx->env->play_bar_voice_active));
+    }
 }
 static void war_export_wav(war_env* env, const char* filename) {
     if (!env->ctx_note || !env->ctx_note->instance_count) {
