@@ -562,19 +562,16 @@ static void war_load_project(war_env* env, const char* filename) {
             path, note_count, slot_count, bpm);
 }
 
-static void war_write_inst(war_env* env, int layer, const char* filename) {
-    if (layer < 1 || layer > 9) {
-        snprintf(env->status_msg, sizeof(env->status_msg), "writeinst FAILED: layer must be 1-9");
-        fprintf(stderr, "WRITEINST: layer must be 1-9\n");
-        return;
-    }
+static void war_write_inst(war_env* env, const char* filename) {
+    int layer = (int)env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) layer = 1;
     char path[1024];
     snprintf(path, sizeof(path), "%s", filename);
     FILE* f = fopen(path, "wb");
     if (!f) {
-        snprintf(env->status_msg, sizeof(env->status_msg), "writeinst FAILED: %s",
+        snprintf(env->status_msg, sizeof(env->status_msg), "winst FAILED: %s",
                  strlen(path) > 85 ? path + strlen(path) - 85 : path);
-        fprintf(stderr, "WRITEINST: failed to open %s\n", path);
+        fprintf(stderr, "WINST: failed to open %s\n", path);
         return;
     }
     fwrite("WARI", 1, 4, f);
@@ -600,7 +597,7 @@ static void war_write_inst(war_env* env, int layer, const char* filename) {
     fclose(f);
     snprintf(env->status_msg, sizeof(env->status_msg), "%s written (layer %d, %u pitches)",
              strlen(path) > 65 ? path + strlen(path) - 65 : path, layer, count);
-    fprintf(stderr, "WRITEINST: wrote %s (layer=%d, %u pitches)\n", path, layer, count);
+    fprintf(stderr, "WINST: wrote %s (layer=%d, %u pitches)\n", path, layer, count);
 }
 
 static void war_load_inst(war_env* env, const char* filename) {
@@ -1023,13 +1020,13 @@ static void war_keyboard_key(void* data,
                 } else {
                     fprintf(stderr, "MVD: usage :mvd <n>\n");
                 }
-             } else if (env->cmd_len >= 10 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'r' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 't' && env->cmd_buf[5] == 'e' && env->cmd_buf[6] == 'i' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 's' && env->cmd_buf[9] == 't') {
-                int layer = 0;
-                char name[256];
-                if (sscanf(env->cmd_buf + 10, " %d %255s", &layer, name) >= 2)
-                    war_write_inst(env, layer, name);
+             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'i' && env->cmd_buf[3] == 'n' && env->cmd_buf[4] == 's' && env->cmd_buf[5] == 't') {
+                const char* _wname = env->cmd_buf + 6;
+                while (*_wname == ' ') _wname++;
+                if (_wname[0])
+                    war_write_inst(env, _wname);
                 else
-                    fprintf(stderr, "WRITEINST: usage :writeinst <layer> <name>\n");
+                    fprintf(stderr, "WINST: usage :winst <name>\n");
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'w' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 'v') {
                 const char* name = NULL;
                 if (env->cmd_len > 5 && env->cmd_buf[5] == ' ')
