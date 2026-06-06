@@ -182,92 +182,17 @@ static void
 war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
     war_wayland_context* ctx_wayland = data;
     wl_callback_destroy(callback);
-    // advance playback bar
     war_env* env = ctx_wayland->env;
+    // keep playbar timing alive for main-loop advancement
+    if (env->play_bar_playing && env->play_bar_last_frame_ms == 0)
+        env->play_bar_last_frame_ms = (uint32_t)(war_get_monotonic_time_us() / 1000);
+    // sync playbar line position from main-loop advancement
     if (env->play_bar_playing) {
-        if (env->play_bar_last_frame_ms != 0) {
-            uint32_t delta_ms = time - env->play_bar_last_frame_ms;
-            env->play_bar_position_seconds += (double)delta_ms / 1000.0;
-        }
-        env->play_bar_last_frame_ms = time;
-        double bpm = env->atomics->bpm;
-        if (bpm <= 0.0) bpm = 100.0;
-        double seconds_per_cell = 15.0 / bpm;
-        double current_cell_pos =
-            (double)ctx_wayland->gutter_cols +
-            env->play_bar_position_seconds / seconds_per_cell;
-        // scan notes between previous and current playhead position
-        if (env->ctx_note && env->play_bar_last_frame_ms != 0) {
-            uint32_t ncount = env->ctx_note->instance_count;
-            for (uint32_t i = 0; i < ncount; i++) {
-                double ns = env->ctx_note->instance[i].pos[0];
-                int _trig = (ns >= env->play_bar_prev_cell_pos && ns < current_cell_pos);
-                if (!_trig) {
-                    double nw = env->ctx_note->instance[i].size[0];
-                    if (current_cell_pos > ns && current_cell_pos < ns + nw) {
-                        uint32_t _tp = (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)ctx_wayland->gutter_rows);
-                        if (_tp > 127) _tp = 127;
-                        uint32_t _tl = (env->ctx_note->instance[i].flags >> 4) & 0xF;
-                        int _found = 0;
-                        for (uint32_t _tv = 0; _tv < WAR_PLAY_BAR_VOICES; _tv++)
-                            if (env->play_bar_voice_active[_tv] && env->play_bar_voice_note[_tv] == _tp && env->play_bar_voice_layer[_tv] == _tl) { _found = 1; break; }
-                        if (!_found) _trig = 1;
-                    }
-                }
-                if (_trig) {
-                    uint32_t pitch =
-                        (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)ctx_wayland->gutter_rows);
-                    if (pitch > 127) pitch = 127;
-                    uint32_t layer_idx = (env->ctx_note->instance[i].flags >> 4) & 0xF;
-                    if (layer_idx < 1 || layer_idx > 9) layer_idx = 1;
-                    uint32_t idx =
-                        pitch * WAR_CAPTURE_SLOT_LAYERS + (layer_idx - 1);
-                    war_capture_slot* slot = &env->capture_slots[idx];
-                    if (slot->samples && slot->count > 0) {
-                        double dur_cells = env->ctx_note->instance[i].size[0];
-                        uint64_t max_floats = (uint64_t)(dur_cells * 15.0 / bpm * 48000.0 * 2.0);
-                        if (max_floats > slot->count) max_floats = slot->count;
-                        if (max_floats & 1) max_floats &= ~1ULL;
-                        uint64_t _off = 0;
-                        if (current_cell_pos > ns) {
-                            double _oc = current_cell_pos - ns;
-                            _off = (uint64_t)(_oc * 15.0 / bpm * 48000.0 * 2.0);
-                            if (_off & 1) _off &= ~1ULL;
-                        }
-                        uint64_t _lim = max_floats;
-                        if (_lim > slot->count) _lim = slot->count;
-                        for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
-                            if (!env->play_bar_voice_active[v]) {
-                                env->play_bar_voice_note[v] = pitch;
-                                env->play_bar_voice_layer[v] = layer_idx;
-                                env->play_bar_voice_read_pos[v] = _off;
-                                env->play_bar_voice_read_limit[v] = _lim;
-                                env->play_bar_voice_active[v] = 1;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        env->play_bar_prev_cell_pos = current_cell_pos;
-        env->ctx_line->instance[0].pos[0] = (float)current_cell_pos;
-        if (env->play_bar_loop && env->ctx_note && env->ctx_note->instance_count > 0) {
-            double _rmax = 0.0;
-            for (uint32_t _ri = 0; _ri < env->ctx_note->instance_count; _ri++) {
-                double _re = env->ctx_note->instance[_ri].pos[0] + env->ctx_note->instance[_ri].size[0];
-                if (_re > _rmax) _rmax = _re;
-            }
-            double _gc = (double)ctx_wayland->gutter_cols;
-            if (current_cell_pos >= _rmax) {
-                env->play_bar_position_seconds = 0.0;
-                env->play_bar_last_frame_ms = 0;
-                env->play_bar_prev_cell_pos = _gc;
-                env->ctx_line->instance[0].pos[0] = (float)_gc;
-                memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
-                call_king_terry("PLAYBAR LOOP: restart");
-            }
-        }
+        double _bpm = env->atomics->bpm;
+        if (_bpm <= 0.0) _bpm = 100.0;
+        double _spc = 15.0 / _bpm;
+        double _ccp = (double)ctx_wayland->gutter_cols + env->play_bar_position_seconds / _spc;
+        env->ctx_line->instance[0].pos[0] = (float)_ccp;
     }
     // advance recording position based on real-time delta
     if (env->recording_active) {
@@ -355,10 +280,10 @@ static void war_keyboard_keymap(void* data,
     close(fd);
 }
 static void war_keyboard_enter(void* data,
-                               struct wl_keyboard* keyboard,
-                               uint32_t serial,
-                               struct wl_surface* surface,
-                               struct wl_array* keys) {
+                                struct wl_keyboard* keyboard,
+                                uint32_t serial,
+                                struct wl_surface* surface,
+                                struct wl_array* keys) {
     (void)data;
     (void)keyboard;
     (void)serial;
@@ -369,14 +294,10 @@ static void war_keyboard_leave(void* data,
                                 struct wl_keyboard* keyboard,
                                 uint32_t serial,
                                 struct wl_surface* surface) {
+    (void)data;
     (void)keyboard;
     (void)serial;
     (void)surface;
-    war_wayland_context* _ctx = data;
-    if (_ctx && _ctx->env) {
-        _ctx->env->play_bar_playing = 0;
-        memset(_ctx->env->play_bar_voice_active, 0, sizeof(_ctx->env->play_bar_voice_active));
-    }
 }
 static void war_export_wav(war_env* env, const char* filename) {
     if (!env->ctx_note || !env->ctx_note->instance_count) {
@@ -2376,33 +2297,19 @@ int main(int argc, char** argv) {
         if (env->play_bar_playing) {
             uint64_t _now_us = war_get_monotonic_time_us();
             uint32_t _now_ms = (uint32_t)(_now_us / 1000);
-            if (env->play_bar_last_frame_ms != 0 &&
-                _now_ms - env->play_bar_last_frame_ms > 25) {
+            if (env->play_bar_last_frame_ms != 0) {
                 uint32_t _delta_ms = _now_ms - env->play_bar_last_frame_ms;
                 env->play_bar_last_frame_ms = _now_ms;
                 env->play_bar_position_seconds += (double)_delta_ms / 1000.0;
                 double _bpm = env->atomics->bpm;
                 if (_bpm <= 0.0) _bpm = 100.0;
-                double _spc = 60.0 / _bpm;
+                double _spc = 15.0 / _bpm;
                 double _ccp = (double)ctx_wayland->gutter_cols + env->play_bar_position_seconds / _spc;
                 if (env->ctx_note) {
                     uint32_t _nc = env->ctx_note->instance_count;
                     for (uint32_t _i = 0; _i < _nc; _i++) {
                         double _ns = env->ctx_note->instance[_i].pos[0];
-                        int _trig = (_ns >= env->play_bar_prev_cell_pos && _ns < _ccp);
-                        if (!_trig) {
-                            double _nw = env->ctx_note->instance[_i].size[0];
-                            if (_ccp > _ns && _ccp < _ns + _nw) {
-                                uint32_t _tp2 = (uint32_t)(env->ctx_note->instance[_i].pos[1] - (double)ctx_wayland->gutter_rows);
-                                if (_tp2 > 127) _tp2 = 127;
-                                uint32_t _tl2 = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
-                                int _fnd = 0;
-                                for (uint32_t _tv2 = 0; _tv2 < WAR_PLAY_BAR_VOICES; _tv2++)
-                                    if (env->play_bar_voice_active[_tv2] && env->play_bar_voice_note[_tv2] == _tp2 && env->play_bar_voice_layer[_tv2] == _tl2) { _fnd = 1; break; }
-                                if (!_fnd) _trig = 1;
-                            }
-                        }
-                        if (_trig) {
+                        if (_ns >= env->play_bar_prev_cell_pos && _ns < _ccp) {
                             uint32_t _pp = (uint32_t)(env->ctx_note->instance[_i].pos[1] - (double)ctx_wayland->gutter_rows);
                             if (_pp > 127) _pp = 127;
                             uint32_t _li = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
