@@ -880,6 +880,44 @@ static inline void war_toggle_playback(war_env* env) {
         double gc = (double)env->ctx_wayland->gutter_cols;
         env->play_bar_prev_cell_pos = gc + env->play_bar_position_seconds / sec_per_cell;
         memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+        // resume: activate any note whose body contains the playhead
+        if (env->ctx_note && env->ctx_note->instance_count > 0) {
+            double _cp = env->play_bar_prev_cell_pos;
+            double _bpm2 = env->atomics->bpm;
+            if (_bpm2 <= 0.0) _bpm2 = 100.0;
+            double _spc2 = 15.0 / _bpm2;
+            for (uint32_t _ri = 0; _ri < env->ctx_note->instance_count; _ri++) {
+                double _ns = env->ctx_note->instance[_ri].pos[0];
+                double _nw = env->ctx_note->instance[_ri].size[0];
+                if (_cp > _ns && _cp < _ns + _nw) {
+                    uint32_t _pp = (uint32_t)(env->ctx_note->instance[_ri].pos[1] - (double)env->ctx_wayland->gutter_rows);
+                    if (_pp > 127) _pp = 127;
+                    uint32_t _li = (env->ctx_note->instance[_ri].flags >> 4) & 0xF;
+                    if (_li < 1 || _li > 9) _li = 1;
+                    uint32_t _si = _pp * WAR_CAPTURE_SLOT_LAYERS + (_li - 1);
+                    war_capture_slot* _sl = &env->capture_slots[_si];
+                    if (_sl->samples && _sl->count > 0) {
+                        double _off_cells = _cp - _ns;
+                        double _rem_cells = _nw - _off_cells;
+                        if (_rem_cells < 0.01) continue;
+                        uint64_t _offset = (uint64_t)(_off_cells * _spc2 * 48000.0 * 2.0);
+                        if (_offset & 1) _offset &= ~1ULL;
+                        uint64_t _limit = _offset + (uint64_t)(_rem_cells * _spc2 * 48000.0 * 2.0);
+                        if (_limit > _sl->count) _limit = _sl->count;
+                        for (uint32_t _v = 0; _v < WAR_PLAY_BAR_VOICES; _v++) {
+                            if (!env->play_bar_voice_active[_v]) {
+                                env->play_bar_voice_note[_v] = _pp;
+                                env->play_bar_voice_layer[_v] = _li;
+                                env->play_bar_voice_read_pos[_v] = _offset;
+                                env->play_bar_voice_read_limit[_v] = _limit;
+                                env->play_bar_voice_active[_v] = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -897,6 +935,45 @@ static inline void war_playbar_goto_cursor(war_env* env) {
     env->play_bar_prev_cell_pos = (double)cursor_col;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
     line->instance[0].pos[0] = cursor_col;
+    // seek: activate note at cursor offset
+    if (env->ctx_note && env->ctx_note->instance_count > 0) {
+        float _cy2 = env->ctx_cursor->instance[0].pos[1];
+        double _spc3 = 15.0 / bpm;
+        for (uint32_t _ri = 0; _ri < env->ctx_note->instance_count; _ri++) {
+            double _ns2 = env->ctx_note->instance[_ri].pos[0];
+            double _nw2 = env->ctx_note->instance[_ri].size[0];
+            double _ny2 = env->ctx_note->instance[_ri].pos[1];
+            if (cursor_col > _ns2 && cursor_col < _ns2 + _nw2 && fabsf(_ny2 - _cy2) < 0.5f) {
+                uint32_t _pp2 = (uint32_t)(_ny2 - (double)env->ctx_wayland->gutter_rows);
+                if (_pp2 > 127) _pp2 = 127;
+                uint32_t _li2 = (env->ctx_note->instance[_ri].flags >> 4) & 0xF;
+                if (_li2 < 1 || _li2 > 9) _li2 = 1;
+                uint32_t _si2 = _pp2 * WAR_CAPTURE_SLOT_LAYERS + (_li2 - 1);
+                war_capture_slot* _sl2 = &env->capture_slots[_si2];
+                if (_sl2->samples && _sl2->count > 0) {
+                    double _oc = (double)cursor_col - _ns2;
+                    uint64_t _off2 = (uint64_t)(_oc * _spc3 * 48000.0 * 2.0);
+                    if (_off2 & 1) _off2 &= ~1ULL;
+                    double _rc = _nw2 - _oc;
+                    if (_rc > 0.01) {
+                        uint64_t _lim2 = _off2 + (uint64_t)(_rc * _spc3 * 48000.0 * 2.0);
+                        if (_lim2 > _sl2->count) _lim2 = _sl2->count;
+                        for (uint32_t _v2 = 0; _v2 < WAR_PLAY_BAR_VOICES; _v2++) {
+                            if (!env->play_bar_voice_active[_v2]) {
+                                env->play_bar_voice_note[_v2] = _pp2;
+                                env->play_bar_voice_layer[_v2] = _li2;
+                                env->play_bar_voice_read_pos[_v2] = _off2;
+                                env->play_bar_voice_read_limit[_v2] = _lim2;
+                                env->play_bar_voice_active[_v2] = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
 }
 
 static inline void war_toggle_playbar_loop(war_env* env) {

@@ -201,8 +201,20 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
             uint32_t ncount = env->ctx_note->instance_count;
             for (uint32_t i = 0; i < ncount; i++) {
                 double ns = env->ctx_note->instance[i].pos[0];
-                if (ns >= env->play_bar_prev_cell_pos &&
-                    ns < current_cell_pos) {
+                int _trig = (ns >= env->play_bar_prev_cell_pos && ns < current_cell_pos);
+                if (!_trig) {
+                    double nw = env->ctx_note->instance[i].size[0];
+                    if (current_cell_pos > ns && current_cell_pos < ns + nw) {
+                        uint32_t _tp = (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)ctx_wayland->gutter_rows);
+                        if (_tp > 127) _tp = 127;
+                        uint32_t _tl = (env->ctx_note->instance[i].flags >> 4) & 0xF;
+                        int _found = 0;
+                        for (uint32_t _tv = 0; _tv < WAR_PLAY_BAR_VOICES; _tv++)
+                            if (env->play_bar_voice_active[_tv] && env->play_bar_voice_note[_tv] == _tp && env->play_bar_voice_layer[_tv] == _tl) { _found = 1; break; }
+                        if (!_found) _trig = 1;
+                    }
+                }
+                if (_trig) {
                     uint32_t pitch =
                         (uint32_t)(env->ctx_note->instance[i].pos[1] - (double)ctx_wayland->gutter_rows);
                     if (pitch > 127) pitch = 127;
@@ -216,12 +228,20 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
                         uint64_t max_floats = (uint64_t)(dur_cells * 15.0 / bpm * 48000.0 * 2.0);
                         if (max_floats > slot->count) max_floats = slot->count;
                         if (max_floats & 1) max_floats &= ~1ULL;
+                        uint64_t _off = 0;
+                        if (current_cell_pos > ns) {
+                            double _oc = current_cell_pos - ns;
+                            _off = (uint64_t)(_oc * 15.0 / bpm * 48000.0 * 2.0);
+                            if (_off & 1) _off &= ~1ULL;
+                        }
+                        uint64_t _lim = max_floats;
+                        if (_lim > slot->count) _lim = slot->count;
                         for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
                             if (!env->play_bar_voice_active[v]) {
                                 env->play_bar_voice_note[v] = pitch;
                                 env->play_bar_voice_layer[v] = layer_idx;
-                                env->play_bar_voice_read_pos[v] = 0;
-                                env->play_bar_voice_read_limit[v] = max_floats;
+                                env->play_bar_voice_read_pos[v] = _off;
+                                env->play_bar_voice_read_limit[v] = _lim;
                                 env->play_bar_voice_active[v] = 1;
                                 break;
                             }
@@ -2365,7 +2385,20 @@ int main(int argc, char** argv) {
                     uint32_t _nc = env->ctx_note->instance_count;
                     for (uint32_t _i = 0; _i < _nc; _i++) {
                         double _ns = env->ctx_note->instance[_i].pos[0];
-                        if (_ns >= env->play_bar_prev_cell_pos && _ns < _ccp) {
+                        int _trig = (_ns >= env->play_bar_prev_cell_pos && _ns < _ccp);
+                        if (!_trig) {
+                            double _nw = env->ctx_note->instance[_i].size[0];
+                            if (_ccp > _ns && _ccp < _ns + _nw) {
+                                uint32_t _tp2 = (uint32_t)(env->ctx_note->instance[_i].pos[1] - (double)ctx_wayland->gutter_rows);
+                                if (_tp2 > 127) _tp2 = 127;
+                                uint32_t _tl2 = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
+                                int _fnd = 0;
+                                for (uint32_t _tv2 = 0; _tv2 < WAR_PLAY_BAR_VOICES; _tv2++)
+                                    if (env->play_bar_voice_active[_tv2] && env->play_bar_voice_note[_tv2] == _tp2 && env->play_bar_voice_layer[_tv2] == _tl2) { _fnd = 1; break; }
+                                if (!_fnd) _trig = 1;
+                            }
+                        }
+                        if (_trig) {
                             uint32_t _pp = (uint32_t)(env->ctx_note->instance[_i].pos[1] - (double)ctx_wayland->gutter_rows);
                             if (_pp > 127) _pp = 127;
                             uint32_t _li = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
@@ -2377,12 +2410,20 @@ int main(int argc, char** argv) {
                                 uint64_t _mf = (uint64_t)(_dc * 15.0 / _bpm * 48000.0 * 2.0);
                                 if (_mf > _sl->count) _mf = _sl->count;
                                 if (_mf & 1) _mf &= ~1ULL;
+                                uint64_t _off2 = 0;
+                                if (_ccp > _ns) {
+                                    double _oc2 = _ccp - _ns;
+                                    _off2 = (uint64_t)(_oc2 * 15.0 / _bpm * 48000.0 * 2.0);
+                                    if (_off2 & 1) _off2 &= ~1ULL;
+                                }
+                                uint64_t _lim2 = _mf;
+                                if (_lim2 > _sl->count) _lim2 = _sl->count;
                                 for (uint32_t _v = 0; _v < WAR_PLAY_BAR_VOICES; _v++) {
                                     if (!env->play_bar_voice_active[_v]) {
                                         env->play_bar_voice_note[_v] = _pp;
                                         env->play_bar_voice_layer[_v] = _li;
-                                        env->play_bar_voice_read_pos[_v] = 0;
-                                        env->play_bar_voice_read_limit[_v] = _mf;
+                                        env->play_bar_voice_read_pos[_v] = _off2;
+                                        env->play_bar_voice_read_limit[_v] = _lim2;
                                         env->play_bar_voice_active[_v] = 1;
                                         break;
                                     }
