@@ -380,7 +380,12 @@ static inline void _war_record_place_note(war_env* env, uint32_t note, int voice
     uint32_t i = note_ctx->instance_count++;
     double visual_row = (double)note + (double)env->ctx_wayland->gutter_rows;
     uint32_t col = (&env->ctx_color->layer_none)[env->ctx_cursor->layer];
-    note_ctx->instance[i].pos[0] = (float)env->recording_position;
+    // place note at current playback bar position
+    double _pb_bpm = env->atomics->bpm;
+    if (_pb_bpm <= 0.0) _pb_bpm = 100.0;
+    double _pb_spc = 15.0 / _pb_bpm;
+    float _pb_pos = (float)((double)env->ctx_wayland->gutter_cols + env->play_bar_position_seconds / _pb_spc);
+    note_ctx->instance[i].pos[0] = _pb_pos;
     note_ctx->instance[i].pos[1] = (float)visual_row;
     note_ctx->instance[i].pos[2] = 0.0f;
     note_ctx->instance[i].size[0] = 1.0f;
@@ -395,7 +400,7 @@ static inline void _war_record_place_note(war_env* env, uint32_t note, int voice
     note_ctx->instance[i].outline_color[3] = 1.0f;
     note_ctx->instance[i].flags = (uint32_t)env->ctx_cursor->layer << 4;
     note_ctx->instance[i].tick = note_ctx->tick_counter++;
-    env->recording_start_col[voice] = env->recording_position;
+    env->recording_start_col[voice] = _pb_pos;
     env->recording_note_idx[voice] = i;
     env->recording_press_time_us[voice] = war_get_monotonic_time_us();
     call_king_terry("RECORD: placed note=%u layer=%u col=%.2f voice=%u idx=%u t=%lu",
@@ -406,10 +411,20 @@ static inline void _war_record_place_note(war_env* env, uint32_t note, int voice
 static inline void war_record_midi(war_env* env) {
     env->recording_active = !env->recording_active;
     if (env->recording_active) {
-        env->recording_position = env->ctx_cursor->instance[0].pos[0];
+        env->recording_position = (double)env->ctx_wayland->gutter_cols;
         env->recording_last_frame_ms = 0;
         for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
             env->recording_start_col[v] = 0.0;
+        // reset playback bar to start and begin playing
+        float _gc = (float)env->ctx_wayland->gutter_cols;
+        env->play_bar_position_seconds = 0.0;
+        env->play_bar_last_frame_ms = 0;
+        env->play_bar_last_us = 0;
+        env->play_bar_prev_cell_pos = (double)_gc;
+        memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+        if (env->ctx_line)
+            env->ctx_line->instance[0].pos[0] = _gc;
+        env->play_bar_playing = 1;
     }
 }
 
