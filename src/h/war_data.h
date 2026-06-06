@@ -2700,6 +2700,7 @@ struct war_env {
     uint8_t play_bar_loop;
     double play_bar_position_seconds;
     uint32_t play_bar_last_frame_ms;
+    uint64_t play_bar_last_us;
     double play_bar_prev_cell_pos;
 #define WAR_PLAY_BAR_VOICES 64
 #define WAR_PREVIEW_VOICES 16

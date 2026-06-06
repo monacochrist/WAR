@@ -874,6 +874,7 @@ static inline void war_toggle_playback(war_env* env) {
     } else {
         env->play_bar_playing = 1;
         env->play_bar_last_frame_ms = 0;
+        env->play_bar_last_us = 0;
         double bpm = env->atomics->bpm;
         if (bpm <= 0.0) bpm = 100.0;
         double sec_per_cell = 15.0 / bpm;
@@ -932,6 +933,7 @@ static inline void war_playbar_goto_cursor(war_env* env) {
     env->play_bar_position_seconds = ((double)cursor_col - gc) * sec_per_cell;
     if (env->play_bar_position_seconds < 0.0) env->play_bar_position_seconds = 0.0;
     env->play_bar_last_frame_ms = 0;
+    env->play_bar_last_us = 0;
     env->play_bar_prev_cell_pos = (double)cursor_col;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
     line->instance[0].pos[0] = cursor_col;
@@ -988,6 +990,7 @@ static inline void war_playbar_goto_start(war_env* env) {
     float gc = (float)env->ctx_wayland->gutter_cols;
     env->play_bar_position_seconds = 0.0;
     env->play_bar_last_frame_ms = 0;
+    env->play_bar_last_us = 0;
     env->play_bar_prev_cell_pos = (double)gc;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
     line->instance[0].pos[0] = gc;

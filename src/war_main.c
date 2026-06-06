@@ -184,8 +184,10 @@ war_frame_done(void* data, struct wl_callback* callback, uint32_t time) {
     wl_callback_destroy(callback);
     war_env* env = ctx_wayland->env;
     // keep playbar timing alive for main-loop advancement
-    if (env->play_bar_playing && env->play_bar_last_frame_ms == 0)
+    if (env->play_bar_playing && env->play_bar_last_frame_ms == 0) {
         env->play_bar_last_frame_ms = (uint32_t)(war_get_monotonic_time_us() / 1000);
+        env->play_bar_last_us = war_get_monotonic_time_us();
+    }
     // sync playbar line position from main-loop advancement
     if (env->play_bar_playing) {
         double _bpm = env->atomics->bpm;
@@ -1986,6 +1988,7 @@ int main(int argc, char** argv) {
     env->play_bar_playing = 0;
     env->play_bar_position_seconds = 0.0;
     env->play_bar_last_frame_ms = 0;
+    env->play_bar_last_us = 0;
     env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
     //-------------------------------------------------------------------------
@@ -2298,11 +2301,10 @@ int main(int argc, char** argv) {
         // playback bar advancement (runs even without frame callbacks)
         if (env->play_bar_playing) {
             uint64_t _now_us = war_get_monotonic_time_us();
-            uint32_t _now_ms = (uint32_t)(_now_us / 1000);
-            if (env->play_bar_last_frame_ms != 0) {
-                uint32_t _delta_ms = _now_ms - env->play_bar_last_frame_ms;
-                env->play_bar_last_frame_ms = _now_ms;
-                env->play_bar_position_seconds += (double)_delta_ms / 1000.0;
+            if (env->play_bar_last_us != 0) {
+                uint64_t _delta_us = _now_us - env->play_bar_last_us;
+                env->play_bar_last_us = _now_us;
+                env->play_bar_position_seconds += (double)_delta_us / 1000000.0;
                 double _bpm = env->atomics->bpm;
                 if (_bpm <= 0.0) _bpm = 100.0;
                 double _spc = 15.0 / _bpm;
@@ -2356,6 +2358,7 @@ int main(int argc, char** argv) {
                     if (_ccp >= _rmax) {
                         env->play_bar_position_seconds = 0.0;
                         env->play_bar_last_frame_ms = 0;
+                        env->play_bar_last_us = 0;
                         env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
                         env->ctx_line->instance[0].pos[0] = (float)ctx_wayland->gutter_cols;
                         memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
