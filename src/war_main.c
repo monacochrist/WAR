@@ -907,7 +907,7 @@ static void war_keyboard_key(void* data,
                     if (cur_layer < 1 || cur_layer > 9) cur_layer = 1;
                     uint32_t src_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (cur_layer - 1);
                     uint32_t dst_idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (to_layer - 1);
-                    if (cur_layer == to_layer) {
+                    if ((int32_t)cur_layer == to_layer) {
                         snprintf(env->status_msg, sizeof(env->status_msg), "mv FAILED: same layer");
                         fprintf(stderr, "MV: source and destination are the same layer\n");
                     } else if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
@@ -924,6 +924,40 @@ static void war_keyboard_key(void* data,
                     }
                 } else {
                     fprintf(stderr, "MV: usage :mv <layer>\n");
+                }
+             } else if (env->cmd_len >= 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'p') {
+                int _to_layer = 0;
+                if (sscanf(env->cmd_buf + 3, " %d", &_to_layer) == 1 && _to_layer >= 1 && _to_layer <= 9) {
+                    double _row = env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    uint32_t _pitch = _row > 0 ? (uint32_t)(_row + 0.5) : 0;
+                    if (_pitch > 127) _pitch = 127;
+                    uint32_t _cur_layer = env->ctx_cursor->layer;
+                    if (_cur_layer < 1 || _cur_layer > 9) _cur_layer = 1;
+                    uint32_t _src_idx = _pitch * WAR_CAPTURE_SLOT_LAYERS + (_cur_layer - 1);
+                    uint32_t _dst_idx = _pitch * WAR_CAPTURE_SLOT_LAYERS + (_to_layer - 1);
+                    if ((int32_t)_cur_layer == _to_layer) {
+                        snprintf(env->status_msg, sizeof(env->status_msg), "cp FAILED: same layer");
+                        fprintf(stderr, "CP: source and destination are the same layer\n");
+                    } else if (env->capture_slots[_src_idx].samples && env->capture_slots[_src_idx].count > 0) {
+                        uint64_t _cnt = env->capture_slots[_src_idx].count;
+                        float* _copy = malloc(_cnt * sizeof(float));
+                        if (_copy) {
+                            memcpy(_copy, env->capture_slots[_src_idx].samples, _cnt * sizeof(float));
+                            free(env->capture_slots[_dst_idx].samples);
+                            env->capture_slots[_dst_idx].samples = _copy;
+                            env->capture_slots[_dst_idx].count = _cnt;
+                            env->capture_slots[_dst_idx].capacity = _cnt;
+                            env->capture_slots[_dst_idx].gain = env->capture_slots[_src_idx].gain;
+                            env->capture_slots[_dst_idx].pan = env->capture_slots[_src_idx].pan;
+                            snprintf(env->status_msg, sizeof(env->status_msg), "cp: pitch %u layer %d -> %d", _pitch, _cur_layer, _to_layer);
+                            fprintf(stderr, "CP: copied pitch=%u from layer %d to layer %d\n", _pitch, _cur_layer, _to_layer);
+                        }
+                    } else {
+                        snprintf(env->status_msg, sizeof(env->status_msg), "cp FAILED: no capture at pitch %u", _pitch);
+                        fprintf(stderr, "CP: no capture at pitch=%u layer=%d\n", _pitch, _cur_layer);
+                    }
+                } else {
+                    fprintf(stderr, "CP: usage :cp <layer>\n");
                 }
              } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'a' && env->cmd_buf[2] == 'c' && env->cmd_buf[3] == 'r' && env->cmd_buf[4] == 'o' && env->cmd_buf[5] == 's' && env->cmd_buf[6] == 's') {
                 int radius = 0;
@@ -1040,6 +1074,24 @@ static void war_keyboard_key(void* data,
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'j' && env->cmd_buf[4] == '7') {
                 war_chord_maj7(env);
                 snprintf(env->status_msg, sizeof(env->status_msg), "maj7");
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'i' && env->cmd_buf[3] == 'n' && env->cmd_buf[4] == '9') {
+                war_chord_min9(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "min9");
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'i' && env->cmd_buf[3] == 'n' && env->cmd_buf[4] == '7') {
+                war_chord_min7(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "min7");
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'j' && env->cmd_buf[4] == '9') {
+                war_chord_maj9(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "maj9");
+            } else if (env->cmd_len == 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == '9') {
+                war_chord_9(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "9");
+            } else if (env->cmd_len == 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == '6') {
+                war_chord_6(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "6");
+            } else if (env->cmd_len == 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == '2') {
+                war_chord_2(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "2");
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w') {
                 const char* name = NULL;
                 if (env->cmd_len > 2 && env->cmd_buf[2] == ' ')
@@ -1426,7 +1478,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-capture",
-                              "node.latency", "256/48000",
+                              "node.latency", "64/48000",
                               NULL);
         env->ctx_pw->capture_stream = pw_stream_new(core, "war-capture", props);
         struct spa_audio_info_raw capture_info = {
@@ -1459,7 +1511,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-play",
-                              "node.latency", "256/48000",
+                              "node.latency", "64/48000",
                               NULL);
         env->ctx_pw->play_stream = pw_stream_new(core, "war-play", props);
         // format: F32, 48000, stereo
@@ -1495,7 +1547,7 @@ void* war_pipewire(void* args) {
                               "true",
                               "media.name",
                               "war-loopback",
-                              "node.latency", "256/48000",
+                              "node.latency", "64/48000",
                               NULL);
         env->ctx_pw->loopback_capture_stream =
             pw_stream_new(core, "war-loopback", props);
@@ -1804,8 +1856,8 @@ int main(int argc, char** argv) {
         timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     WASSERT(ctx_wayland->audio_timer_fd >= 0);
     struct itimerspec ats = {
-        .it_value = {0, 1000000L},    // 1ms first shot
-        .it_interval = {0, 2000000L}, // 2ms period
+        .it_value = {0, 500000L},     // 0.5ms first shot
+        .it_interval = {0, 1000000L}, // 1ms period
     };
     timerfd_settime(ctx_wayland->audio_timer_fd, 0, &ats, NULL);
 

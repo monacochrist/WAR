@@ -832,10 +832,13 @@ static inline void war_visual_swap_anchor(war_env* env) {
     cur->visual_anchor_row = tmp_row;
 }
 
+static inline void war_undo_save(war_env* env);
+
 static inline void _war_visual_move_selection(war_env* env, float dx, float dy) {
     war_cursor_context* cur = env->ctx_cursor;
     war_note_context* note = env->ctx_note;
     if (!cur->visual_active || !note || !note->instance_count) return;
+    war_undo_save(env);
     float x0 = cur->visual_anchor_col;
     float x1 = cur->instance[0].pos[0];
     float y0 = cur->visual_anchor_row;
@@ -1256,6 +1259,70 @@ static inline void war_chord_maj7(war_env* env) {
         note->instance[i].tick = note->tick_counter++;
     }
     call_king_terry("MAJ7: root=%.0f width=%.1f", root_row - (double)env->ctx_wayland->gutter_rows, w);
+}
+
+static inline void _war_chord_generic(war_env* env, const int* intervals, int n_intervals, const char* name) {
+    war_note_context* note = env->ctx_note;
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!note || !cur->instance_count) return;
+    float root_row = cur->instance[0].pos[1];
+    float col = cur->instance[0].pos[0];
+    float w = cur->instance[0].size[0];
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t col32 = (&env->ctx_color->layer_none)[layer];
+    float r = ((col32 >> 24) & 0xFF) / 255.0f;
+    float g = ((col32 >> 16) & 0xFF) / 255.0f;
+    float b = ((col32 >> 8) & 0xFF) / 255.0f;
+    float a = (col32 & 0xFF) / 255.0f;
+    war_undo_save(env);
+    for (int j = 0; j < n_intervals; j++) {
+        float row = root_row + (float)intervals[j];
+        if (row < 0 || row > 127.0f + (float)env->ctx_wayland->gutter_rows) continue;
+        if (note->instance_count >= note->max_instances) break;
+        uint32_t i = note->instance_count++;
+        note->instance[i].pos[0] = col;
+        note->instance[i].pos[1] = row;
+        note->instance[i].pos[2] = 0.0f;
+        note->instance[i].size[0] = w;
+        note->instance[i].size[1] = cur->instance[0].size[1];
+        note->instance[i].color[0] = r;
+        note->instance[i].color[1] = g;
+        note->instance[i].color[2] = b;
+        note->instance[i].color[3] = a;
+        note->instance[i].outline_color[0] = 0.0f;
+        note->instance[i].outline_color[1] = 0.0f;
+        note->instance[i].outline_color[2] = 0.0f;
+        note->instance[i].outline_color[3] = 1.0f;
+        note->instance[i].flags = (uint32_t)layer << 4;
+        note->instance[i].tick = note->tick_counter++;
+    }
+    call_king_terry("%s: root=%.0f width=%.1f", name, root_row - (double)env->ctx_wayland->gutter_rows, w);
+}
+
+static inline void war_chord_min9(war_env* env) {
+    int intervals[] = {0, 3, 7, 10, 14};
+    _war_chord_generic(env, intervals, 5, "MIN9");
+}
+static inline void war_chord_min7(war_env* env) {
+    int intervals[] = {0, 3, 7, 10};
+    _war_chord_generic(env, intervals, 4, "MIN7");
+}
+static inline void war_chord_9(war_env* env) {
+    int intervals[] = {0, 4, 7, 10, 14};
+    _war_chord_generic(env, intervals, 5, "DOM9");
+}
+static inline void war_chord_maj9(war_env* env) {
+    int intervals[] = {0, 4, 7, 11, 14};
+    _war_chord_generic(env, intervals, 5, "MAJ9");
+}
+static inline void war_chord_6(war_env* env) {
+    int intervals[] = {0, 4, 7, 9};
+    _war_chord_generic(env, intervals, 4, "MAJ6");
+}
+static inline void war_chord_2(war_env* env) {
+    int intervals[] = {0, 2, 7};
+    _war_chord_generic(env, intervals, 3, "SUS2");
 }
 
 static inline void war_place_note(war_env* env) {

@@ -86,6 +86,7 @@ else if (strcmp(name, "war_zoom_out") == 0) { return war_zoom_out; }
 else if (strcmp(name, "war_zoom_reset") == 0) { return war_zoom_reset; }
 else if (strcmp(name, "war_visual_mode") == 0) { return war_visual_mode; }
 else if (strcmp(name, "war_visual_swap_anchor") == 0) { return war_visual_swap_anchor; }
+else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_visual_move_right") == 0) { return war_visual_move_right; }
 else if (strcmp(name, "war_visual_move_left") == 0) { return war_visual_move_left; }
 else if (strcmp(name, "war_visual_move_up") == 0) { return war_visual_move_up; }
@@ -104,6 +105,12 @@ else if (strcmp(name, "war_preview_toggle") == 0) { return war_preview_toggle; }
 else if (strcmp(name, "war_set_width_to_duration") == 0) { return war_set_width_to_duration; }
 else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_chord_maj7") == 0) { return war_chord_maj7; }
+else if (strcmp(name, "war_chord_min9") == 0) { return war_chord_min9; }
+else if (strcmp(name, "war_chord_min7") == 0) { return war_chord_min7; }
+else if (strcmp(name, "war_chord_9") == 0) { return war_chord_9; }
+else if (strcmp(name, "war_chord_maj9") == 0) { return war_chord_maj9; }
+else if (strcmp(name, "war_chord_6") == 0) { return war_chord_6; }
+else if (strcmp(name, "war_chord_2") == 0) { return war_chord_2; }
 else if (strcmp(name, "war_place_note") == 0) { return war_place_note; }
 else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_undo") == 0) { return war_undo; }
