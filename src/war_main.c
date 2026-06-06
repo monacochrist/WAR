@@ -1227,6 +1227,21 @@ static void war_keyboard_key(void* data,
             return;
         }
     }
+    // visual mode: shift+motion moves selected notes
+    if (mode == WAR_MODE_ID_VISUAL && (mod & MOD_SHIFT)) {
+        if (raw_sym == XKB_KEY_l || raw_sym == XKB_KEY_Right) {
+            war_visual_move_right(env); cur->prefix = 0; return;
+        }
+        if (raw_sym == XKB_KEY_h || raw_sym == XKB_KEY_Left) {
+            war_visual_move_left(env); cur->prefix = 0; return;
+        }
+        if (raw_sym == XKB_KEY_k || raw_sym == XKB_KEY_Up) {
+            war_visual_move_up(env); cur->prefix = 0; return;
+        }
+        if (raw_sym == XKB_KEY_j || raw_sym == XKB_KEY_Down) {
+            war_visual_move_down(env); cur->prefix = 0; return;
+        }
+    }
     // gain adjust: ctrl+up / ctrl+down
     if ((mode == WAR_MODE_ID_ROLL || mode == WAR_MODE_ID_VISUAL) && env->ctx_cursor->instance_count) {
         double _gr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
@@ -1920,7 +1935,7 @@ int main(int argc, char** argv) {
     ctx_cursor->instance[0].size[1] = 1;
     ctx_cursor->layer = 1;
     ctx_cursor->octave = 4;
-    ctx_cursor->step = 0.0;
+    ctx_cursor->step = 1.0;
     double vis_cols = (double)ctx_wayland->width /
                           (ctx_cursor->cell_width * ctx_wayland->zoom) -
                       ctx_wayland->gutter_cols;

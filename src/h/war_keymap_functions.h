@@ -601,7 +601,7 @@ static inline void war_step_mode_thin(war_env* env) {
 }
 
 static inline void war_reset_step(war_env* env) {
-    env->ctx_cursor->step = 0.0;
+    env->ctx_cursor->step = 1.0;
     env->ctx_cursor->x_width[0] = 1.0;
     env->ctx_cursor->instance[0].size[0] = 1.0f;
 }
