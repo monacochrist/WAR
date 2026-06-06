@@ -115,6 +115,7 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 |-----|--------|
 | `<A-1>` through `<A-9>` | Set active layer 1–9 |
 | `<A-0>` | Set active layer 0 (none) |
+| `<A-S-1>` through `<A-S-9>` | Toggle layer visibility on/off |
 
 ## ROLL Mode — Octave (Shift+number)
 
@@ -181,6 +182,7 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 |-----|--------|
 | `<A-1>` through `<A-9>` | Set active layer 1–9 |
 | `<A-0>` | Set active layer 0 (none) |
+| `<A-S-1>` through `<A-S-9>` | Toggle layer visibility on/off |
 
 ---
 
@@ -195,15 +197,23 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `:loop <quarter_notes> <repeats>` | Loop notes (copy section length × repeats) |
 | `:cd <path>` | Change directory |
 | `:radius <n>` | Set ACROSS pitch-shift radius (notes above/below) |
-| `:writeinst <layer> <name>` | Save instrument file for a layer |
+| `:winst <name>` | Save instrument file for current cursor layer |
 | `:loadinst <name>` | Load instrument file into current layer at cursor |
 | `:mv <layer>` | Move capture slot at cursor row/layer to another layer |
 | `:mvu <n>` | Move capture slot at cursor up n pitches |
 | `:mvd <n>` | Move capture slot at cursor down n pitches |
 | `:across <radius>` | Pitch-shift capture slot at cursor to nearby notes (within radius); respects RESAMPLE toggle |
 | `:maj7` | Place a major 7th chord (root, +4, +7, +11) at cursor using cursor width |
+| `:min7` | Place a minor 7th chord (0, +3, +7, +10) |
+| `:min9` | Place a minor 9th chord (0, +3, +7, +10, +14) |
+| `:9` | Place a dominant 9th chord (0, +4, +7, +10, +14) |
+| `:maj9` | Place a major 9th chord (0, +4, +7, +11, +14) |
+| `:6` | Place a major 6th chord (0, +4, +7, +9) |
+| `:2` | Place a sus2 chord (0, +2, +7) |
 | `:gain <0-200>` | Set gain for capture slot under cursor (100 = 1.0x) |
 | `:pan <-100..100>` | Set pan for capture slot under cursor (0 = center) |
+| `:cp <layer>` | Copy capture slot at cursor pitch/layer to another layer |
+| `:winst <name>` | Save instrument file for current cursor layer |
 | `:q` | Quit the application |
 
 Press `Esc` to exit command mode.
@@ -224,6 +234,8 @@ Press `Esc` to exit command mode.
 | `ACROSS` | Top bar | ACROSS pitch-shift enabled |
 | `TOGGLE` | Top bar | Toggle key mode enabled (MIDI) |
 | `RESAMPLE` | Bottom bar | RESAMPLE mode enabled (pitch+length change); Alt+R toggles |
+| `PB LOOP` | Bottom bar | Playback bar loop enabled |
+| `123456789` | Top bar | Active layer visibility numbers |
 | CWD path | Top bar | Current working directory |
 | `row, col` | Top bar | Cursor position |
 
