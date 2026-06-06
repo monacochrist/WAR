@@ -1727,14 +1727,24 @@ static inline void war_note_init(war_note_context* ctx_note,
 }
 
 static inline void war_note_render(VkCommandBuffer cmd,
-                                   war_note_context* ctx_note,
-                                   war_wayland_context* ctx_wayland,
-                                   float screen_w,
-                                   float screen_h) {
+                                    war_note_context* ctx_note,
+                                    war_wayland_context* ctx_wayland,
+                                    float screen_w,
+                                    float screen_h) {
     if (!ctx_note || !ctx_note->instance_count) return;
     memcpy(ctx_note->instance_mapped,
            ctx_note->instance,
            sizeof(war_new_vulkan_note_instance) * ctx_note->instance_count);
+    // hide notes on invisible layers (zero their size)
+    uint16_t _lv_mask = ctx_wayland->env->layer_visible;
+    if (_lv_mask != 0x1FF) {
+        war_new_vulkan_note_instance* _inst = ctx_note->instance_mapped;
+        for (uint32_t _i = 0; _i < ctx_note->instance_count; _i++) {
+            uint32_t _li = (_inst[_i].flags >> 4) & 0xF;
+            if (_li < 1 || _li > 9 || !(_lv_mask & (1 << (_li - 1))))
+                _inst[_i].size[0] = 0.0f;
+        }
+    }
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
     int32_t gutter_right =
         (int32_t)(ctx_wayland->gutter_cols * ctx_wayland->env->ctx_cursor->cell_width *
@@ -2358,6 +2368,42 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
         vkCmdDraw(cmd, 4, (uint32_t)n, 0, LABEL_OFFSET);
 #undef LABEL_OFFSET
+        // layer visibility label on top status bar
+        {
+            uint16_t _lv = ctx_wayland->env->layer_visible;
+            char _lvb[16];
+            int _lvn = 0;
+            for (int _lvi = 1; _lvi <= 9; _lvi++)
+                if (_lv & (1 << (_lvi - 1)))
+                    _lvb[_lvn++] = (char)('0' + _lvi);
+            _lvb[_lvn] = '\0';
+            if (_lvn > 0) {
+                float _lvr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
+#define LV_OFFSET 340
+                for (int _lvi2 = 0; _lvi2 < _lvn; _lvi2++) {
+                    unsigned char _lvc = (unsigned char)_lvb[_lvi2];
+                    war_vulkan_text_instance* _lti = &dst[LV_OFFSET + _lvi2];
+                    _lti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 2 + _lvi2);
+                    _lti->pos[1] = _lvr;
+                    _lti->pos[2] = 0;
+                    _lti->size[0] = 1.0f;
+                    _lti->size[1] = 1.0f;
+                    _lti->uv[0] = font->glyph_uv[_lvc][0];
+                    _lti->uv[1] = font->glyph_uv[_lvc][1];
+                    _lti->uv[2] = font->glyph_uv[_lvc][2];
+                    _lti->uv[3] = font->glyph_uv[_lvc][3];
+                    _lti->glyph_scale[0] = font->glyph_norm_width[_lvc];
+                    _lti->glyph_scale[1] = font->glyph_norm_height[_lvc];
+                    _lti->ascent = font->glyph_norm_ascent[_lvc];
+                    _lti->descent = font->glyph_norm_descent[_lvc];
+                    _lti->baseline = font->glyph_norm_baseline[_lvc];
+                    _lti->color[0] = 0.6f; _lti->color[1] = 0.8f; _lti->color[2] = 1.0f; _lti->color[3] = 1.0f;
+                    _lti->flags = 0;
+                }
+                vkCmdDraw(cmd, 4, (uint32_t)_lvn, 0, LV_OFFSET);
+#undef LV_OFFSET
+            }
+        }
         // gain label on top status bar
         {
             double _gr = ctx_wayland->env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
@@ -2502,7 +2548,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             for (int i = 0; i < loop_n; i++) {
                 unsigned char c = (unsigned char)loop_text[i];
                 war_vulkan_text_instance* ti = &dst[LOOP_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 1 + i);
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 12 + i);
                 ti->pos[1] = label_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f;
@@ -2530,7 +2576,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             for (int i = 0; i < an; i++) {
                 unsigned char c = (unsigned char)atext[i];
                 war_vulkan_text_instance* ti = &dst[ACROSS_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 1 + i);
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 17 + i);
                 ti->pos[1] = label_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f;
@@ -2558,7 +2604,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             for (int i = 0; i < tog_n; i++) {
                 unsigned char c = (unsigned char)tog_txt[i];
                 war_vulkan_text_instance* ti = &dst[TOG_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 8 + i);
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 20 + i);
                 ti->pos[1] = label_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f; ti->size[1] = 1.0f;
@@ -2583,7 +2629,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             for (int i = 0; i < cropn; i++) {
                 unsigned char c = (unsigned char)croptxt[i];
                 war_vulkan_text_instance* ti = &dst[CROP_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 1 + i);
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 31 + i);
                 ti->pos[1] = label_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f; ti->size[1] = 1.0f;

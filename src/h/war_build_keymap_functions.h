@@ -39,6 +39,15 @@ else if (strcmp(name, "war_layer_7") == 0) { return war_layer_7; }
 else if (strcmp(name, "war_layer_8") == 0) { return war_layer_8; }
 else if (strcmp(name, "war_layer_9") == 0) { return war_layer_9; }
 else if (strcmp(name, "war_layer_0") == 0) { return war_layer_0; }
+else if (strcmp(name, "war_toggle_layer_1") == 0) { return war_toggle_layer_1; }
+else if (strcmp(name, "war_toggle_layer_2") == 0) { return war_toggle_layer_2; }
+else if (strcmp(name, "war_toggle_layer_3") == 0) { return war_toggle_layer_3; }
+else if (strcmp(name, "war_toggle_layer_4") == 0) { return war_toggle_layer_4; }
+else if (strcmp(name, "war_toggle_layer_5") == 0) { return war_toggle_layer_5; }
+else if (strcmp(name, "war_toggle_layer_6") == 0) { return war_toggle_layer_6; }
+else if (strcmp(name, "war_toggle_layer_7") == 0) { return war_toggle_layer_7; }
+else if (strcmp(name, "war_toggle_layer_8") == 0) { return war_toggle_layer_8; }
+else if (strcmp(name, "war_toggle_layer_9") == 0) { return war_toggle_layer_9; }
 else if (strcmp(name, "war_octave_minus_1") == 0) { return war_octave_minus_1; }
 else if (strcmp(name, "war_octave_0") == 0) { return war_octave_0; }
 else if (strcmp(name, "war_octave_1") == 0) { return war_octave_1; }
@@ -51,6 +60,7 @@ else if (strcmp(name, "war_octave_7") == 0) { return war_octave_7; }
 else if (strcmp(name, "war_octave_8") == 0) { return war_octave_8; }
 else if (strcmp(name, "war_octave_9") == 0) { return war_octave_9; }
 else if (strcmp(name, "war_octave_10") == 0) { return war_octave_10; }
+else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_record_midi") == 0) { return war_record_midi; }
 else if (strcmp(name, "war_play_q") == 0) { return war_play_q; }
 else if (strcmp(name, "war_play_w") == 0) { return war_play_w; }

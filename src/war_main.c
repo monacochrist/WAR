@@ -354,6 +354,7 @@ static void war_export_wav(war_env* env, const char* filename) {
         if (pitch > 127) pitch = 127;
         uint32_t _nlayer = (env->ctx_note->instance[i].flags >> 4) & 0xF;
         if (_nlayer < 1 || _nlayer > 9) continue;
+        if (!(env->layer_visible & (1 << (_nlayer - 1)))) continue;
         uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (_nlayer - 1);
         if (!env->capture_slots[idx].samples || env->capture_slots[idx].count < 2) continue;
         float* _s = env->capture_slots[idx].samples;
@@ -2058,6 +2059,7 @@ int main(int argc, char** argv) {
     env->play_bar_last_us = 0;
     env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+    env->layer_visible = 0x1FF; // all 9 layers visible
     //-------------------------------------------------------------------------
     // FONT INIT (renders 'M' glyph, sets up Vulkan text pipeline)
     //-------------------------------------------------------------------------
@@ -2243,6 +2245,10 @@ int main(int argc, char** argv) {
                         env->preview_voice_active[v] = 0;
                         continue;
                     }
+                    if (!(env->layer_visible & (1 << (layer - 1)))) {
+                        env->preview_voice_active[v] = 0;
+                        continue;
+                    }
                     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                     war_capture_slot* slot = &env->capture_slots[idx];
                     if (!slot->samples || slot->count < 2) {
@@ -2300,6 +2306,10 @@ int main(int argc, char** argv) {
                         if (note > 127) note = 127;
                         uint32_t layer = env->play_bar_voice_layer[v];
                         if (layer < 1 || layer > 9) {
+                            env->play_bar_voice_active[v] = 0;
+                            continue;
+                        }
+                        if (!(env->layer_visible & (1 << (layer - 1)))) {
                             env->play_bar_voice_active[v] = 0;
                             continue;
                         }
@@ -2385,6 +2395,7 @@ int main(int argc, char** argv) {
                             if (_pp > 127) _pp = 127;
                             uint32_t _li = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
                             if (_li < 1 || _li > 9) _li = 1;
+                            if (!(env->layer_visible & (1 << (_li - 1)))) continue;
                             uint32_t _si = _pp * WAR_CAPTURE_SLOT_LAYERS + (_li - 1);
                             war_capture_slot* _sl = &env->capture_slots[_si];
                             if (_sl->samples && _sl->count > 0) {
@@ -2428,7 +2439,6 @@ int main(int argc, char** argv) {
                         env->play_bar_last_us = 0;
                         env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
                         env->ctx_line->instance[0].pos[0] = (float)ctx_wayland->gutter_cols;
-                        memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
                     }
                 }
             }
