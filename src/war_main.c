@@ -1077,6 +1077,11 @@ static void war_keyboard_key(void* data,
 
     // enter command mode on ':' (check raw sym before normalizer maps it to ';')
     if (raw_sym == XKB_KEY_Escape) {
+        if (env->atomics->capture) {
+            env->atomics->capture = 0;
+            cur->prefix = 0;
+            return;
+        }
         if (env->crop_active) {
             env->crop_active = 0;
             cur->prefix = 0;
