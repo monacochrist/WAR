@@ -2721,7 +2721,10 @@ struct war_env {
     uint8_t across_mode;
     uint8_t across_resample;
     uint8_t midi_toggle;
-    uint16_t layer_visible; // bit 0 = layer 1 visible, ..., bit 8 = layer 9 visible
+    uint16_t layer_visible;
+    uint8_t tap_tempo_active;
+    uint64_t tap_tempo_times[16];
+    uint32_t tap_tempo_count;
     uint8_t wave_view_active;
     uint32_t wave_view_pitch;
     uint32_t wave_view_layer;

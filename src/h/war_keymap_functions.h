@@ -1050,6 +1050,15 @@ static inline void war_midi_toggle(war_env* env) {
     call_king_terry("TOGGLE: %s", env->midi_toggle ? "ON" : "OFF");
 }
 
+static inline void war_tap_tempo(war_env* env) {
+    env->tap_tempo_active = !env->tap_tempo_active;
+    env->tap_tempo_count = 0;
+    memset(env->tap_tempo_times, 0, sizeof(env->tap_tempo_times));
+    if (env->tap_tempo_active)
+        snprintf(env->status_msg, sizeof(env->status_msg), "TAP TEMPO: Space to tap");
+    call_king_terry("TAP TEMPO: %s", env->tap_tempo_active ? "ON" : "OFF");
+}
+
 static inline void war_toggle_across(war_env* env) {
     env->across_mode = !env->across_mode;
     call_king_terry("ACROSS: %s", env->across_mode ? "ON" : "OFF");

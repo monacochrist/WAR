@@ -911,6 +911,10 @@ static void war_keyboard_key(void* data,
                 if (sscanf(env->cmd_buf + 4, " %lf", &val) == 1 && val > 0) {
                     env->atomics->bpm = (float)val;
                     snprintf(env->status_msg, sizeof(env->status_msg), "bpm = %.1f", val);
+                } else if (env->cmd_len == 4) {
+                    double _cur = env->atomics->bpm;
+                    if (_cur <= 0.0) _cur = 100.0;
+                    snprintf(env->status_msg, sizeof(env->status_msg), "bpm = %.1f", _cur);
                 } else
                     fprintf(stderr, "BPM: usage :bpm <value>\n");
             } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'r' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'd' && env->cmd_buf[4] == 'i' && env->cmd_buf[5] == 'u' && env->cmd_buf[6] == 's') {
@@ -1310,6 +1314,38 @@ static void war_keyboard_key(void* data,
                 return;
             }
         }
+    }
+    // tap tempo: space records a tap
+    if (env->tap_tempo_active && raw_sym == XKB_KEY_space) {
+        uint64_t _now = war_get_monotonic_time_us();
+        uint32_t _idx = env->tap_tempo_count % 16;
+        env->tap_tempo_times[_idx] = _now;
+        env->tap_tempo_count++;
+        uint32_t _n = env->tap_tempo_count;
+        if (_n >= 2) {
+            uint64_t _sum = 0;
+            int _count = 0;
+            uint32_t _start = _n > 4 ? (_n - 4) : 0;
+            for (uint32_t _t = _start; _t < _n - 1; _t++) {
+                _sum += env->tap_tempo_times[(_t + 1) % 16] - env->tap_tempo_times[_t % 16];
+                _count++;
+            }
+            if (_count > 0) {
+                double _avg_us = (double)_sum / (double)_count;
+                double _bpm = 60.0 * 1000000.0 / _avg_us;
+                if (_bpm > 20.0 && _bpm < 400.0) {
+                    env->atomics->bpm = (float)_bpm;
+                    int _disp = (int)(_bpm + 0.5);
+                    snprintf(env->status_msg, sizeof(env->status_msg), "TAP: %d BPM", _disp);
+                } else {
+                    snprintf(env->status_msg, sizeof(env->status_msg), "TAP: %.0f BPM (out of range)", _bpm);
+                }
+            }
+        } else {
+            snprintf(env->status_msg, sizeof(env->status_msg), "TAP: keep tapping...");
+        }
+        cur->prefix = 0;
+        return;
     }
     if (raw_sym == XKB_KEY_colon) {
         env->cmd_active = 1;

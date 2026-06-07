@@ -2701,6 +2701,32 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             vkCmdDraw(cmd, 4, (uint32_t)midi_n, 0, MIDI_OFFSET);
 #undef MIDI_OFFSET
         }
+        // tap tempo label on middle status bar
+        if (ctx_wayland->env->tap_tempo_active) {
+            const char* tap_txt = "TAP TEMPO";
+            int tap_n = 9;
+            float tap_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+#define TAP_OFFSET 315
+            for (int i = 0; i < tap_n; i++) {
+                unsigned char c = (unsigned char)tap_txt[i];
+                war_vulkan_text_instance* ti = &dst[TAP_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i;
+                ti->pos[1] = tap_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f; ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0]; ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2]; ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 0.3f; ti->color[1] = 1.0f; ti->color[2] = 1.0f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)tap_n, 0, TAP_OFFSET);
+#undef TAP_OFFSET
+        }
         // visual mode label
         if (ctx_wayland->env->ctx_cursor->visual_active) {
             const char* vis_text = "VISUAL";
@@ -2741,7 +2767,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                 unsigned char c = (unsigned char)sm[i];
                 if (c < 32 || c > 126) c = '?';
                 war_vulkan_text_instance* ti = &dst[SM_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i;
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(10 + i);
                 ti->pos[1] = sm_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f;

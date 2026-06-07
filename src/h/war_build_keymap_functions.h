@@ -107,6 +107,7 @@ else if (strcmp(name, "war_toggle_playbar_loop") == 0) { return war_toggle_playb
 else if (strcmp(name, "war_playbar_goto_start") == 0) { return war_playbar_goto_start; }
 else if (strcmp(name, "war_toggle_loop") == 0) { return war_toggle_loop; }
 else if (strcmp(name, "war_midi_toggle") == 0) { return war_midi_toggle; }
+else if (strcmp(name, "war_tap_tempo") == 0) { return war_tap_tempo; }
 else if (strcmp(name, "war_toggle_across") == 0) { return war_toggle_across; }
 else if (strcmp(name, "war_toggle_resample") == 0) { return war_toggle_resample; }
 else if (strcmp(name, "war_toggle_crop") == 0) { return war_toggle_crop; }
