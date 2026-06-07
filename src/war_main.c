@@ -488,6 +488,28 @@ static void war_save_project(war_env* env, const char* filename) {
             path, note_count, slot_count);
 }
 
+static void war_export_mp3(war_env* env, const char* filename) {
+    // write WAV to a temp file, then convert with ffmpeg
+    char wav_path[1080];
+    snprintf(wav_path, sizeof(wav_path), "/tmp/war_export_%u.wav", (unsigned)war_get_monotonic_time_us());
+    war_export_wav(env, wav_path);
+    // check if the WAV was written (war_export_wav sets status_msg on failure)
+    if (env->status_msg[0] == 'w' && strstr(env->status_msg, "FAILED")) return;
+    char cmd[2060];
+    snprintf(cmd, sizeof(cmd), "ffmpeg -y -i \"%s\" -codec:a libmp3lame -b:a 192k \"%s\" 2>/dev/null",
+             wav_path, filename);
+    int ret = system(cmd);
+    remove(wav_path);
+    if (ret == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "%s written (mp3)",
+                 strlen(filename) > 90 ? filename + strlen(filename) - 90 : filename);
+        fprintf(stderr, "MP3: wrote %s\n", filename);
+    } else {
+        snprintf(env->status_msg, sizeof(env->status_msg), "wmp3 FAILED: ffmpeg error (install ffmpeg)");
+        fprintf(stderr, "MP3: ffmpeg conversion failed for %s\n", filename);
+    }
+}
+
 static void war_load_project(war_env* env, const char* filename) {
     char path[1024];
     snprintf(path, sizeof(path), "%s", filename);
@@ -1070,6 +1092,12 @@ static void war_keyboard_key(void* data,
                     name = env->cmd_buf + 6;
                 if (!name || !name[0]) name = "output";
                 war_export_wav(env, name);
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'm' && env->cmd_buf[3] == 'p' && env->cmd_buf[4] == '3') {
+                const char* name = NULL;
+                if (env->cmd_len > 5 && env->cmd_buf[5] == ' ')
+                    name = env->cmd_buf + 6;
+                if (!name || !name[0]) name = "output.mp3";
+                war_export_mp3(env, name);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'j' && env->cmd_buf[4] == '7') {

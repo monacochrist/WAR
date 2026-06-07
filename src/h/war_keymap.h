@@ -562,7 +562,17 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    1,
                    (char*[]){"<S-q>", "Q"},
                    WAR_FUNCTION_ID_NONE,
-                   war_capture_audio,
+                    war_capture_audio,
+                    0);
+    // capture and advance (q during capture — saves and moves to next row)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"q"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_capture_advance,
                    0);
     // preview toggle (space / p / P)
     war_keymap_set(keymap,

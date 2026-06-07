@@ -1223,6 +1223,46 @@ static inline void war_capture_audio(war_env* env) {
     }
 }
 
+static inline void war_capture_advance(war_env* env) {
+    if (!env->atomics->capture) return;
+    if (!env->ctx_cursor || !env->ctx_cursor->instance_count) return;
+    uint32_t layer = env->ctx_cursor->layer;
+    if (layer < 1 || layer > 9) return;
+    uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (note > 127) note = 127;
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    if (env->capture_accumulator_count > 0) {
+        free(env->capture_slots[idx].samples);
+        env->capture_slots[idx].samples = env->capture_accumulator;
+        env->capture_slots[idx].count = env->capture_accumulator_count;
+        env->capture_slots[idx].capacity = env->capture_accumulator_capacity;
+        env->capture_accumulator = NULL;
+        env->capture_accumulator_count = 0;
+        env->capture_accumulator_capacity = 0;
+        if (env->across_mode)
+            _war_across_pitch_shift(env, note, layer, env->across_radius);
+    }
+    // move cursor down 1 row
+    float new_row = env->ctx_cursor->instance[0].pos[1] + 1.0f;
+    if (new_row > 127.0f + env->ctx_wayland->gutter_rows)
+        new_row = 127.0f + env->ctx_wayland->gutter_rows;
+    env->ctx_cursor->instance[0].pos[1] = new_row;
+    // clear the destination slot and reset accumulator
+    note = (uint32_t)(new_row - (double)env->ctx_wayland->gutter_rows);
+    if (note > 127) note = 127;
+    idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    free(env->capture_slots[idx].samples);
+    env->capture_slots[idx].samples = NULL;
+    env->capture_slots[idx].count = 0;
+    env->capture_slots[idx].capacity = 0;
+    free(env->capture_accumulator);
+    env->capture_accumulator = NULL;
+    env->capture_accumulator_count = 0;
+    env->capture_accumulator_capacity = 0;
+    env->pc_loopback->i_from_a = env->pc_loopback->i_to_wr;
+    call_king_terry("CAPTURE: advanced to note=%u", note);
+}
+
 static inline void war_preview_toggle(war_env* env) {
     uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
     if (note > 127) note = 127;
