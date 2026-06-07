@@ -365,6 +365,7 @@ typedef struct war_capture_slot {
     uint64_t capacity;
     float gain; // 0-200 scale (100 = 1.0x multiplier)
     int pan;    // -100 to +100 (0 = center)
+    int eq;     // 0-200 scale (100 = flat, 0 = full low-pass, 200 = full high-pass)
 } war_capture_slot;
 
 typedef struct war_glyph_info {
@@ -2710,11 +2711,13 @@ struct war_env {
     uint32_t play_bar_voice_layer[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_pos[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
+    float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][2];
     uint8_t preview_voice_active[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_note[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_pos[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_limit[WAR_PREVIEW_VOICES];
+    float preview_voice_filter_lp[WAR_PREVIEW_VOICES][2];
     // recording state
     uint8_t recording_active;
     uint8_t loop_mode;

@@ -460,6 +460,8 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_layer[voice] = layer;
             env->preview_voice_read_pos[voice] = 0;
             env->preview_voice_read_limit[voice] = 0;
+            env->preview_voice_filter_lp[voice][0] = 0.0f;
+            env->preview_voice_filter_lp[voice][1] = 0.0f;
             env->preview_voice_active[voice] = 1;
             if (env->recording_active) _war_record_place_note(env, note, (int)voice);
             return (int)voice;
@@ -476,6 +478,8 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_layer[voice] = layer;
             env->preview_voice_read_pos[voice] = 0;
             env->preview_voice_read_limit[voice] = 0;
+            env->preview_voice_filter_lp[voice][0] = 0.0f;
+            env->preview_voice_filter_lp[voice][1] = 0.0f;
             env->preview_voice_active[voice] = 1;
             if (env->recording_active) _war_record_place_note(env, note, (int)voice);
             return (int)voice;
@@ -955,6 +959,8 @@ static inline void war_toggle_playback(war_env* env) {
                                 env->play_bar_voice_layer[_v] = _li;
                                 env->play_bar_voice_read_pos[_v] = _offset;
                                 env->play_bar_voice_read_limit[_v] = _limit;
+                                env->play_bar_voice_filter_lp[_v][0] = 0.0f;
+                                env->play_bar_voice_filter_lp[_v][1] = 0.0f;
                                 env->play_bar_voice_active[_v] = 1;
                                 break;
                             }
@@ -1010,6 +1016,8 @@ static inline void war_playbar_goto_cursor(war_env* env) {
                                 env->play_bar_voice_layer[_v2] = _li2;
                                 env->play_bar_voice_read_pos[_v2] = _off2;
                                 env->play_bar_voice_read_limit[_v2] = _lim2;
+                                env->play_bar_voice_filter_lp[_v2][0] = 0.0f;
+                                env->play_bar_voice_filter_lp[_v2][1] = 0.0f;
                                 env->play_bar_voice_active[_v2] = 1;
                                 break;
                             }

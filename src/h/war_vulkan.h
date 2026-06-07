@@ -2482,6 +2482,44 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef PAN_OFFSET
             }
         }
+        // eq label on bottom status bar
+        {
+            double _er2 = ctx_wayland->env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+            uint32_t _ep2 = _er2 > 0 ? (uint32_t)(_er2 + 0.5) : 0;
+            if (_ep2 > 127) _ep2 = 127;
+            uint32_t _el2 = ctx_wayland->env->ctx_cursor->layer;
+            if (_el2 < 1 || _el2 > 9) _el2 = 1;
+            uint32_t _ei2 = _ep2 * WAR_CAPTURE_SLOT_LAYERS + (_el2 - 1);
+            war_capture_slot* _es2 = &ctx_wayland->env->capture_slots[_ei2];
+            char _et2[16];
+            int _en2 = snprintf(_et2, sizeof(_et2), "E%d", _es2->eq);
+            if (_en2 > 0) {
+                float _erow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+#define EQ_OFFSET 287
+                for (int _ei3 = 0; _ei3 < _en2; _ei3++) {
+                    unsigned char _ec2 = (unsigned char)_et2[_ei3];
+                    war_vulkan_text_instance* _ti2 = &dst[EQ_OFFSET + _ei3];
+                    _ti2->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 12 + _ei3);
+                    _ti2->pos[1] = _erow2;
+                    _ti2->pos[2] = 0;
+                    _ti2->size[0] = 1.0f;
+                    _ti2->size[1] = 1.0f;
+                    _ti2->uv[0] = font->glyph_uv[_ec2][0];
+                    _ti2->uv[1] = font->glyph_uv[_ec2][1];
+                    _ti2->uv[2] = font->glyph_uv[_ec2][2];
+                    _ti2->uv[3] = font->glyph_uv[_ec2][3];
+                    _ti2->glyph_scale[0] = font->glyph_norm_width[_ec2];
+                    _ti2->glyph_scale[1] = font->glyph_norm_height[_ec2];
+                    _ti2->ascent = font->glyph_norm_ascent[_ec2];
+                    _ti2->descent = font->glyph_norm_descent[_ec2];
+                    _ti2->baseline = font->glyph_norm_baseline[_ec2];
+                    _ti2->color[0] = 1.0f; _ti2->color[1] = 0.6f; _ti2->color[2] = 0.8f; _ti2->color[3] = 1.0f;
+                    _ti2->flags = 0;
+                }
+                vkCmdDraw(cmd, 4, (uint32_t)_en2, 0, EQ_OFFSET);
+#undef EQ_OFFSET
+            }
+        }
         // playbar loop label on bottom status bar
         if (ctx_wayland->env->play_bar_loop) {
             const char* _plt = "PB LOOP";

@@ -976,6 +976,7 @@ static void war_keyboard_key(void* data,
                             env->capture_slots[_dst_idx].capacity = _cnt;
                             env->capture_slots[_dst_idx].gain = env->capture_slots[_src_idx].gain;
                             env->capture_slots[_dst_idx].pan = env->capture_slots[_src_idx].pan;
+                            env->capture_slots[_dst_idx].eq = env->capture_slots[_src_idx].eq;
                             snprintf(env->status_msg, sizeof(env->status_msg), "cp: pitch %u layer %d -> %d", _pitch, _cur_layer, _to_layer);
                             fprintf(stderr, "CP: copied pitch=%u from layer %d to layer %d\n", _pitch, _cur_layer, _to_layer);
                         }
@@ -1054,6 +1055,20 @@ static void war_keyboard_key(void* data,
                     snprintf(env->status_msg, sizeof(env->status_msg), "P%d", _pv);
                 } else {
                     fprintf(stderr, "PAN: usage :pan <-100..100>\n");
+                }
+             } else if (env->cmd_len >= 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'e' && env->cmd_buf[2] == 'q') {
+                int _ev = 100;
+                if (sscanf(env->cmd_buf + 3, " %d", &_ev) == 1 && _ev >= 0 && _ev <= 200) {
+                    double _er = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    uint32_t _ep = _er > 0 ? (uint32_t)(_er + 0.5) : 0;
+                    if (_ep > 127) _ep = 127;
+                    uint32_t _el = cur->layer;
+                    if (_el < 1 || _el > 9) _el = 1;
+                    uint32_t _ei = _ep * WAR_CAPTURE_SLOT_LAYERS + (_el - 1);
+                    env->capture_slots[_ei].eq = _ev;
+                    snprintf(env->status_msg, sizeof(env->status_msg), "E%d", _ev);
+                } else {
+                    fprintf(stderr, "EQ: usage :eq <0-200>\n");
                 }
              } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v' && env->cmd_buf[3] == 'd') {
                 int n = 0;
@@ -1285,33 +1300,50 @@ static void war_keyboard_key(void* data,
         uint32_t _gi = _gp * WAR_CAPTURE_SLOT_LAYERS + (_gl - 1);
         war_capture_slot* _gs = &env->capture_slots[_gi];
         if (_gs->samples && _gs->count > 0) {
-            if (raw_sym == XKB_KEY_Up && (mod & MOD_CTRL)) {
+            if (raw_sym == XKB_KEY_Up && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
                 _gs->gain += 10.0f;
                 if (_gs->gain > 200.0f) _gs->gain = 200.0f;
                 snprintf(env->status_msg, sizeof(env->status_msg), "G%.0f", _gs->gain);
                 cur->prefix = 0;
                 return;
             }
-            if (raw_sym == XKB_KEY_Down && (mod & MOD_CTRL)) {
+            if (raw_sym == XKB_KEY_Down && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
                 _gs->gain -= 10.0f;
                 if (_gs->gain < 0.0f) _gs->gain = 0.0f;
                 snprintf(env->status_msg, sizeof(env->status_msg), "G%.0f", _gs->gain);
                 cur->prefix = 0;
                 return;
             }
-            if (raw_sym == XKB_KEY_Left && (mod & MOD_CTRL)) {
+            if (raw_sym == XKB_KEY_Left && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
                 _gs->pan -= 5;
                 if (_gs->pan < -100) _gs->pan = -100;
                 snprintf(env->status_msg, sizeof(env->status_msg), "P%d", _gs->pan);
                 cur->prefix = 0;
                 return;
             }
-            if (raw_sym == XKB_KEY_Right && (mod & MOD_CTRL)) {
+            if (raw_sym == XKB_KEY_Right && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
                 _gs->pan += 5;
                 if (_gs->pan > 100) _gs->pan = 100;
                 snprintf(env->status_msg, sizeof(env->status_msg), "P%d", _gs->pan);
                 cur->prefix = 0;
                 return;
+            }
+            // eq adjust: ctrl+shift+up / ctrl+shift+down
+            if ((mod & (MOD_CTRL | MOD_SHIFT)) == (MOD_CTRL | MOD_SHIFT)) {
+                if (raw_sym == XKB_KEY_Up) {
+                    _gs->eq += 10;
+                    if (_gs->eq > 200) _gs->eq = 200;
+                    snprintf(env->status_msg, sizeof(env->status_msg), "E%d", _gs->eq);
+                    cur->prefix = 0;
+                    return;
+                }
+                if (raw_sym == XKB_KEY_Down) {
+                    _gs->eq -= 10;
+                    if (_gs->eq < 0) _gs->eq = 0;
+                    snprintf(env->status_msg, sizeof(env->status_msg), "E%d", _gs->eq);
+                    cur->prefix = 0;
+                    return;
+                }
             }
         }
     }
@@ -2057,8 +2089,10 @@ int main(int argc, char** argv) {
 
     // init capture slots and accumulator
     memset(env->capture_slots, 0, sizeof(env->capture_slots));
-    for (int _gi = 0; _gi < 128 * WAR_CAPTURE_SLOT_LAYERS; _gi++)
+    for (int _gi = 0; _gi < 128 * WAR_CAPTURE_SLOT_LAYERS; _gi++) {
         env->capture_slots[_gi].gain = 100.0f;
+        env->capture_slots[_gi].eq = 100;
+    }
     env->capture_accumulator = NULL;
     env->capture_accumulator_count = 0;
     env->capture_accumulator_capacity = 0;
@@ -2203,6 +2237,7 @@ int main(int argc, char** argv) {
                     // gain/pan repeat: ctrl+arrows handled inline
                     if (ctx_wayland->repeat_mod & MOD_CTRL) {
                         uint32_t _rsym = ctx_wayland->repeat_sym;
+                        uint32_t _rmod = ctx_wayland->repeat_mod;
                         war_cursor_context* _rcur = env->ctx_cursor;
                         if ((_rsym == XKB_KEY_Up || _rsym == XKB_KEY_Down ||
                              _rsym == XKB_KEY_Left || _rsym == XKB_KEY_Right) &&
@@ -2216,18 +2251,23 @@ int main(int argc, char** argv) {
                             uint32_t _rgi = _rgp * WAR_CAPTURE_SLOT_LAYERS + (_rgl - 1);
                             war_capture_slot* _rgs = &env->capture_slots[_rgi];
                             if (_rgs->samples && _rgs->count > 0) {
-                                if (_rsym == XKB_KEY_Up) {
+                                if (_rsym == XKB_KEY_Up && !(_rmod & MOD_SHIFT)) {
                                     _rgs->gain += 10.0f;
                                     if (_rgs->gain > 200.0f) _rgs->gain = 200.0f;
-                                } else if (_rsym == XKB_KEY_Down) {
+                                } else if (_rsym == XKB_KEY_Down && !(_rmod & MOD_SHIFT)) {
                                     _rgs->gain -= 10.0f;
                                     if (_rgs->gain < 0.0f) _rgs->gain = 0.0f;
-                                } else if (_rsym == XKB_KEY_Left) {
+                                } else if (_rsym == XKB_KEY_Left && !(_rmod & MOD_SHIFT)) {
                                     _rgs->pan -= 5;
                                     if (_rgs->pan < -100) _rgs->pan = -100;
-                                } else if (_rsym == XKB_KEY_Right) {
+                                } else if (_rsym == XKB_KEY_Right && !(_rmod & MOD_SHIFT)) {
                                     _rgs->pan += 5;
                                     if (_rgs->pan > 100) _rgs->pan = 100;
+                                }
+                                // eq: ctrl+shift+up / ctrl+shift+down
+                                if ((_rmod & (MOD_CTRL | MOD_SHIFT)) == (MOD_CTRL | MOD_SHIFT)) {
+                                    if (_rsym == XKB_KEY_Up) { _rgs->eq += 10; if (_rgs->eq > 200) _rgs->eq = 200; }
+                                    if (_rsym == XKB_KEY_Down) { _rgs->eq -= 10; if (_rgs->eq < 0) _rgs->eq = 0; }
                                 }
                             }
                             continue;
@@ -2355,10 +2395,32 @@ int main(int argc, char** argv) {
                     float _pl = sinf((1.0f - _pp) * (float)(M_PI / 2.0));
                     float _pr = sinf(_pp * (float)(M_PI / 2.0));
                     for (uint64_t f = 0; f < batch; f += 2) {
-                        float _a = _gm;
-                        if (read_pos + f < 64) _a *= (float)(read_pos + f + 1) / 64.0f;
-                        mix[f]   += slot->samples[read_pos + f]   * _a * _pl;
-                        mix[f+1] += slot->samples[read_pos + f+1] * _a * _pr;
+                        float _raw_l = slot->samples[read_pos + f];
+                        float _raw_r = slot->samples[read_pos + f + 1];
+                        // one-pole filter (~800Hz cutoff)
+                        float _a_lp = 0.1f;
+                        float _lp0 = env->preview_voice_filter_lp[v][0] + _a_lp * (_raw_l - env->preview_voice_filter_lp[v][0]);
+                        float _lp1 = env->preview_voice_filter_lp[v][1] + _a_lp * (_raw_r - env->preview_voice_filter_lp[v][1]);
+                        env->preview_voice_filter_lp[v][0] = _lp0;
+                        env->preview_voice_filter_lp[v][1] = _lp1;
+                        float _hp0 = _raw_l - _lp0;
+                        float _hp1 = _raw_r - _lp1;
+                        // eq blend: 0=LP, 100=flat, 200=HP
+                        float _mix_l, _mix_r;
+                        if (slot->eq <= 100) {
+                            float _t = (float)slot->eq / 100.0f; // 0..1
+                            _mix_l = _lp0 + _t * (_raw_l - _lp0);
+                            _mix_r = _lp1 + _t * (_raw_r - _lp1);
+                        } else {
+                            float _t = (float)(slot->eq - 100) / 100.0f; // 0..1
+                            _mix_l = _raw_l + _t * (_hp0 - _raw_l);
+                            _mix_r = _raw_r + _t * (_hp1 - _raw_r);
+                        }
+                        // gain, pan, fade
+                        float _a_g = _gm;
+                        if (read_pos + f < 64) _a_g *= (float)(read_pos + f + 1) / 64.0f;
+                        mix[f]   += _mix_l * _a_g * _pl;
+                        mix[f+1] += _mix_r * _a_g * _pr;
                     }
                     any_active = 1;
                 }
@@ -2406,8 +2468,29 @@ int main(int argc, char** argv) {
                         float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
                         float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
                         for (uint64_t f = 0; f < batch; f += 2) {
-                            mix[f]   += slot->samples[read_pos + f]   * _gm * _pl2;
-                            mix[f+1] += slot->samples[read_pos + f+1] * _gm * _pr2;
+                            float _raw_l = slot->samples[read_pos + f];
+                            float _raw_r = slot->samples[read_pos + f + 1];
+                            // one-pole filter (~800Hz cutoff)
+                            float _a_lp = 0.1f;
+                            float _lp0 = env->play_bar_voice_filter_lp[v][0] + _a_lp * (_raw_l - env->play_bar_voice_filter_lp[v][0]);
+                            float _lp1 = env->play_bar_voice_filter_lp[v][1] + _a_lp * (_raw_r - env->play_bar_voice_filter_lp[v][1]);
+                            env->play_bar_voice_filter_lp[v][0] = _lp0;
+                            env->play_bar_voice_filter_lp[v][1] = _lp1;
+                            float _hp0 = _raw_l - _lp0;
+                            float _hp1 = _raw_r - _lp1;
+                            // eq blend: 0=LP, 100=flat, 200=HP
+                            float _mix_l, _mix_r;
+                            if (slot->eq <= 100) {
+                                float _t = (float)slot->eq / 100.0f;
+                                _mix_l = _lp0 + _t * (_raw_l - _lp0);
+                                _mix_r = _lp1 + _t * (_raw_r - _lp1);
+                            } else {
+                                float _t = (float)(slot->eq - 100) / 100.0f;
+                                _mix_l = _raw_l + _t * (_hp0 - _raw_l);
+                                _mix_r = _raw_r + _t * (_hp1 - _raw_r);
+                            }
+                            mix[f]   += _mix_l * _gm * _pl2;
+                            mix[f+1] += _mix_r * _gm * _pr2;
                         }
                         any_active = 1;
                     }
@@ -2483,6 +2566,8 @@ int main(int argc, char** argv) {
                                         env->play_bar_voice_layer[_v] = _li;
                                         env->play_bar_voice_read_pos[_v] = _off2;
                                         env->play_bar_voice_read_limit[_v] = _lim2;
+                                        env->play_bar_voice_filter_lp[_v][0] = 0.0f;
+                                        env->play_bar_voice_filter_lp[_v][1] = 0.0f;
                                         env->play_bar_voice_active[_v] = 1;
                                         break;
                                     }
