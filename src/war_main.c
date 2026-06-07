@@ -1494,7 +1494,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-capture",
-                              "node.latency", "64/48000",
+                              "node.latency", "128/48000",
                               NULL);
         env->ctx_pw->capture_stream = pw_stream_new(core, "war-capture", props);
         struct spa_audio_info_raw capture_info = {
@@ -1527,7 +1527,7 @@ void* war_pipewire(void* args) {
     {
         struct pw_properties* props =
             pw_properties_new("media.name", "war-play",
-                              "node.latency", "64/48000",
+                              "node.latency", "128/48000",
                               NULL);
         env->ctx_pw->play_stream = pw_stream_new(core, "war-play", props);
         // format: F32, 48000, stereo
@@ -1563,7 +1563,7 @@ void* war_pipewire(void* args) {
                               "true",
                               "media.name",
                               "war-loopback",
-                              "node.latency", "64/48000",
+                              "node.latency", "128/48000",
                               NULL);
         env->ctx_pw->loopback_capture_stream =
             pw_stream_new(core, "war-loopback", props);
@@ -2191,6 +2191,8 @@ int main(int argc, char** argv) {
         {
             uint64_t _ax;
             read(ctx_wayland->audio_timer_fd, &_ax, sizeof(_ax));
+            // save expiration count for playbar advancement below
+            ctx_wayland->audio_timer_exp = _ax;
         }
         // drain loopback (system audio) ring buffer into accumulator
         if (env->atomics->capture) {

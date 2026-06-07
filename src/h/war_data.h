@@ -2806,6 +2806,7 @@ typedef struct war_wayland_context {
     struct timespec repeat_time;
     int repeat_timer_fd;
     int audio_timer_fd;
+    uint64_t audio_timer_exp;
     // keymap FSM state for multi-key sequences (e.g. gg)
     uint64_t keymap_state;
     uint32_t keymap_state_time;

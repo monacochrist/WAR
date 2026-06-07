@@ -1550,9 +1550,16 @@ static inline void war_delete_note_under_cursor(war_env* env) {
             if (cx0 < nx1 && cx1 > nx0 && cy0 < ny1 && cy1 > ny0) {
                 uint32_t _dl2 = (note->instance[i].flags >> 4) & 0xF;
                 if (_dl2 >= 1 && _dl2 <= 9 && !(env->layer_visible & (1 << (_dl2 - 1)))) continue;
-                if (best == UINT32_MAX || note->instance[i].tick > best_tick) {
+                if (best == UINT32_MAX) {
                     best = i;
                     best_tick = note->instance[i].tick;
+                } else {
+                    uint32_t _prev_l = (note->instance[best].flags >> 4) & 0xF;
+                    // prefer higher layer (topmost first), then higher tick (most recent)
+                    if (_dl2 > _prev_l || (_dl2 == _prev_l && note->instance[i].tick > best_tick)) {
+                        best = i;
+                        best_tick = note->instance[i].tick;
+                    }
                 }
             }
         }
