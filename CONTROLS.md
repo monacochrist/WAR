@@ -53,6 +53,8 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `<C-Down>` | Decrease gain for capture slot under cursor (-10) |
 | `<C-Left>` | Pan left for capture slot under cursor (-5) |
 | `<C-Right>` | Pan right for capture slot under cursor (+5) |
+| `<C-S-Up>` | Increase EQ cutoff toward low-pass |
+| `<C-S-Down>` | Decrease EQ cutoff toward high-pass |
 | `p` | Paste yanked notes at cursor position |
 
 ## ROLL Mode — Viewport
@@ -75,6 +77,7 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | Key | Action |
 |-----|--------|
 | `Q` / `<S-q>` | Toggle capture — starts/stops recording audio to the current note/layer |
+| `q` | During capture: save current segment, advance cursor to next row, continue capturing |
 | `Space` | Preview the captured audio at cursor position |
 | `i` | Toggle ACROSS mode (pitch-shifts capture within radius) |
 | `<A-r>` | Toggle RESAMPLE mode (ON: resample changes pitch+length, OFF: pitch shift preserves duration) |
@@ -86,6 +89,7 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 |-----|--------|
 | `<S-Space>` | Toggle playback bar (play/stop) |
 | `<S-l>` | Toggle playback bar loop (restart after last note) |
+| `<S-b>` | Toggle tap tempo mode — tap Space to set BPM |
 | `<S-d>` | Reset playback bar to beginning |
 | `<A-a>` | Move playback bar to cursor position |
 
@@ -170,7 +174,7 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 
 | Key | Action |
 |-----|--------|
-| `a` | Toggle recording (place notes from key presses) |
+| `a` | Toggle recording (places notes from key presses; starts playback bar) |
 | `l` | Toggle loop mode (held notes repeat) |
 | `g` | Toggle toggle mode (press once to start, again to stop) |
 | `<S-d>` | Reset playback bar to beginning |
@@ -193,10 +197,12 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `:w <name>` | Save project file |
 | `:load <name>` | Load project file |
 | `:wwav <name>` | Export WAV audio |
-| `:bpm <value>` | Set BPM |
+| `:wmp3 <name>` | Export MP3 audio (requires ffmpeg) |
+| `:bpm <value>` | Set BPM; type `:bpm` with no arg to view current BPM |
 | `:loop <quarter_notes> <repeats>` | Loop notes (copy section length × repeats) |
 | `:cd <path>` | Change directory |
 | `:radius <n>` | Set ACROSS pitch-shift radius (notes above/below) |
+| `:eq <0-200>` | Set EQ filter (0=LP, 100=flat, 200=HP) |
 | `:winst <name>` | Save instrument file for current cursor layer |
 | `:loadinst <name>` | Load instrument file into current layer at cursor |
 | `:mv <layer>` | Move capture slot at cursor row/layer to another layer |
@@ -213,7 +219,6 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `:gain <0-200>` | Set gain for capture slot under cursor (100 = 1.0x) |
 | `:pan <-100..100>` | Set pan for capture slot under cursor (0 = center) |
 | `:cp <layer>` | Copy capture slot at cursor pitch/layer to another layer |
-| `:winst <name>` | Save instrument file for current cursor layer |
 | `:q` | Quit the application |
 
 Press `Esc` to exit command mode.
@@ -226,10 +231,12 @@ Press `Esc` to exit command mode.
 |-------|----------|---------|
 | `G<value>` | Bottom bar | Gain for capture slot under cursor |
 | `P<value>` | Bottom bar | Pan for capture slot under cursor |
+| `E<value>` | Bottom bar | EQ filter value for capture slot under cursor |
 | `CROP` | Top bar | Crop mode active |
 | `CAPTURE` | Middle bar | Audio capture in progress |
 | `MIDI` | Middle bar | MIDI mode active |
 | `VISUAL` | Middle bar | Visual mode active |
+| `TAP TEMPO` | Middle bar | Tap tempo mode (Shift+B) — Space to tap |
 | `LOOP` | Top bar | Loop mode enabled (MIDI) |
 | `ACROSS` | Top bar | ACROSS pitch-shift enabled |
 | `TOGGLE` | Top bar | Toggle key mode enabled (MIDI) |
