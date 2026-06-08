@@ -61,6 +61,7 @@
 #include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <xkbcommon/xkbcommon.h>
 
 //---------------------------------------------------------------------------
@@ -1158,13 +1159,81 @@ static void war_keyboard_key(void* data,
         if (raw_sym == XKB_KEY_BackSpace) {
             if (env->cmd_len > 1) env->cmd_len--;
             env->cmd_buf[env->cmd_len] = '\0';
+            env->cmd_tab_count = 0; // reset tab completion
             cur->prefix = 0;
+            return;
+        }
+        // tab completion for filename arguments
+        if (raw_sym == XKB_KEY_Tab || raw_sym == XKB_KEY_Up || raw_sym == XKB_KEY_Down) {
+            cur->prefix = 0;
+            // find the start of the filename argument (after the command and space)
+            const char* _cmd = env->cmd_buf;
+            int _c_len = (int)env->cmd_len;
+            // find position after the first space (which separates command from name)
+            int _name_start = -1;
+            for (int _ci = 0; _ci < _c_len; _ci++) {
+                if (_cmd[_ci] == ' ' && _ci + 1 < _c_len) {
+                    _name_start = _ci + 1;
+                    break;
+                }
+            }
+            if (_name_start < 0) { return; } // no name part yet
+            const char* _prefix = _cmd + _name_start;
+            // on Tab: scan directory for matches
+            if (raw_sym == XKB_KEY_Tab) {
+                // if user typed a new prefix (different from stored), reset matches
+                if (env->cmd_tab_count == 0 || strcmp(env->cmd_tab_prefix, _prefix) != 0) {
+                    strncpy(env->cmd_tab_prefix, _prefix, sizeof(env->cmd_tab_prefix) - 1);
+                    env->cmd_tab_prefix[sizeof(env->cmd_tab_prefix) - 1] = '\0';
+                    env->cmd_tab_count = 0;
+                    // scan current directory
+                    DIR* _dir = opendir(".");
+                    if (_dir) {
+                        struct dirent* _entry;
+                        size_t _plen = strlen(_prefix);
+                        while ((_entry = readdir(_dir)) != NULL && env->cmd_tab_count < 64) {
+                            if (_entry->d_name[0] == '.') continue; // skip hidden
+                            if (_plen == 0 || strncmp(_entry->d_name, _prefix, _plen) == 0) {
+                                strncpy(env->cmd_tab_matches[env->cmd_tab_count], _entry->d_name, 127);
+                                env->cmd_tab_matches[env->cmd_tab_count][127] = '\0';
+                                env->cmd_tab_count++;
+                            }
+                        }
+                        closedir(_dir);
+                    }
+                    env->cmd_tab_index = -1; // reset to before first
+                }
+                // cycle to next match
+                if (env->cmd_tab_count > 0) {
+                    env->cmd_tab_index = (env->cmd_tab_index + 1) % env->cmd_tab_count;
+                    const char* _match = env->cmd_tab_matches[env->cmd_tab_index];
+                    // replace the name part with the match
+                    int _new_len = _name_start + (int)strlen(_match);
+                    if (_new_len < 256) {
+                    memcpy(env->cmd_buf + _name_start, _match, strlen(_match) + 1);
+                    env->cmd_len = (uint32_t)_new_len;
+                }
+                } else {
+                    // no matches
+                }
+            } else if (env->cmd_tab_count > 0) {
+                // Up/Down: navigate through matches
+                int _step = (raw_sym == XKB_KEY_Up) ? -1 : 1;
+                env->cmd_tab_index = (env->cmd_tab_index + _step + env->cmd_tab_count) % env->cmd_tab_count;
+                const char* _match = env->cmd_tab_matches[env->cmd_tab_index];
+                int _new_len = _name_start + (int)strlen(_match);
+                if (_new_len < 256) {
+                    memcpy(env->cmd_buf + _name_start, _match, strlen(_match) + 1);
+                    env->cmd_len = (uint32_t)_new_len;
+                }
+            }
             return;
         }
         // printable ASCII via utf8 from raw sym
         char utf8[8] = {0};
         int n = xkb_keysym_to_utf8(raw_sym, utf8, sizeof(utf8));
         if (n > 1 && utf8[0] >= 32 && utf8[0] <= 126) {
+            env->cmd_tab_count = 0; // reset tab completion
             if (env->cmd_len < 255) {
                 env->cmd_buf[env->cmd_len++] = utf8[0];
                 env->cmd_buf[env->cmd_len] = '\0';

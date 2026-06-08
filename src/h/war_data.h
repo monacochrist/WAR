@@ -2747,6 +2747,11 @@ struct war_env {
     uint8_t cmd_active;
     char cmd_buf[256];
     uint32_t cmd_len;
+    // tab completion
+    char cmd_tab_matches[64][128];
+    int cmd_tab_count;
+    int cmd_tab_index;
+    char cmd_tab_prefix[128];
     // status message (displayed on middle status bar until next command)
     char status_msg[128];
     // freetype
