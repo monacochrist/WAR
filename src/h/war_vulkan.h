@@ -2379,7 +2379,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             _lvb[_lvn] = '\0';
             if (_lvn > 0) {
                 float _lvr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
-#define LV_OFFSET 340
+#define LV_OFFSET 410
                 for (int _lvi2 = 0; _lvi2 < _lvn; _lvi2++) {
                     unsigned char _lvc = (unsigned char)_lvb[_lvi2];
                     war_vulkan_text_instance* _lti = &dst[LV_OFFSET + _lvi2];
@@ -2495,7 +2495,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             int _en2 = snprintf(_et2, sizeof(_et2), "E%d", _es2->eq);
             if (_en2 > 0) {
                 float _erow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define EQ_OFFSET 287
+#define EQ_OFFSET 295
                 for (int _ei3 = 0; _ei3 < _en2; _ei3++) {
                     unsigned char _ec2 = (unsigned char)_et2[_ei3];
                     war_vulkan_text_instance* _ti2 = &dst[EQ_OFFSET + _ei3];
@@ -2520,41 +2520,12 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef EQ_OFFSET
             }
         }
-        // playbar loop label on bottom status bar
-        if (ctx_wayland->env->play_bar_loop) {
-            const char* _plt = "PB LOOP";
-            int _pln = 7;
-            float _plr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define PBLOOP_OFFSET 290
-            for (int _pli = 0; _pli < _pln; _pli++) {
-                unsigned char _pc = (unsigned char)_plt[_pli];
-                war_vulkan_text_instance* _ti = &dst[PBLOOP_OFFSET + _pli];
-                _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 12 + _pli);
-                _ti->pos[1] = _plr;
-                _ti->pos[2] = 0;
-                _ti->size[0] = 1.0f;
-                _ti->size[1] = 1.0f;
-                _ti->uv[0] = font->glyph_uv[_pc][0];
-                _ti->uv[1] = font->glyph_uv[_pc][1];
-                _ti->uv[2] = font->glyph_uv[_pc][2];
-                _ti->uv[3] = font->glyph_uv[_pc][3];
-                _ti->glyph_scale[0] = font->glyph_norm_width[_pc];
-                _ti->glyph_scale[1] = font->glyph_norm_height[_pc];
-                _ti->ascent = font->glyph_norm_ascent[_pc];
-                _ti->descent = font->glyph_norm_descent[_pc];
-                _ti->baseline = font->glyph_norm_baseline[_pc];
-                _ti->color[0] = 0.2f; _ti->color[1] = 1.0f; _ti->color[2] = 0.2f; _ti->color[3] = 1.0f;
-                _ti->flags = 0;
-            }
-            vkCmdDraw(cmd, 4, (uint32_t)_pln, 0, PBLOOP_OFFSET);
-#undef PBLOOP_OFFSET
-        }
         // resample label on bottom status bar
         if (!ctx_wayland->env->across_resample) {
             const char* _rst = "RESAMPLE";
             int _rsn = 8;
             float _rsr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define RSMP_OFFSET 295
+#define RSMP_OFFSET 390
             for (int _rsi = 0; _rsi < _rsn; _rsi++) {
                 unsigned char _rsc = (unsigned char)_rst[_rsi];
                 war_vulkan_text_instance* _ti = &dst[RSMP_OFFSET + _rsi];
@@ -2577,6 +2548,35 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             }
             vkCmdDraw(cmd, 4, (uint32_t)_rsn, 0, RSMP_OFFSET);
 #undef RSMP_OFFSET
+        }
+        // playbar loop label on bottom status bar (right of RESAMPLE)
+        if (ctx_wayland->env->play_bar_loop) {
+            const char* _plt = "PB LOOP";
+            int _pln = 7;
+            float _plr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+#define PBLOOP_OFFSET 400
+            for (int _pli = 0; _pli < _pln; _pli++) {
+                unsigned char _pc = (unsigned char)_plt[_pli];
+                war_vulkan_text_instance* _ti = &dst[PBLOOP_OFFSET + _pli];
+                _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 29 + _pli);
+                _ti->pos[1] = _plr;
+                _ti->pos[2] = 0;
+                _ti->size[0] = 1.0f;
+                _ti->size[1] = 1.0f;
+                _ti->uv[0] = font->glyph_uv[_pc][0];
+                _ti->uv[1] = font->glyph_uv[_pc][1];
+                _ti->uv[2] = font->glyph_uv[_pc][2];
+                _ti->uv[3] = font->glyph_uv[_pc][3];
+                _ti->glyph_scale[0] = font->glyph_norm_width[_pc];
+                _ti->glyph_scale[1] = font->glyph_norm_height[_pc];
+                _ti->ascent = font->glyph_norm_ascent[_pc];
+                _ti->descent = font->glyph_norm_descent[_pc];
+                _ti->baseline = font->glyph_norm_baseline[_pc];
+                _ti->color[0] = 0.2f; _ti->color[1] = 1.0f; _ti->color[2] = 0.2f; _ti->color[3] = 1.0f;
+                _ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)_pln, 0, PBLOOP_OFFSET);
+#undef PBLOOP_OFFSET
         }
         // loop mode label
         if (ctx_wayland->env->loop_mode) {
