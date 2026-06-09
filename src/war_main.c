@@ -2464,26 +2464,28 @@ int main(int argc, char** argv) {
                     float _pl = sinf((1.0f - _pp) * (float)(M_PI / 2.0));
                     float _pr = sinf(_pp * (float)(M_PI / 2.0));
                     for (uint64_t f = 0; f < batch; f += 2) {
-                        float _raw_l = slot->samples[read_pos + f];
-                        float _raw_r = slot->samples[read_pos + f + 1];
+                        float _s_l = slot->samples[read_pos + f];
+                        float _s_r = slot->samples[read_pos + f + 1];
                         // one-pole filter (~800Hz cutoff)
+                        if (read_pos + f == 0) {
+                            env->preview_voice_filter_lp[v][0] = _s_l;
+                            env->preview_voice_filter_lp[v][1] = _s_r;
+                        }
                         float _a_lp = 0.1f;
-                        float _lp0 = env->preview_voice_filter_lp[v][0] + _a_lp * (_raw_l - env->preview_voice_filter_lp[v][0]);
-                        float _lp1 = env->preview_voice_filter_lp[v][1] + _a_lp * (_raw_r - env->preview_voice_filter_lp[v][1]);
+                        float _lp0 = env->preview_voice_filter_lp[v][0] + _a_lp * (_s_l - env->preview_voice_filter_lp[v][0]);
+                        float _lp1 = env->preview_voice_filter_lp[v][1] + _a_lp * (_s_r - env->preview_voice_filter_lp[v][1]);
                         env->preview_voice_filter_lp[v][0] = _lp0;
                         env->preview_voice_filter_lp[v][1] = _lp1;
-                        float _hp0 = _raw_l - _lp0;
-                        float _hp1 = _raw_r - _lp1;
                         // eq blend: 0=LP, 100=flat, 200=HP
                         float _mix_l, _mix_r;
                         if (slot->eq <= 100) {
-                            float _t = (float)slot->eq / 100.0f; // 0..1
-                            _mix_l = _lp0 + _t * (_raw_l - _lp0);
-                            _mix_r = _lp1 + _t * (_raw_r - _lp1);
+                            float _t = (float)slot->eq / 100.0f;
+                            _mix_l = _lp0 + _t * (_s_l - _lp0);
+                            _mix_r = _lp1 + _t * (_s_r - _lp1);
                         } else {
-                            float _t = (float)(slot->eq - 100) / 100.0f; // 0..1
-                            _mix_l = _raw_l + _t * (_hp0 - _raw_l);
-                            _mix_r = _raw_r + _t * (_hp1 - _raw_r);
+                            float _t = (float)(slot->eq - 100) / 100.0f;
+                            _mix_l = _s_l + _t * ((_s_l - _lp0) - _s_l);
+                            _mix_r = _s_r + _t * ((_s_r - _lp1) - _s_r);
                         }
                         // gain, pan, fade
                         float _a_g = _gm;
@@ -2537,26 +2539,28 @@ int main(int argc, char** argv) {
                         float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
                         float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
                         for (uint64_t f = 0; f < batch; f += 2) {
-                            float _raw_l = slot->samples[read_pos + f];
-                            float _raw_r = slot->samples[read_pos + f + 1];
+                            float _s_l = slot->samples[read_pos + f];
+                            float _s_r = slot->samples[read_pos + f + 1];
                             // one-pole filter (~800Hz cutoff)
+                            if (read_pos + f == 0) {
+                                env->play_bar_voice_filter_lp[v][0] = _s_l;
+                                env->play_bar_voice_filter_lp[v][1] = _s_r;
+                            }
                             float _a_lp = 0.1f;
-                            float _lp0 = env->play_bar_voice_filter_lp[v][0] + _a_lp * (_raw_l - env->play_bar_voice_filter_lp[v][0]);
-                            float _lp1 = env->play_bar_voice_filter_lp[v][1] + _a_lp * (_raw_r - env->play_bar_voice_filter_lp[v][1]);
+                            float _lp0 = env->play_bar_voice_filter_lp[v][0] + _a_lp * (_s_l - env->play_bar_voice_filter_lp[v][0]);
+                            float _lp1 = env->play_bar_voice_filter_lp[v][1] + _a_lp * (_s_r - env->play_bar_voice_filter_lp[v][1]);
                             env->play_bar_voice_filter_lp[v][0] = _lp0;
                             env->play_bar_voice_filter_lp[v][1] = _lp1;
-                            float _hp0 = _raw_l - _lp0;
-                            float _hp1 = _raw_r - _lp1;
                             // eq blend: 0=LP, 100=flat, 200=HP
                             float _mix_l, _mix_r;
                             if (slot->eq <= 100) {
                                 float _t = (float)slot->eq / 100.0f;
-                                _mix_l = _lp0 + _t * (_raw_l - _lp0);
-                                _mix_r = _lp1 + _t * (_raw_r - _lp1);
+                                _mix_l = _lp0 + _t * (_s_l - _lp0);
+                                _mix_r = _lp1 + _t * (_s_r - _lp1);
                             } else {
                                 float _t = (float)(slot->eq - 100) / 100.0f;
-                                _mix_l = _raw_l + _t * (_hp0 - _raw_l);
-                                _mix_r = _raw_r + _t * (_hp1 - _raw_r);
+                                _mix_l = _s_l + _t * ((_s_l - _lp0) - _s_l);
+                                _mix_r = _s_r + _t * ((_s_r - _lp1) - _s_r);
                             }
                             mix[f]   += _mix_l * _gm * _pl2;
                             mix[f+1] += _mix_r * _gm * _pr2;
