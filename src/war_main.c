@@ -2491,7 +2491,7 @@ int main(int argc, char** argv) {
                     if (env->play_bar_voice_active[v] == 1) { any_active = 1; break; }
             }
             uint32_t _pb_chunks = 0;
-            while (any_active && _pb_chunks < 16) {
+            while (any_active && _pb_chunks < 8) {
                 float mix[PW_CHUNK_FLOATS];
                 memset(mix, 0, sizeof(mix));
                 any_active = 0;
