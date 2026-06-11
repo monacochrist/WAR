@@ -1640,6 +1640,8 @@ static void on_pw_play_process(void* userdata) {
     if (written > 0) {
         spa->datas[0].chunk->size = written;
         spa->datas[0].chunk->stride = 8;
+        if (written < max)
+            memset((uint8_t*)dst + written, 0, max - written);
     } else {
         memset(dst, 0, max);
         spa->datas[0].chunk->size = max;
@@ -2419,7 +2421,7 @@ int main(int argc, char** argv) {
         if (env->play_bar_playing) {
             uint64_t _now_us = war_get_monotonic_time_us();
             if (!env->play_bar_last_us)
-                env->play_bar_last_us = _now_us;
+                env->play_bar_last_us = _now_us - 1000;
             uint64_t _delta_us = _now_us - env->play_bar_last_us;
             env->play_bar_last_us = _now_us;
             env->play_bar_position_seconds += (double)_delta_us / 1000000.0;
@@ -2552,7 +2554,7 @@ int main(int argc, char** argv) {
                     for (uint64_t f = 0; f < batch; f += 2) {
                         float _s_l = slot->samples[read_pos + f];
                         float _s_r = slot->samples[read_pos + f + 1];
-                        if (read_pos + f == 0) {
+                        if (f == 0) {
                             env->preview_voice_filter_lp[v][0] = _s_l;
                             env->preview_voice_filter_lp[v][1] = _s_r;
                         }
@@ -2624,7 +2626,7 @@ int main(int argc, char** argv) {
                         for (uint64_t f = 0; f < batch; f += 2) {
                             float _s_l = slot->samples[read_pos + f];
                             float _s_r = slot->samples[read_pos + f + 1];
-                            if (read_pos + f == 0) {
+                            if (f == 0) {
                                 env->play_bar_voice_filter_lp[v][0] = _s_l;
                                 env->play_bar_voice_filter_lp[v][1] = _s_r;
                             }
