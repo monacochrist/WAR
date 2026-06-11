@@ -371,9 +371,28 @@ static void war_export_wav(war_env* env, const char* filename) {
         uint64_t _dur_frames = (uint64_t)(_dur_sec * sr);
         uint64_t _src_frames = _sc / 2;
         if (_dur_frames < _src_frames) _src_frames = _dur_frames;
+        // add EQ filter state
+        float _exp_lp0 = 0.0f, _exp_lp1 = 0.0f;
+        int _eq_val = env->capture_slots[idx].eq;
         for (uint64_t f = 0; f < _src_frames && _start_frame + f < total_frames; f++) {
-            mix[(_start_frame + f) * 2 + 0] += _s[f * 2 + 0] * _sg * _ple;
-            mix[(_start_frame + f) * 2 + 1] += _s[f * 2 + 1] * _sg * _pre;
+            float _sl = _s[f * 2 + 0];
+            float _sr = _s[f * 2 + 1];
+            // one-pole filter (~800Hz cutoff)
+            if (f == 0) { _exp_lp0 = _sl; _exp_lp1 = _sr; }
+            float _a_lp = 0.1f;
+            _exp_lp0 = _exp_lp0 + _a_lp * (_sl - _exp_lp0);
+            _exp_lp1 = _exp_lp1 + _a_lp * (_sr - _exp_lp1);
+            if (_eq_val <= 100) {
+                float _t = (float)_eq_val / 100.0f;
+                _sl = _exp_lp0 + _t * (_sl - _exp_lp0);
+                _sr = _exp_lp1 + _t * (_sr - _exp_lp1);
+            } else {
+                float _t = (float)(_eq_val - 100) / 100.0f;
+                _sl = _sl + _t * ((_sl - _exp_lp0) - _sl);
+                _sr = _sr + _t * ((_sr - _exp_lp1) - _sr);
+            }
+            mix[(_start_frame + f) * 2 + 0] += _sl * _sg * _ple;
+            mix[(_start_frame + f) * 2 + 1] += _sr * _sg * _pre;
         }
     }
 
