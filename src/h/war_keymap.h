@@ -313,6 +313,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                     WAR_FUNCTION_ID_NONE,
                     war_visual_move_down,
                     0);
+    // visual stretch toggle (shift+s)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_VISUAL},
+                   1,
+                   (char*[]){"<S-s>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_visual_stretch_toggle,
+                   0);
     // zoom
     war_keymap_set(keymap,
                    config,

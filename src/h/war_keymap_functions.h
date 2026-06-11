@@ -856,6 +856,7 @@ static inline void war_visual_mode(war_env* env) {
                         cur->visual_anchor_col, cur->visual_anchor_row);
     } else {
         env->active_mode = WAR_MODE_ID_ROLL;
+        cur->visual_stretch_active = 0;
         uint32_t lc = (&env->ctx_color->layer_none)[cur->layer];
         cur->instance[0].color[0] = ((lc >> 24) & 0xFF) / 255.0f;
         cur->instance[0].color[1] = ((lc >> 16) & 0xFF) / 255.0f;
@@ -876,12 +877,86 @@ static inline void war_visual_swap_anchor(war_env* env) {
     cur->visual_anchor_row = tmp_row;
 }
 
+static inline void war_visual_stretch_toggle(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->visual_active) return;
+    cur->visual_stretch_active = !cur->visual_stretch_active;
+    call_king_terry("STRETCH: %s", cur->visual_stretch_active ? "ON" : "OFF");
+}
+
+static inline void _war_stretch_slot(war_env* env, uint32_t note, uint32_t layer, double ratio) {
+    if (!env || note > 127 || layer < 1 || layer > 9) return;
+    uint32_t li = layer - 1;
+    war_capture_slot* slot = &env->capture_slots[note * WAR_CAPTURE_SLOT_LAYERS + li];
+    float* src_data = slot->samples;
+    uint64_t src_cnt = slot->count;
+    if (!src_data || src_cnt < 4) return;
+    uint64_t src_frames = src_cnt / 2;
+    uint64_t dst_frames = (uint64_t)((double)src_frames * ratio);
+    if (dst_frames < 1) dst_frames = 1;
+    uint64_t dst_cnt = dst_frames * 2;
+    double* wrk = malloc(dst_cnt * sizeof(double));
+    if (!wrk) return;
+    double step = 1.0 / ratio;
+    for (uint64_t i = 0; i < dst_frames; i++) {
+        double sp = (double)i * step;
+        uint64_t si = (uint64_t)sp;
+        double fr = sp - (double)si;
+        if (si >= src_frames - 1) {
+            wrk[i*2] = src_data[(src_frames-1)*2];
+            wrk[i*2+1] = src_data[(src_frames-1)*2+1];
+        } else {
+            wrk[i*2] = src_data[si*2]*(1.0-fr) + src_data[(si+1)*2]*fr;
+            wrk[i*2+1] = src_data[si*2+1]*(1.0-fr) + src_data[(si+1)*2+1]*fr;
+        }
+    }
+    free(slot->samples);
+    slot->samples = malloc(dst_cnt * sizeof(float));
+    if (slot->samples) {
+        for (uint64_t i = 0; i < dst_cnt; i++)
+            slot->samples[i] = (float)wrk[i];
+        slot->count = dst_cnt;
+        slot->capacity = dst_cnt;
+    }
+    free(wrk);
+}
+
 static inline void war_undo_save(war_env* env);
 
 static inline void _war_visual_move_selection(war_env* env, float dx, float dy) {
     war_cursor_context* cur = env->ctx_cursor;
     war_note_context* note = env->ctx_note;
     if (!cur->visual_active || !note || !note->instance_count) return;
+    if (dx != 0 && cur->visual_stretch_active) {
+        war_undo_save(env);
+        war_wayland_context* ctx_wayland = env->ctx_wayland;
+        float x0 = cur->visual_anchor_col;
+        float x1 = cur->instance[0].pos[0];
+        float y0 = cur->visual_anchor_row;
+        float y1 = cur->instance[0].pos[1];
+        if (x1 < x0) { float t = x0; x0 = x1; x1 = t; }
+        if (y1 < y0) { float t = y0; y0 = y1; y1 = t; }
+        uint32_t stretched = 0;
+        for (uint32_t i = 0; i < note->instance_count; i++) {
+            float nx0 = note->instance[i].pos[0];
+            float nx1 = nx0 + note->instance[i].size[0];
+            float ny = note->instance[i].pos[1];
+            if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
+                uint32_t _vl = (note->instance[i].flags >> 4) & 0xF;
+                if (_vl >= 1 && _vl <= 9 && !(env->layer_visible & (1 << (_vl - 1)))) continue;
+                float old_sz = note->instance[i].size[0];
+                float new_sz = old_sz + dx;
+                if (new_sz < 1.0f) new_sz = 1.0f;
+                note->instance[i].size[0] = new_sz;
+                double sr = (double)old_sz > 0.0 ? (double)new_sz / (double)old_sz : 1.0;
+                uint32_t _pp = (uint32_t)(ny - (double)ctx_wayland->gutter_rows);
+                if (_pp <= 127) _war_stretch_slot(env, _pp, _vl, sr);
+                stretched++;
+            }
+        }
+        call_king_terry("STRETCH: %u notes %.0f", stretched, dx);
+        return;
+    }
     war_undo_save(env);
     float x0 = cur->visual_anchor_col;
     float x1 = cur->instance[0].pos[0];

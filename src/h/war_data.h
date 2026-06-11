@@ -478,6 +478,7 @@ typedef struct war_cursor_context {
     double step;
     // visual mode
     uint8_t visual_active;
+    uint8_t visual_stretch_active;
     float visual_anchor_col;
     float visual_anchor_row;
     // Vulkan objects

@@ -96,6 +96,7 @@ else if (strcmp(name, "war_zoom_out") == 0) { return war_zoom_out; }
 else if (strcmp(name, "war_zoom_reset") == 0) { return war_zoom_reset; }
 else if (strcmp(name, "war_visual_mode") == 0) { return war_visual_mode; }
 else if (strcmp(name, "war_visual_swap_anchor") == 0) { return war_visual_swap_anchor; }
+else if (strcmp(name, "war_visual_stretch_toggle") == 0) { return war_visual_stretch_toggle; }
 else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_visual_move_right") == 0) { return war_visual_move_right; }
 else if (strcmp(name, "war_visual_move_left") == 0) { return war_visual_move_left; }

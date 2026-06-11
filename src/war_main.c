@@ -1283,6 +1283,7 @@ static void war_keyboard_key(void* data,
         if (env->active_mode == WAR_MODE_ID_VISUAL) {
             env->active_mode = WAR_MODE_ID_ROLL;
             env->ctx_cursor->visual_active = 0;
+            env->ctx_cursor->visual_stretch_active = 0;
             uint32_t lc = (&env->ctx_color->layer_none)[env->ctx_cursor->layer];
             cur->instance[0].color[0] = ((lc >> 24) & 0xFF) / 255.0f;
             cur->instance[0].color[1] = ((lc >> 16) & 0xFF) / 255.0f;
@@ -2494,7 +2495,7 @@ int main(int argc, char** argv) {
                     if (env->play_bar_voice_active[v] == 1) { any_active = 1; break; }
             }
             uint32_t _pb_chunks = 0;
-            while (any_active && _pb_chunks < 8) {
+            while ((any_active || env->play_bar_playing) && _pb_chunks < 8) {
                 float mix[PW_CHUNK_FLOATS];
                 memset(mix, 0, sizeof(mix));
                 any_active = 0;
@@ -2661,7 +2662,7 @@ int main(int argc, char** argv) {
                         any_active = 1;
                     }
                 }
-                if (!any_active) break;
+                if (!any_active && !env->play_bar_playing) break;
                 if (!war_pc_to_a(env->pc_play, 0, PW_CHUNK_FLOATS * 4, mix))
                     break;
                 _pb_chunks++;
