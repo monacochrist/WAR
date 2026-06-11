@@ -2460,7 +2460,6 @@ int main(int argc, char** argv) {
                         if (_already) continue;
                         double _dc = env->ctx_note->instance[_i].size[0];
                         uint64_t _mf = (uint64_t)(_dc * _pb_spc * 48000.0 * 2.0);
-                        if (_mf > _sl->count) _mf = _sl->count;
                         if (_mf & 1) _mf &= ~1ULL;
                         uint64_t _off2 = 0;
                         if (_pb_ccp > _ns) {
@@ -2469,6 +2468,8 @@ int main(int argc, char** argv) {
                             if (_off2 & 1) _off2 &= ~1ULL;
                         }
                         if (_off2 >= _mf) continue;
+                        if (_sl->count > 0 && _off2 >= _sl->count)
+                            _off2 %= _sl->count;
                         for (uint32_t _v = 0; _v < WAR_PLAY_BAR_VOICES; _v++) {
                             if (env->play_bar_voice_active[_v] == 0) {
                                 env->play_bar_voice_note[_v] = _pp;
@@ -2602,17 +2603,26 @@ int main(int argc, char** argv) {
                         uint64_t read_pos = env->play_bar_voice_read_pos[v];
                         uint64_t read_limit = env->play_bar_voice_read_limit[v];
                         if (read_pos >= read_limit) {
-                            env->play_bar_voice_active[v] = 2;
+                            env->play_bar_voice_active[v] = 0;
                             continue;
                         }
                         uint64_t slot_avail = slot->samples ? slot->count : 0;
-                        if (read_pos >= slot_avail) {
-                            env->play_bar_voice_active[v] = 2;
+                        if (slot_avail == 0) {
+                            env->play_bar_voice_active[v] = 0;
                             continue;
+                        }
+                        if (read_pos >= slot_avail) {
+                            if (read_limit > slot_avail) {
+                                read_pos %= slot_avail;
+                                env->play_bar_voice_read_pos[v] = read_pos;
+                            } else {
+                                env->play_bar_voice_active[v] = 0;
+                                continue;
+                            }
                         }
                         uint64_t avail = (read_limit < slot_avail ? read_limit : slot_avail) - read_pos;
                         if (avail < 2) {
-                            env->play_bar_voice_active[v] = 2;
+                            env->play_bar_voice_active[v] = 0;
                             continue;
                         }
                         uint64_t batch = avail < PW_CHUNK_FLOATS ?
