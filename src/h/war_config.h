@@ -87,7 +87,7 @@ static inline void war_config_default(war_config_context* config) {
     config->CMD_COUNT = 1;
     // pc
     config->PC_CONTROL_BUFFER_SIZE = 65536;
-    config->PC_PLAY_BUFFER_SIZE = 524288;
+    config->PC_PLAY_BUFFER_SIZE = 32768;
     config->PC_CAPTURE_BUFFER_SIZE = 65536;
     // vk
     config->VK_ATLAS_WIDTH = 8192;

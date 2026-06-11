@@ -2709,9 +2709,11 @@ struct war_env {
     uint8_t play_bar_voice_active[WAR_PLAY_BAR_VOICES];
     uint32_t play_bar_voice_note[WAR_PLAY_BAR_VOICES];
     uint32_t play_bar_voice_layer[WAR_PLAY_BAR_VOICES];
+    uint64_t play_bar_voice_tick[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_pos[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
     float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][2];
+    float play_bar_direct_filter_lp[128 * WAR_CAPTURE_SLOT_LAYERS][2];
     uint8_t preview_voice_active[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_note[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];

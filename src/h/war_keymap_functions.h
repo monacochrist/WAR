@@ -422,6 +422,7 @@ static inline void war_record_midi(war_env* env) {
         env->play_bar_last_us = 0;
         env->play_bar_prev_cell_pos = (double)_gc;
         memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+        memset(env->play_bar_direct_filter_lp, 0, sizeof(env->play_bar_direct_filter_lp));
         if (env->ctx_line)
             env->ctx_line->instance[0].pos[0] = _gc;
         env->play_bar_playing = 1;
@@ -919,6 +920,7 @@ static inline void war_toggle_playback(war_env* env) {
     if (env->play_bar_playing) {
         env->play_bar_playing = 0;
         memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+        memset(env->play_bar_direct_filter_lp, 0, sizeof(env->play_bar_direct_filter_lp));
     } else {
         env->play_bar_playing = 1;
         env->play_bar_last_frame_ms = 0;
@@ -929,6 +931,7 @@ static inline void war_toggle_playback(war_env* env) {
         double gc = (double)env->ctx_wayland->gutter_cols;
         env->play_bar_prev_cell_pos = gc + env->play_bar_position_seconds / sec_per_cell;
         memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+        memset(env->play_bar_direct_filter_lp, 0, sizeof(env->play_bar_direct_filter_lp));
         // resume: activate any note whose body contains the playhead
         if (env->ctx_note && env->ctx_note->instance_count > 0) {
             double _cp = env->play_bar_prev_cell_pos;
@@ -957,6 +960,7 @@ static inline void war_toggle_playback(war_env* env) {
                             if (!env->play_bar_voice_active[_v]) {
                                 env->play_bar_voice_note[_v] = _pp;
                                 env->play_bar_voice_layer[_v] = _li;
+                                env->play_bar_voice_tick[_v] = env->ctx_note->instance[_ri].tick;
                                 env->play_bar_voice_read_pos[_v] = _offset;
                                 env->play_bar_voice_read_limit[_v] = _limit;
                                 env->play_bar_voice_filter_lp[_v][0] = 0.0f;
@@ -986,6 +990,7 @@ static inline void war_playbar_goto_cursor(war_env* env) {
     env->play_bar_last_us = 0;
     env->play_bar_prev_cell_pos = (double)cursor_col;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+    memset(env->play_bar_direct_filter_lp, 0, sizeof(env->play_bar_direct_filter_lp));
     line->instance[0].pos[0] = cursor_col;
     // seek: activate note at cursor offset
     if (env->ctx_note && env->ctx_note->instance_count > 0) {
@@ -1012,8 +1017,9 @@ static inline void war_playbar_goto_cursor(war_env* env) {
                         if (_lim2 > _sl2->count) _lim2 = _sl2->count;
                         for (uint32_t _v2 = 0; _v2 < WAR_PLAY_BAR_VOICES; _v2++) {
                             if (!env->play_bar_voice_active[_v2]) {
-                                env->play_bar_voice_note[_v2] = _pp2;
-                                env->play_bar_voice_layer[_v2] = _li2;
+                                 env->play_bar_voice_note[_v2] = _pp2;
+                                 env->play_bar_voice_layer[_v2] = _li2;
+                                 env->play_bar_voice_tick[_v2] = env->ctx_note->instance[_ri].tick;
                                 env->play_bar_voice_read_pos[_v2] = _off2;
                                 env->play_bar_voice_read_limit[_v2] = _lim2;
                                 env->play_bar_voice_filter_lp[_v2][0] = 0.0f;
@@ -1045,6 +1051,7 @@ static inline void war_playbar_goto_start(war_env* env) {
     env->play_bar_last_us = 0;
     env->play_bar_prev_cell_pos = (double)gc;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+    memset(env->play_bar_direct_filter_lp, 0, sizeof(env->play_bar_direct_filter_lp));
     line->instance[0].pos[0] = gc;
 }
 

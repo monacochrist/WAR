@@ -2245,6 +2245,7 @@ int main(int argc, char** argv) {
     env->play_bar_last_us = 0;
     env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
     memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+    memset(env->play_bar_direct_filter_lp, 0, sizeof(env->play_bar_direct_filter_lp));
     env->layer_visible = 0x1FF; // all 9 layers visible
     //-------------------------------------------------------------------------
     // FONT INIT (renders 'M' glyph, sets up Vulkan text pipeline)
@@ -2412,19 +2413,85 @@ int main(int argc, char** argv) {
                 env->capture_accumulator_count += n_floats;
             }
         }
-        // unified audio mixing: both preview (MIDI) and playbar voices
+        // playback bar advancement (runs even without frame callbacks)
+        // MOVED BEFORE mixing loop so playbar rendering uses current playhead
+        double _pb_ccp = 0.0, _pb_spc = 0.0;
+        if (env->play_bar_playing) {
+            uint64_t _now_us = war_get_monotonic_time_us();
+            if (!env->play_bar_last_us)
+                env->play_bar_last_us = _now_us;
+            uint64_t _delta_us = _now_us - env->play_bar_last_us;
+            env->play_bar_last_us = _now_us;
+            env->play_bar_position_seconds += (double)_delta_us / 1000000.0;
+            double _bpm = env->atomics->bpm;
+            if (_bpm <= 0.0) _bpm = 100.0;
+            _pb_spc = 15.0 / _bpm;
+            _pb_ccp = (double)ctx_wayland->gutter_cols + env->play_bar_position_seconds / _pb_spc;
+        }
+        // unified audio mixing: preview (MIDI) voices + playbar voices
+        // NOTE: playhead advancement is NOW ABOVE, so voices activated here
+        // are picked up by the mixing loop in the SAME iteration
         {
             enum { PW_CHUNK_FLOATS = 64 };
             enum { _TOTAL_VOICES = WAR_PREVIEW_VOICES + WAR_PLAY_BAR_VOICES };
             uint64_t voice_batch[_TOTAL_VOICES];
+            // activate playbar voices: scan notes at the current playhead position
+            if (env->play_bar_playing && env->ctx_note) {
+                uint32_t _nc = env->ctx_note->instance_count;
+                for (uint32_t _i = 0; _i < _nc; _i++) {
+                    double _ns = env->ctx_note->instance[_i].pos[0];
+                    double _ne = _ns + env->ctx_note->instance[_i].size[0];
+                    if (_pb_ccp >= _ns && _pb_ccp < _ne) {
+                        uint32_t _pp = (uint32_t)(env->ctx_note->instance[_i].pos[1] - (double)ctx_wayland->gutter_rows);
+                        if (_pp > 127) _pp = 127;
+                        uint32_t _li = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
+                        if (_li < 1 || _li > 9) _li = 1;
+                        if (!(env->layer_visible & (1 << (_li - 1)))) continue;
+                        uint32_t _si = _pp * WAR_CAPTURE_SLOT_LAYERS + (_li - 1);
+                        war_capture_slot* _sl = &env->capture_slots[_si];
+                        if (!_sl->samples || _sl->count < 2) continue;
+                        uint64_t _tik = env->ctx_note->instance[_i].tick;
+                        int _already = 0;
+                        for (uint32_t _v2 = 0; _v2 < WAR_PLAY_BAR_VOICES; _v2++)
+                            if (env->play_bar_voice_active[_v2] && env->play_bar_voice_note[_v2] == _pp && env->play_bar_voice_layer[_v2] == _li && env->play_bar_voice_tick[_v2] == _tik)
+                                { _already = 1; break; }
+                        if (_already) continue;
+                        double _dc = env->ctx_note->instance[_i].size[0];
+                        uint64_t _mf = (uint64_t)(_dc * _pb_spc * 48000.0 * 2.0);
+                        if (_mf > _sl->count) _mf = _sl->count;
+                        if (_mf & 1) _mf &= ~1ULL;
+                        uint64_t _off2 = 0;
+                        if (_pb_ccp > _ns) {
+                            double _oc2 = _pb_ccp - _ns;
+                            _off2 = (uint64_t)(_oc2 * _pb_spc * 48000.0 * 2.0);
+                            if (_off2 & 1) _off2 &= ~1ULL;
+                        }
+                        if (_off2 >= _mf) continue;
+                        for (uint32_t _v = 0; _v < WAR_PLAY_BAR_VOICES; _v++) {
+                            if (env->play_bar_voice_active[_v] == 0) {
+                                env->play_bar_voice_note[_v] = _pp;
+                                env->play_bar_voice_layer[_v] = _li;
+                                env->play_bar_voice_tick[_v] = _tik;
+                                env->play_bar_voice_read_pos[_v] = _off2;
+                                env->play_bar_voice_read_limit[_v] = _mf;
+                                env->play_bar_voice_filter_lp[_v][0] = 0.0f;
+                                env->play_bar_voice_filter_lp[_v][1] = 0.0f;
+                                env->play_bar_voice_active[_v] = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             int any_active = 0;
             for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
                 if (env->preview_voice_active[v]) { any_active = 1; break; }
             if (!any_active && env->play_bar_playing) {
                 for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++)
-                    if (env->play_bar_voice_active[v]) { any_active = 1; break; }
+                    if (env->play_bar_voice_active[v] == 1) { any_active = 1; break; }
             }
-            while (any_active) {
+            uint32_t _pb_chunks = 0;
+            while (any_active && _pb_chunks < 16) {
                 float mix[PW_CHUNK_FLOATS];
                 memset(mix, 0, sizeof(mix));
                 any_active = 0;
@@ -2485,7 +2552,6 @@ int main(int argc, char** argv) {
                     for (uint64_t f = 0; f < batch; f += 2) {
                         float _s_l = slot->samples[read_pos + f];
                         float _s_r = slot->samples[read_pos + f + 1];
-                        // one-pole filter (~800Hz cutoff)
                         if (read_pos + f == 0) {
                             env->preview_voice_filter_lp[v][0] = _s_l;
                             env->preview_voice_filter_lp[v][1] = _s_r;
@@ -2495,7 +2561,6 @@ int main(int argc, char** argv) {
                         float _lp1 = env->preview_voice_filter_lp[v][1] + _a_lp * (_s_r - env->preview_voice_filter_lp[v][1]);
                         env->preview_voice_filter_lp[v][0] = _lp0;
                         env->preview_voice_filter_lp[v][1] = _lp1;
-                        // eq blend: 0=LP, 100=flat, 200=HP
                         float _mix_l, _mix_r;
                         if (slot->eq <= 100) {
                             float _t = (float)slot->eq / 100.0f;
@@ -2506,7 +2571,6 @@ int main(int argc, char** argv) {
                             _mix_l = _s_l + _t * ((_s_l - _lp0) - _s_l);
                             _mix_r = _s_r + _t * ((_s_r - _lp1) - _s_r);
                         }
-                        // gain, pan, fade
                         float _a_g = _gm;
                         if (read_pos + f < 64) _a_g *= (float)(read_pos + f + 1) / 64.0f;
                         mix[f]   += _mix_l * _a_g * _pl;
@@ -2519,7 +2583,7 @@ int main(int argc, char** argv) {
                     for (uint32_t v = 0; v < WAR_PLAY_BAR_VOICES; v++) {
                         uint32_t vi = WAR_PREVIEW_VOICES + v;
                         voice_batch[vi] = 0;
-                        if (!env->play_bar_voice_active[v]) continue;
+                        if (env->play_bar_voice_active[v] != 1) continue;
                         uint32_t note = env->play_bar_voice_note[v];
                         if (note > 127) note = 127;
                         uint32_t layer = env->play_bar_voice_layer[v];
@@ -2536,17 +2600,17 @@ int main(int argc, char** argv) {
                         uint64_t read_pos = env->play_bar_voice_read_pos[v];
                         uint64_t read_limit = env->play_bar_voice_read_limit[v];
                         if (read_pos >= read_limit) {
-                            env->play_bar_voice_active[v] = 0;
+                            env->play_bar_voice_active[v] = 2;
                             continue;
                         }
                         uint64_t slot_avail = slot->samples ? slot->count : 0;
                         if (read_pos >= slot_avail) {
-                            env->play_bar_voice_active[v] = 0;
+                            env->play_bar_voice_active[v] = 2;
                             continue;
                         }
                         uint64_t avail = (read_limit < slot_avail ? read_limit : slot_avail) - read_pos;
                         if (avail < 2) {
-                            env->play_bar_voice_active[v] = 0;
+                            env->play_bar_voice_active[v] = 2;
                             continue;
                         }
                         uint64_t batch = avail < PW_CHUNK_FLOATS ?
@@ -2560,7 +2624,6 @@ int main(int argc, char** argv) {
                         for (uint64_t f = 0; f < batch; f += 2) {
                             float _s_l = slot->samples[read_pos + f];
                             float _s_r = slot->samples[read_pos + f + 1];
-                            // one-pole filter (~800Hz cutoff)
                             if (read_pos + f == 0) {
                                 env->play_bar_voice_filter_lp[v][0] = _s_l;
                                 env->play_bar_voice_filter_lp[v][1] = _s_r;
@@ -2570,7 +2633,6 @@ int main(int argc, char** argv) {
                             float _lp1 = env->play_bar_voice_filter_lp[v][1] + _a_lp * (_s_r - env->play_bar_voice_filter_lp[v][1]);
                             env->play_bar_voice_filter_lp[v][0] = _lp0;
                             env->play_bar_voice_filter_lp[v][1] = _lp1;
-                            // eq blend: 0=LP, 100=flat, 200=HP
                             float _mix_l, _mix_r;
                             if (slot->eq <= 100) {
                                 float _t = (float)slot->eq / 100.0f;
@@ -2590,6 +2652,7 @@ int main(int argc, char** argv) {
                 if (!any_active) break;
                 if (!war_pc_to_a(env->pc_play, 0, PW_CHUNK_FLOATS * 4, mix))
                     break;
+                _pb_chunks++;
                 // advance preview read positions
                 for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
                     env->preview_voice_read_pos[v] += voice_batch[v];
@@ -2616,73 +2679,23 @@ int main(int argc, char** argv) {
                 }
             }
         }
-        // playback bar advancement (runs even without frame callbacks)
+        // playbar visual position update and loop detection
         if (env->play_bar_playing) {
-            uint64_t _now_us = war_get_monotonic_time_us();
-            if (env->play_bar_last_us != 0) {
-                uint64_t _delta_us = _now_us - env->play_bar_last_us;
-                env->play_bar_last_us = _now_us;
-                env->play_bar_position_seconds += (double)_delta_us / 1000000.0;
-                double _bpm = env->atomics->bpm;
-                if (_bpm <= 0.0) _bpm = 100.0;
-                double _spc = 15.0 / _bpm;
-                double _ccp = (double)ctx_wayland->gutter_cols + env->play_bar_position_seconds / _spc;
-                if (env->ctx_note) {
-                    uint32_t _nc = env->ctx_note->instance_count;
-                    for (uint32_t _i = 0; _i < _nc; _i++) {
-                        double _ns = env->ctx_note->instance[_i].pos[0];
-                        if (_ns >= env->play_bar_prev_cell_pos && _ns < _ccp) {
-                            uint32_t _pp = (uint32_t)(env->ctx_note->instance[_i].pos[1] - (double)ctx_wayland->gutter_rows);
-                            if (_pp > 127) _pp = 127;
-                            uint32_t _li = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
-                            if (_li < 1 || _li > 9) _li = 1;
-                            if (!(env->layer_visible & (1 << (_li - 1)))) continue;
-                            uint32_t _si = _pp * WAR_CAPTURE_SLOT_LAYERS + (_li - 1);
-                            war_capture_slot* _sl = &env->capture_slots[_si];
-                            if (_sl->samples && _sl->count > 0) {
-                                double _dc = env->ctx_note->instance[_i].size[0];
-                                uint64_t _mf = (uint64_t)(_dc * 15.0 / _bpm * 48000.0 * 2.0);
-                                if (_mf > _sl->count) _mf = _sl->count;
-                                if (_mf & 1) _mf &= ~1ULL;
-                                uint64_t _off2 = 0;
-                                if (_ccp > _ns) {
-                                    double _oc2 = _ccp - _ns;
-                                    _off2 = (uint64_t)(_oc2 * 15.0 / _bpm * 48000.0 * 2.0);
-                                    if (_off2 & 1) _off2 &= ~1ULL;
-                                }
-                                uint64_t _lim2 = _mf;
-                                if (_lim2 > _sl->count) _lim2 = _sl->count;
-                                for (uint32_t _v = 0; _v < WAR_PLAY_BAR_VOICES; _v++) {
-                                    if (!env->play_bar_voice_active[_v]) {
-                                        env->play_bar_voice_note[_v] = _pp;
-                                        env->play_bar_voice_layer[_v] = _li;
-                                        env->play_bar_voice_read_pos[_v] = _off2;
-                                        env->play_bar_voice_read_limit[_v] = _lim2;
-                                        env->play_bar_voice_filter_lp[_v][0] = 0.0f;
-                                        env->play_bar_voice_filter_lp[_v][1] = 0.0f;
-                                        env->play_bar_voice_active[_v] = 1;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+            env->ctx_line->instance[0].pos[0] = (float)_pb_ccp;
+            if (env->play_bar_loop && env->ctx_note && env->ctx_note->instance_count > 0) {
+                double _rmax = 0.0;
+                for (uint32_t _ri = 0; _ri < env->ctx_note->instance_count; _ri++) {
+                    double _re = env->ctx_note->instance[_ri].pos[0] + env->ctx_note->instance[_ri].size[0];
+                    if (_re > _rmax) _rmax = _re;
                 }
-                env->play_bar_prev_cell_pos = _ccp;
-                env->ctx_line->instance[0].pos[0] = (float)_ccp;
-                if (env->play_bar_loop && env->ctx_note && env->ctx_note->instance_count > 0) {
-                    double _rmax = 0.0;
-                    for (uint32_t _ri = 0; _ri < env->ctx_note->instance_count; _ri++) {
-                        double _re = env->ctx_note->instance[_ri].pos[0] + env->ctx_note->instance[_ri].size[0];
-                        if (_re > _rmax) _rmax = _re;
-                    }
-                    if (_ccp >= _rmax) {
-                        env->play_bar_position_seconds = 0.0;
-                        env->play_bar_last_frame_ms = 0;
-                        env->play_bar_last_us = 0;
-                        env->play_bar_prev_cell_pos = (double)ctx_wayland->gutter_cols;
-                        env->ctx_line->instance[0].pos[0] = (float)ctx_wayland->gutter_cols;
-                    }
+                if (_pb_ccp >= _rmax) {
+                    env->play_bar_position_seconds = 0.0;
+                    env->play_bar_last_frame_ms = 0;
+                    env->play_bar_last_us = 0;
+                    env->ctx_line->instance[0].pos[0] = (float)ctx_wayland->gutter_cols;
+                    // reset filter state on loop
+                    memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
+                    memset(env->play_bar_direct_filter_lp, 0, sizeof(env->play_bar_direct_filter_lp));
                 }
             }
         }
