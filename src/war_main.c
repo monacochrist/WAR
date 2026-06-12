@@ -2621,15 +2621,18 @@ int main(int argc, char** argv) {
                         }
                         uint64_t batch = PW_CHUNK_FLOATS;
                         if (batch > remain) batch = remain & ~1ULL;
+                        // don't cross slot boundary within a batch
+                        uint64_t slot_offset = read_pos % slot_avail;
+                        uint64_t to_slot_end = slot_avail - slot_offset;
+                        if (batch > to_slot_end) batch = to_slot_end & ~1ULL;
                         voice_batch[vi] = batch;
                         float _gm = slot->gain / 100.0f;
                         float _pp2 = (float)(slot->pan + 100) / 200.0f;
                         float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
                         float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
                         for (uint64_t f = 0; f < batch; f += 2) {
-                            uint64_t si = (read_pos + f) % slot_avail;
-                            float _s_l = slot->samples[si];
-                            float _s_r = slot->samples[si + 1];
+                            float _s_l = slot->samples[slot_offset + f];
+                            float _s_r = slot->samples[slot_offset + f + 1];
                             if (f == 0) {
                                 env->play_bar_voice_filter_lp[v][0] = _s_l;
                                 env->play_bar_voice_filter_lp[v][1] = _s_r;
