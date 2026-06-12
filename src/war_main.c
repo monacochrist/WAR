@@ -2612,31 +2612,24 @@ int main(int argc, char** argv) {
                             env->play_bar_voice_active[v] = 0;
                             continue;
                         }
-                        if (read_pos >= slot_avail) {
-                            if (read_limit > slot_avail) {
-                                read_pos %= slot_avail;
-                                env->play_bar_voice_read_pos[v] = read_pos;
-                            } else {
+                        uint64_t remain = read_limit - read_pos;
+                        if (remain < slot_avail && remain < PW_CHUNK_FLOATS) {
+                            if (remain < 2) {
                                 env->play_bar_voice_active[v] = 0;
                                 continue;
                             }
                         }
-                        uint64_t avail = (read_limit < slot_avail ? read_limit : slot_avail) - read_pos;
-                        if (avail < 2) {
-                            env->play_bar_voice_active[v] = 0;
-                            continue;
-                        }
-                        uint64_t batch = avail < PW_CHUNK_FLOATS ?
-                                             (avail & ~1ULL) :
-                                             PW_CHUNK_FLOATS;
+                        uint64_t batch = PW_CHUNK_FLOATS;
+                        if (batch > remain) batch = remain & ~1ULL;
                         voice_batch[vi] = batch;
                         float _gm = slot->gain / 100.0f;
                         float _pp2 = (float)(slot->pan + 100) / 200.0f;
                         float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
                         float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
                         for (uint64_t f = 0; f < batch; f += 2) {
-                            float _s_l = slot->samples[read_pos + f];
-                            float _s_r = slot->samples[read_pos + f + 1];
+                            uint64_t si = (read_pos + f) % slot_avail;
+                            float _s_l = slot->samples[si];
+                            float _s_r = slot->samples[si + 1];
                             if (f == 0) {
                                 env->play_bar_voice_filter_lp[v][0] = _s_l;
                                 env->play_bar_voice_filter_lp[v][1] = _s_r;
