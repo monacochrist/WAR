@@ -323,6 +323,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_visual_stretch_toggle,
                    0);
+    // snap cursor to nearest cell (s) — in both ROLL and VISUAL
+    war_keymap_set(keymap,
+                   config,
+                   2,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                   1,
+                   (char*[]){"s"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_reset_step,
+                   0);
     // zoom
     war_keymap_set(keymap,
                    config,
@@ -613,16 +623,6 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"a"},
                    WAR_FUNCTION_ID_NONE,
                    war_set_width_to_duration,
-                   0);
-    // reset step to 1.0 (s)
-    war_keymap_set(keymap,
-                   config,
-                   1,
-                   (war_mode_id[]){WAR_MODE_ID_ROLL},
-                   1,
-                   (char*[]){"s"},
-                   WAR_FUNCTION_ID_NONE,
-                   war_reset_step,
                    0);
     // place note at cursor (z)
     war_keymap_set(keymap,

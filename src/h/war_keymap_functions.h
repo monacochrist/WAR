@@ -637,9 +637,21 @@ static inline void war_step_mode_thin(war_env* env) {
 }
 
 static inline void war_reset_step(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
     env->ctx_cursor->step = 1.0;
     env->ctx_cursor->x_width[0] = 1.0;
     env->ctx_cursor->instance[0].size[0] = 1.0f;
+    // snap cursor to nearest cell
+    double gc = env->ctx_wayland->gutter_cols;
+    double gr = env->ctx_wayland->gutter_rows;
+    double col = floor(cur->instance[0].pos[0] - gc + 0.5) + gc;
+    double row = floor(cur->instance[0].pos[1] - gr + 0.5) + gr;
+    if (col < gc + 0.5) col = gc + 0.5;
+    if (row < gr + 0.5) row = gr + 0.5;
+    cur->instance[0].pos[0] = col;
+    cur->instance[0].pos[1] = row;
+    war_pan_follow(env);
 }
 
 static inline void war_midi_mode(war_env* env) {
