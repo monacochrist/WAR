@@ -391,6 +391,7 @@ typedef enum war_vulkan_flags_bits {
     WAR_NEW_VULKAN_FLAGS_HIDDEN = 1 << 0,
     WAR_NEW_VULKAN_FLAGS_OUTLINE = 1 << 1,
     WAR_NEW_VULKAN_FLAGS_FOREGROUND = 1 << 2,
+    WAR_NEW_VULKAN_FLAGS_MUTE = 1 << 3,
 } war_vulkan_flags_bits;
 
 typedef struct war_vulkan_vertex {
@@ -2715,6 +2716,7 @@ struct war_env {
     uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
     float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][2];
     float play_bar_direct_filter_lp[128 * WAR_CAPTURE_SLOT_LAYERS][2];
+    uint32_t play_bar_mute_mask;
     uint8_t preview_voice_active[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_note[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];

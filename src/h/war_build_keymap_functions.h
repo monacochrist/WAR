@@ -48,6 +48,7 @@ else if (strcmp(name, "war_toggle_layer_6") == 0) { return war_toggle_layer_6; }
 else if (strcmp(name, "war_toggle_layer_7") == 0) { return war_toggle_layer_7; }
 else if (strcmp(name, "war_toggle_layer_8") == 0) { return war_toggle_layer_8; }
 else if (strcmp(name, "war_toggle_layer_9") == 0) { return war_toggle_layer_9; }
+else if (strcmp(name, "war_toggle_all_layers") == 0) { return war_toggle_all_layers; }
 else if (strcmp(name, "war_octave_minus_1") == 0) { return war_octave_minus_1; }
 else if (strcmp(name, "war_octave_0") == 0) { return war_octave_0; }
 else if (strcmp(name, "war_octave_1") == 0) { return war_octave_1; }
@@ -119,6 +120,7 @@ else if (strcmp(name, "war_set_width_to_duration") == 0) { return war_set_width_
 else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_chord_maj7") == 0) { return war_chord_maj7; }
 else if (strcmp(name, "war_chord_min9") == 0) { return war_chord_min9; }
+else if (strcmp(name, "war_chord_7") == 0) { return war_chord_7; }
 else if (strcmp(name, "war_chord_min7") == 0) { return war_chord_min7; }
 else if (strcmp(name, "war_chord_9") == 0) { return war_chord_9; }
 else if (strcmp(name, "war_chord_maj9") == 0) { return war_chord_maj9; }

@@ -295,6 +295,7 @@ static inline void war_toggle_layer_6(war_env* env) { if (env) env->layer_visibl
 static inline void war_toggle_layer_7(war_env* env) { if (env) env->layer_visible ^= (1 << 6); }
 static inline void war_toggle_layer_8(war_env* env) { if (env) env->layer_visible ^= (1 << 7); }
 static inline void war_toggle_layer_9(war_env* env) { if (env) env->layer_visible ^= (1 << 8); }
+static inline void war_toggle_all_layers(war_env* env) { if (env) env->layer_visible ^= 0x1FF; }
 
 //-----------------------------------------------------------------------------
 // OCTAVES
@@ -375,6 +376,7 @@ static inline void _war_record_place_note(war_env* env, uint32_t note, int voice
     if (!note_ctx || voice < 0) return;
     if (note_ctx->instance_count >= note_ctx->max_instances) return;
     uint32_t _rl = env->ctx_cursor->layer;
+    if (_rl == 0) return;
     if (_rl >= 1 && _rl <= 9 && !(env->layer_visible & (1 << (_rl - 1)))) return;
     war_undo_save(env);
     uint32_t i = note_ctx->instance_count++;
@@ -647,8 +649,8 @@ static inline void war_reset_step(war_env* env) {
     double gr = env->ctx_wayland->gutter_rows;
     double col = floor(cur->instance[0].pos[0] - gc + 0.5) + gc;
     double row = floor(cur->instance[0].pos[1] - gr + 0.5) + gr;
-    if (col < gc + 0.5) col = gc + 0.5;
-    if (row < gr + 0.5) row = gr + 0.5;
+    if (col < gc) col = gc;
+    if (row < gr) row = gr;
     cur->instance[0].pos[0] = col;
     cur->instance[0].pos[1] = row;
     war_pan_follow(env);
@@ -953,7 +955,7 @@ static inline void _war_visual_move_selection(war_env* env, float dx, float dy) 
             float nx0 = note->instance[i].pos[0];
             float nx1 = nx0 + note->instance[i].size[0];
             float ny = note->instance[i].pos[1];
-            if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
+            if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
                 uint32_t _vl = (note->instance[i].flags >> 4) & 0xF;
                 if (_vl >= 1 && _vl <= 9 && !(env->layer_visible & (1 << (_vl - 1)))) continue;
                 float old_sz = note->instance[i].size[0];
@@ -981,7 +983,7 @@ static inline void _war_visual_move_selection(war_env* env, float dx, float dy) 
         float nx0 = note->instance[i].pos[0];
         float nx1 = nx0 + note->instance[i].size[0];
         float ny = note->instance[i].pos[1];
-        if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
+        if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
             uint32_t _vl = (note->instance[i].flags >> 4) & 0xF;
             if (_vl >= 1 && _vl <= 9 && !(env->layer_visible & (1 << (_vl - 1)))) continue;
             note->instance[i].pos[0] += dx;
@@ -1498,6 +1500,10 @@ static inline void war_chord_min9(war_env* env) {
     int intervals[] = {0, 3, 7, 10, 14};
     _war_chord_generic(env, intervals, 5, "MIN9");
 }
+static inline void war_chord_7(war_env* env) {
+    int intervals[] = {0, 4, 7, 10};
+    _war_chord_generic(env, intervals, 4, "DOM7");
+}
 static inline void war_chord_min7(war_env* env) {
     int intervals[] = {0, 3, 7, 10};
     _war_chord_generic(env, intervals, 4, "MIN7");
@@ -1526,6 +1532,36 @@ static inline void war_place_note(war_env* env) {
     if (!cur->instance_count) return;
     if (note->instance_count >= note->max_instances) return;
     uint32_t _place_layer = env->ctx_cursor->layer;
+    if (_place_layer == 0) {
+        war_undo_save(env);
+        uint32_t i = note->instance_count++;
+        note->instance[i].pos[0] = cur->instance[0].pos[0];
+        note->instance[i].pos[1] = cur->instance[0].pos[1];
+        note->instance[i].pos[2] = 0.0f;
+        note->instance[i].size[0] = cur->instance[0].size[0];
+        note->instance[i].size[1] = cur->instance[0].size[1];
+        uint32_t _mcol = env->ctx_color->layer_none;
+        note->instance[i].color[0] = ((_mcol >> 24) & 0xFF) / 255.0f;
+        note->instance[i].color[1] = ((_mcol >> 16) & 0xFF) / 255.0f;
+        note->instance[i].color[2] = ((_mcol >> 8) & 0xFF) / 255.0f;
+        note->instance[i].color[3] = (_mcol & 0xFF) / 255.0f;
+        note->instance[i].outline_color[0] = 0.0f;
+        note->instance[i].outline_color[1] = 0.0f;
+        note->instance[i].outline_color[2] = 0.0f;
+        note->instance[i].outline_color[3] = 1.0f;
+        note->instance[i].flags = WAR_NEW_VULKAN_FLAGS_MUTE | (env->layer_visible << 8);
+        note->instance[i].tick = note->tick_counter++;
+        call_king_terry(
+            "MUTE: placed #%u at pos=(%.1f,%.1f) size=(%.1f,%.1f) tick=%lu mask=%u",
+            i,
+            note->instance[i].pos[0],
+            note->instance[i].pos[1],
+            note->instance[i].size[0],
+            note->instance[i].size[1],
+            note->instance[i].tick,
+            (unsigned)env->layer_visible);
+        return;
+    }
     if (_place_layer >= 1 && _place_layer <= 9 && !(env->layer_visible & (1 << (_place_layer - 1)))) return;
     war_undo_save(env);
     uint32_t i = note->instance_count++;
@@ -1674,7 +1710,7 @@ static inline void war_delete_note_under_cursor(war_env* env) {
             float nx0 = note->instance[i].pos[0];
             float nx1 = nx0 + note->instance[i].size[0];
             float ny = note->instance[i].pos[1];
-            if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
+            if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
                 uint32_t _dl = (note->instance[i].flags >> 4) & 0xF;
                 if (_dl >= 1 && _dl <= 9 && !(env->layer_visible & (1 << (_dl - 1)))) continue;
                 uint32_t last = note->instance_count - 1;
@@ -1776,7 +1812,7 @@ static inline void war_yank(war_env* env) {
         float nx0 = note->instance[i].pos[0];
         float nx1 = nx0 + note->instance[i].size[0];
         float ny = note->instance[i].pos[1];
-        if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
+        if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
             uint32_t _yl = (note->instance[i].flags >> 4) & 0xF;
             if (_yl >= 1 && _yl <= 9 && !(env->layer_visible & (1 << (_yl - 1)))) continue;
             count++;
@@ -1797,7 +1833,7 @@ static inline void war_yank(war_env* env) {
         float nx0 = note->instance[i].pos[0];
         float nx1 = nx0 + note->instance[i].size[0];
         float ny = note->instance[i].pos[1];
-        if (nx0 <= x1 && nx1 >= x0 && ny >= y0 && ny <= y1) {
+        if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
             uint32_t _yl2 = (note->instance[i].flags >> 4) & 0xF;
             if (_yl2 >= 1 && _yl2 <= 9 && !(env->layer_visible & (1 << (_yl2 - 1)))) continue;
             env->yank_buffer[j] = note->instance[i];

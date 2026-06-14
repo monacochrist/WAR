@@ -583,6 +583,16 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"<A-S-9>"},
                    WAR_FUNCTION_ID_NONE,
                    war_toggle_layer_9,
+                    0);
+    // toggle all layers (alt+shift+0)
+    war_keymap_set(keymap,
+                   config,
+                   1,
+                   (war_mode_id[]){WAR_MODE_ID_ROLL},
+                   1,
+                   (char*[]){"<A-S-0>"},
+                   WAR_FUNCTION_ID_NONE,
+                   war_toggle_all_layers,
                    0);
     // capture audio toggle (Q = shift+q)
     war_keymap_set(keymap,

@@ -725,6 +725,8 @@ static void war_loop_notes(war_env* env, int quarter_notes, int repeats) {
         for (uint32_t i = 0; i < count; i++) {
             double ns = note->instance[i].pos[0];
             if (ns >= cursor_col && ns < cursor_col + section_cells) {
+                uint32_t lv = (note->instance[i].flags >> 4) & 0xF;
+                if (lv >= 1 && lv <= 9 && !(env->layer_visible & (1 << (lv - 1)))) continue;
                 if (note->instance_count >= max) break;
                 uint32_t dst = note->instance_count++;
                 note->instance[dst] = note->instance[i];
@@ -1154,6 +1156,9 @@ static void war_keyboard_key(void* data,
             } else if (env->cmd_len == 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == '9') {
                 war_chord_9(env);
                 snprintf(env->status_msg, sizeof(env->status_msg), "9");
+            } else if (env->cmd_len == 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == '7') {
+                war_chord_7(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "7");
             } else if (env->cmd_len == 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == '6') {
                 war_chord_6(env);
                 snprintf(env->status_msg, sizeof(env->status_msg), "6");
@@ -1483,7 +1488,7 @@ static void war_keyboard_key(void* data,
     }
 
     // direct $ handler (bypasses keymap for reliability)
-    if (raw_sym == XKB_KEY_dollar && mode == WAR_MODE_ID_ROLL && !env->cmd_active) {
+    if (raw_sym == XKB_KEY_dollar && !(mod & MOD_ALT) && mode == WAR_MODE_ID_ROLL && !env->cmd_active) {
         war_roll_cursor_goto_right_bound_or_prefix_horizontal(env);
         ctx_wayland->keymap_state = 0;
         if (!is_digit) cur->prefix = 0;
@@ -2243,6 +2248,7 @@ int main(int argc, char** argv) {
     ctx_line->instance_count = 1;
     // playback bar state
     env->play_bar_playing = 0;
+    env->play_bar_mute_mask = 0;
     env->play_bar_position_seconds = 0.0;
     env->play_bar_last_frame_ms = 0;
     env->play_bar_last_us = 0;
@@ -2441,6 +2447,18 @@ int main(int argc, char** argv) {
             // activate playbar voices: scan notes at the current playhead position
             if (env->play_bar_playing && env->ctx_note) {
                 uint32_t _nc = env->ctx_note->instance_count;
+                // compute mute mask from mute notes
+                env->play_bar_mute_mask = 0;
+                for (uint32_t _mi = 0; _mi < _nc; _mi++) {
+                    if (env->ctx_note->instance[_mi].flags & WAR_NEW_VULKAN_FLAGS_MUTE) {
+                        double _ms = env->ctx_note->instance[_mi].pos[0];
+                        double _me = _ms + env->ctx_note->instance[_mi].size[0];
+                        if (_pb_ccp >= _ms && _pb_ccp < _me) {
+                            uint32_t _mm = (env->ctx_note->instance[_mi].flags >> 8) & 0x1FF;
+                            env->play_bar_mute_mask |= _mm;
+                        }
+                    }
+                }
                 for (uint32_t _i = 0; _i < _nc; _i++) {
                     double _ns = env->ctx_note->instance[_i].pos[0];
                     double _ne = _ns + env->ctx_note->instance[_i].size[0];
@@ -2448,6 +2466,8 @@ int main(int argc, char** argv) {
                         uint32_t _pp = (uint32_t)(env->ctx_note->instance[_i].pos[1] - (double)ctx_wayland->gutter_rows);
                         if (_pp > 127) _pp = 127;
                         uint32_t _li = (env->ctx_note->instance[_i].flags >> 4) & 0xF;
+                        if (env->ctx_note->instance[_i].flags & WAR_NEW_VULKAN_FLAGS_MUTE) continue;
+                        if (_li >= 1 && _li <= 9 && (env->play_bar_mute_mask & (1 << (_li - 1)))) continue;
                         if (_li < 1 || _li > 9) _li = 1;
                         if (!(env->layer_visible & (1 << (_li - 1)))) continue;
                         uint32_t _si = _pp * WAR_CAPTURE_SLOT_LAYERS + (_li - 1);
@@ -2596,6 +2616,10 @@ int main(int argc, char** argv) {
                             continue;
                         }
                         if (!(env->layer_visible & (1 << (layer - 1)))) {
+                            env->play_bar_voice_active[v] = 0;
+                            continue;
+                        }
+                        if (env->play_bar_mute_mask & (1 << (layer - 1))) {
                             env->play_bar_voice_active[v] = 0;
                             continue;
                         }

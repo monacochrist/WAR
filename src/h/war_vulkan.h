@@ -1741,6 +1741,7 @@ static inline void war_note_render(VkCommandBuffer cmd,
         war_new_vulkan_note_instance* _inst = ctx_note->instance_mapped;
         for (uint32_t _i = 0; _i < ctx_note->instance_count; _i++) {
             uint32_t _li = (_inst[_i].flags >> 4) & 0xF;
+            if ((_inst[_i].flags & WAR_NEW_VULKAN_FLAGS_MUTE)) continue;
             if (_li < 1 || _li > 9 || !(_lv_mask & (1 << (_li - 1))))
                 _inst[_i].size[0] = 0.0f;
         }
