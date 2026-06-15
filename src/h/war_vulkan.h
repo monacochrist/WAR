@@ -2117,6 +2117,74 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                         ctx_wayland,
                         (float)ctx_wayland->width,
                         (float)ctx_wayland->height);
+    // mute note layer labels (behind cursor, scissored to avoid gutter)
+    if (ctx_wayland->env->ctx_font && ctx_wayland->env->ctx_note) {
+        war_font_context* font = ctx_wayland->env->ctx_font;
+        uint32_t _mnc = ctx_wayland->env->ctx_note->instance_count;
+        float _cw = (float)ctx_wayland->env->ctx_cursor->cell_width;
+        float _ch = (float)ctx_wayland->env->ctx_cursor->cell_height;
+        float _zoom = ctx_wayland->zoom;
+        VkViewport _mvp = {0, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 1};
+        int32_t _gr = (int32_t)(ctx_wayland->gutter_cols * _cw * _zoom);
+        if (_gr < 0) _gr = 0;
+        if (_gr > (int32_t)ctx_wayland->width) _gr = (int32_t)ctx_wayland->width;
+        int32_t _gb = (int32_t)(_ch * _zoom * ctx_wayland->gutter_rows);
+        if (_gb < 0) _gb = 0;
+        if (_gb > (int32_t)ctx_wayland->height) _gb = (int32_t)ctx_wayland->height;
+        VkRect2D _msc = {{_gr, 0}, {(uint32_t)(ctx_wayland->width - _gr), (uint32_t)(ctx_wayland->height - _gb)}};
+        vkCmdSetViewport(cmd, 0, 1, &_mvp);
+        vkCmdSetScissor(cmd, 0, 1, &_msc);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, font->pipeline);
+        float _mpc[] = {_cw, _ch, -ctx_wayland->panning[0] * _zoom, -ctx_wayland->panning[1] * _zoom, _zoom, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 0};
+        vkCmdPushConstants(cmd, font->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_mpc), _mpc);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, font->pipeline_layout, 0, 1, &font->desc_set, 0, NULL);
+        VkBuffer _mbufs[] = {font->quad_vbo, font->instance_vbo};
+        VkDeviceSize _moffs[] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, _mbufs, _moffs);
+        war_vulkan_text_instance* _mdst = (war_vulkan_text_instance*)font->instance_mapped;
+#define MUTE_LABEL_OFFSET 420
+        uint32_t _mli = 0;
+        for (uint32_t _mi = 0; _mi < _mnc; _mi++) {
+            war_new_vulkan_note_instance* _mn = &ctx_wayland->env->ctx_note->instance[_mi];
+            if (!(_mn->flags & WAR_NEW_VULKAN_FLAGS_MUTE)) continue;
+            uint16_t _mm = (_mn->flags >> 8) & 0x1FF;
+            char _mlb[16];
+            int _mln = 0;
+            for (int _b = 0; _b < 9; _b++)
+                if (_mm & (1 << _b))
+                    _mlb[_mln++] = (char)('1' + _b);
+            _mlb[_mln] = '\0';
+            if (_mln == 0) continue;
+            int _maxc = (int)((_mn->size[0] - 0.05f) / 0.7f);
+            if (_maxc < 1) _maxc = 1;
+            if (_mln > _maxc) _mln = _maxc;
+            float _ml_x = _mn->pos[0] + 0.05f;
+            float _ml_y = _mn->pos[1] - 0.20f;
+            for (int _j = 0; _j < _mln && MUTE_LABEL_OFFSET + _mli + _j < 512; _j++) {
+                unsigned char _c = (unsigned char)_mlb[_j];
+                war_vulkan_text_instance* _ti = &_mdst[MUTE_LABEL_OFFSET + _mli + _j];
+                _ti->pos[0] = _ml_x + (float)_j * 0.7f;
+                _ti->pos[1] = _ml_y;
+                _ti->pos[2] = 0;
+                _ti->size[0] = 0.7f;
+                _ti->size[1] = 0.7f;
+                _ti->uv[0] = font->glyph_uv[_c][0];
+                _ti->uv[1] = font->glyph_uv[_c][1];
+                _ti->uv[2] = font->glyph_uv[_c][2];
+                _ti->uv[3] = font->glyph_uv[_c][3];
+                _ti->glyph_scale[0] = font->glyph_norm_width[_c];
+                _ti->glyph_scale[1] = font->glyph_norm_height[_c];
+                _ti->ascent = font->glyph_norm_ascent[_c];
+                _ti->descent = font->glyph_norm_descent[_c];
+                _ti->baseline = font->glyph_norm_baseline[_c];
+                _ti->color[0] = 0.0f; _ti->color[1] = 0.0f; _ti->color[2] = 0.0f; _ti->color[3] = 1.0f;
+                _ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)_mln, 0, MUTE_LABEL_OFFSET + _mli);
+            _mli += _mln;
+        }
+#undef MUTE_LABEL_OFFSET
+    }
     if (ctx_wayland->env->ctx_line)
         war_line_render(cmd,
                         ctx_wayland->env->ctx_line,
