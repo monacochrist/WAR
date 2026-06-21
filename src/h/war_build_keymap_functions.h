@@ -120,6 +120,11 @@ else if (strcmp(name, "war_set_width_to_duration") == 0) { return war_set_width_
 else if (strcmp(name, "war_undo_save") == 0) { return war_undo_save; }
 else if (strcmp(name, "war_chord_maj7") == 0) { return war_chord_maj7; }
 else if (strcmp(name, "war_chord_min9") == 0) { return war_chord_min9; }
+else if (strcmp(name, "war_chord_13") == 0) { return war_chord_13; }
+else if (strcmp(name, "war_chord_maj11") == 0) { return war_chord_maj11; }
+else if (strcmp(name, "war_chord_maj13") == 0) { return war_chord_maj13; }
+else if (strcmp(name, "war_chord_min11") == 0) { return war_chord_min11; }
+else if (strcmp(name, "war_chord_min13") == 0) { return war_chord_min13; }
 else if (strcmp(name, "war_chord_7") == 0) { return war_chord_7; }
 else if (strcmp(name, "war_chord_min7") == 0) { return war_chord_min7; }
 else if (strcmp(name, "war_chord_9") == 0) { return war_chord_9; }

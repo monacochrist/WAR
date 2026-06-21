@@ -1141,6 +1141,21 @@ static void war_keyboard_key(void* data,
                 war_export_mp3(env, name);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
+            } else if (env->cmd_len >= 6 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'j' && env->cmd_buf[4] == '1' && env->cmd_buf[5] == '1') {
+                war_chord_maj11(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "maj11");
+            } else if (env->cmd_len >= 6 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'j' && env->cmd_buf[4] == '1' && env->cmd_buf[5] == '3') {
+                war_chord_maj13(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "maj13");
+            } else if (env->cmd_len >= 6 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'i' && env->cmd_buf[3] == 'n' && env->cmd_buf[4] == '1' && env->cmd_buf[5] == '1') {
+                war_chord_min11(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "min11");
+            } else if (env->cmd_len >= 6 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'i' && env->cmd_buf[3] == 'n' && env->cmd_buf[4] == '1' && env->cmd_buf[5] == '3') {
+                war_chord_min13(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "min13");
+            } else if (env->cmd_len == 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == '1' && env->cmd_buf[2] == '3') {
+                war_chord_13(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "13");
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'j' && env->cmd_buf[4] == '7') {
                 war_chord_maj7(env);
                 snprintf(env->status_msg, sizeof(env->status_msg), "maj7");

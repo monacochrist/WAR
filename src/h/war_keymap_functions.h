@@ -1500,6 +1500,26 @@ static inline void war_chord_min9(war_env* env) {
     int intervals[] = {0, 3, 7, 10, 14};
     _war_chord_generic(env, intervals, 5, "MIN9");
 }
+static inline void war_chord_13(war_env* env) {
+    int intervals[] = {0, 4, 7, 10, 14, 21};
+    _war_chord_generic(env, intervals, 6, "DOM13");
+}
+static inline void war_chord_maj11(war_env* env) {
+    int intervals[] = {0, 4, 7, 11, 14, 17};
+    _war_chord_generic(env, intervals, 6, "MAJ11");
+}
+static inline void war_chord_maj13(war_env* env) {
+    int intervals[] = {0, 4, 7, 11, 14, 21};
+    _war_chord_generic(env, intervals, 6, "MAJ13");
+}
+static inline void war_chord_min11(war_env* env) {
+    int intervals[] = {0, 3, 7, 10, 14, 17};
+    _war_chord_generic(env, intervals, 6, "MIN11");
+}
+static inline void war_chord_min13(war_env* env) {
+    int intervals[] = {0, 3, 7, 10, 14, 21};
+    _war_chord_generic(env, intervals, 6, "MIN13");
+}
 static inline void war_chord_7(war_env* env) {
     int intervals[] = {0, 4, 7, 10};
     _war_chord_generic(env, intervals, 4, "DOM7");
