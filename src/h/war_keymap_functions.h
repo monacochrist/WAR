@@ -463,28 +463,25 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             }
         }
     }
-    // first try to find a completely free slot
+    // if same note is already active (including releasing), retrigger in place
     for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
-        if (!env->preview_voice_active[v]) {
+        if (env->preview_voice_active[v] && env->preview_voice_note[v] == note) {
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             war_capture_slot* slot = &env->capture_slots[idx];
-            if (!slot->samples || slot->count < 2) return -1;
-            uint32_t voice = v;
-            env->preview_voice_note[voice] = note;
-            env->preview_voice_layer[voice] = layer;
-            env->preview_voice_read_pos[voice] = 0;
-            env->preview_voice_read_limit[voice] = 0;
-            env->preview_voice_filter_lp[voice][0] = 0.0f;
-            env->preview_voice_filter_lp[voice][1] = 0.0f;
-            env->preview_voice_env_samples[voice] = 0;
-            env->preview_voice_active[voice] = 1;
-            if (env->recording_active) _war_record_place_note(env, note, (int)voice);
-            return (int)voice;
+            if (!slot->samples || slot->count < 2) { env->preview_voice_active[v] = 0; return -1; }
+            env->preview_voice_layer[v] = layer;
+            env->preview_voice_read_pos[v] = 0;
+            env->preview_voice_read_limit[v] = 0;
+            env->preview_voice_filter_lp[v][0] = 0.0f;
+            env->preview_voice_filter_lp[v][1] = 0.0f;
+            env->preview_voice_env_samples[v] = 0;
+            if (env->recording_active) _war_record_place_note(env, note, (int)v);
+            return (int)v;
         }
     }
-    // no free slots — steal the slot for the same note if already playing (retrigger)
+    // find a completely free slot
     for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
-        if (env->preview_voice_note[v] == note) {
+        if (!env->preview_voice_active[v]) {
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             war_capture_slot* slot = &env->capture_slots[idx];
             if (!slot->samples || slot->count < 2) return -1;
@@ -859,15 +856,35 @@ static inline void war_prev_note_same_row(war_env* env) {
 }
 
 static inline void war_zoom_in(war_env* env) {
-    float z = env->ctx_wayland->zoom * 1.25f;
+    war_cursor_context* cur = env->ctx_cursor;
+    war_wayland_context* wl = env->ctx_wayland;
+    float old_z = wl->zoom;
+    float z = old_z * 1.25f;
     if (z > 100.0f) z = 100.0f;
-    env->ctx_wayland->zoom = z;
+    if (cur->instance_count) {
+        float ratio = old_z / z;
+        double cy = cur->instance[0].pos[1];
+        double cx = cur->instance[0].pos[0];
+        wl->panning[0] = (float)(cx - (cx - (double)wl->panning[0]) * (double)ratio);
+        wl->panning[1] = (float)(cy - (cy - (double)wl->panning[1]) * (double)ratio);
+    }
+    wl->zoom = z;
 }
 
 static inline void war_zoom_out(war_env* env) {
-    float z = env->ctx_wayland->zoom * 0.80f;
+    war_cursor_context* cur = env->ctx_cursor;
+    war_wayland_context* wl = env->ctx_wayland;
+    float old_z = wl->zoom;
+    float z = old_z * 0.80f;
     if (z < 0.01f) z = 0.01f;
-    env->ctx_wayland->zoom = z;
+    if (cur->instance_count) {
+        float ratio = old_z / z;
+        double cy = cur->instance[0].pos[1];
+        double cx = cur->instance[0].pos[0];
+        wl->panning[0] = (float)(cx - (cx - (double)wl->panning[0]) * (double)ratio);
+        wl->panning[1] = (float)(cy - (cy - (double)wl->panning[1]) * (double)ratio);
+    }
+    wl->zoom = z;
 }
 
 static inline void war_zoom_reset(war_env* env) {
@@ -1318,6 +1335,9 @@ static inline void war_capture_audio(war_env* env) {
             env->capture_slots[idx].count = env->capture_accumulator_count;
             env->capture_slots[idx].capacity =
                 env->capture_accumulator_capacity;
+            if (env->capture_slots[idx].attack <= 0.0f) env->capture_slots[idx].attack = 100.0f;
+            if (env->capture_slots[idx].sustain <= 0.0f) env->capture_slots[idx].sustain = 100.0f;
+            if (env->capture_slots[idx].release <= 0.0f) env->capture_slots[idx].release = 100.0f;
             env->capture_accumulator = NULL;
             env->capture_accumulator_count = 0;
             env->capture_accumulator_capacity = 0;

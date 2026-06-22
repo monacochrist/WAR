@@ -695,6 +695,9 @@ static void war_load_inst(war_env* env, const char* filename) {
         if (s->samples) { free(s->samples); s->samples = NULL; }
         s->count = 0;
         s->capacity = 0;
+        s->attack = 100.0f;
+        s->sustain = 100.0f;
+        s->release = 100.0f;
     }
     uint32_t count;
     fread(&count, 4, 1, f);
@@ -710,6 +713,9 @@ static void war_load_inst(war_env* env, const char* filename) {
                 env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].samples = samples;
                 env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].count = cnt;
                 env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].capacity = cnt;
+                env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].attack = 100.0f;
+                env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].sustain = 100.0f;
+                env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + li].release = 100.0f;
             } else {
                 fseek(f, cnt * sizeof(float), SEEK_CUR);
             }
@@ -823,10 +829,10 @@ static void war_keyboard_key(void* data,
                 int32_t base = war_octave_to_midi_base((int32_t)ctx_wayland->env->ctx_cursor->octave);
                 uint32_t rel_note = (uint32_t)(offset + base);
                 if (rel_note > 127) rel_note = 127;
+                if (ctx_wayland->env->midi_toggle) return; // toggle mode: release does nothing
                 for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
                     if (ctx_wayland->env->preview_voice_active[v] &&
                         ctx_wayland->env->preview_voice_note[v] == rel_note) {
-                        if (ctx_wayland->env->midi_toggle) break; // toggle mode: release does nothing
                         if (ctx_wayland->env->recording_active) {
                             uint32_t ni = ctx_wayland->env->recording_note_idx[v];
                             double start_col = ctx_wayland->env->recording_start_col[v];
@@ -837,18 +843,19 @@ static void war_keyboard_key(void* data,
                             double sec_per_cell = 15.0 / bpm;
                             double width = (double)elapsed_us / 1000000.0 / sec_per_cell;
                             if (width < 1.0) width = 1.0;
-                            call_king_terry("RECORD: release note=%u ni=%u start=%.2f elapsed_us=%lu width=%.2f",
-                                            rel_note, ni, start_col,
-                                            (unsigned long)elapsed_us, width);
                             if (ni < ctx_wayland->env->ctx_note->instance_count) {
                                 ctx_wayland->env->ctx_note->instance[ni].size[0] = (float)width;
-                                call_king_terry("RECORD: updated note #%u size[0]=%.2f", ni, (float)width);
                             }
                         }
-                        ctx_wayland->env->preview_voice_active[v] = 0;
-                        break;
+                        // graceful release: set read_limit so release envelope plays out
+                        uint32_t _rlidx = rel_note * WAR_CAPTURE_SLOT_LAYERS + (ctx_wayland->env->preview_voice_layer[v] - 1);
+                        float _rel_target = ctx_wayland->env->capture_slots[_rlidx].release / 100.0f * 256.0f;
+                        uint64_t _rel_min = (uint64_t)_rel_target;
+                        if (_rel_min < 256) _rel_min = 256;
+                        ctx_wayland->env->preview_voice_read_limit[v] = ctx_wayland->env->preview_voice_read_pos[v] + _rel_min;
                     }
                 }
+                return;
             }
         }
         return;
@@ -1858,12 +1865,13 @@ void* war_pipewire(void* args) {
         pw_stream_add_listener(
             env->ctx_pw->play_stream, &play_listener, &play_events, env);
         WASSERT(pw_stream_connect(env->ctx_pw->play_stream,
-                                  PW_DIRECTION_OUTPUT,
-                                  PW_ID_ANY,
-                                  PW_STREAM_FLAG_AUTOCONNECT |
-                                      PW_STREAM_FLAG_MAP_BUFFERS,
-                                  params,
-                                  1) == 0);
+                                   PW_DIRECTION_OUTPUT,
+                                   PW_ID_ANY,
+                                   PW_STREAM_FLAG_AUTOCONNECT |
+                                       PW_STREAM_FLAG_MAP_BUFFERS |
+                                       PW_STREAM_FLAG_RT_PROCESS,
+                                   params,
+                                   1) == 0);
         call_king_terry("Pipewire: play stream connected");
     }
 
@@ -2118,11 +2126,6 @@ int main(int argc, char** argv) {
     env->undo_pos = 0;
     env->undo_note_counts = calloc(WAR_UNDO_MAX, sizeof(uint32_t));
     env->undo_notes = calloc(WAR_UNDO_MAX, sizeof(war_new_vulkan_note_instance*));
-    for (int i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++) {
-        env->capture_slots[i].attack = 100.0f;
-        env->capture_slots[i].sustain = 100.0f;
-        env->capture_slots[i].release = 100.0f;
-    }
     env->across_radius = 16;
     env->across_resample = 0;
     ctx_hot->fn_id[0] = WAR_HOT_ID_COLOR;
@@ -2131,6 +2134,12 @@ int main(int argc, char** argv) {
     ctx_hot->fn_id[3] = WAR_HOT_ID_PLUGIN;
     ctx_hot->fn_count = 4;
     war_override(ctx_hot->fn_count, ctx_hot->fn_id, env);
+    // set ADSR defaults after override (plugins may reset pool)
+    for (int i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++) {
+        env->capture_slots[i].attack = 100.0f;
+        env->capture_slots[i].sustain = 100.0f;
+        env->capture_slots[i].release = 100.0f;
+    }
     war_wayland_context* ctx_wayland =
         war_pool_alloc_new(ctx_pool, WAR_POOL_ID_WAYLAND_CONTEXT);
     ctx_wayland->env = env;
@@ -2693,7 +2702,7 @@ int main(int argc, char** argv) {
                     if (env->play_bar_voice_active[v] == 1) { any_active = 1; break; }
             }
             uint32_t _pb_chunks = 0;
-            while ((any_active || env->play_bar_playing) && _pb_chunks < 8) {
+            while ((any_active || env->play_bar_playing) && _pb_chunks < 2) {
                 float mix[PW_CHUNK_FLOATS];
                 memset(mix, 0, sizeof(mix));
                 any_active = 0;

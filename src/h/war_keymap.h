@@ -333,25 +333,15 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_reset_step,
                    0);
-    // zoom
-    war_keymap_set(keymap,
-                   config,
-                   1,
-                   (war_mode_id[]){WAR_MODE_ID_ROLL},
-                   1,
-                   (char*[]){"+"},
-                   WAR_FUNCTION_ID_NONE,
-                   war_zoom_in,
-                   0);
-    war_keymap_set(keymap,
-                   config,
-                   1,
-                   (war_mode_id[]){WAR_MODE_ID_ROLL},
-                   1,
-                   (char*[]){"_"},
-                   WAR_FUNCTION_ID_NONE,
-                   war_zoom_out,
-                   0);
+    // zoom ('=' zoom in, '-' zoom out)
+    war_keymap_set(keymap, config, 4,
+                    (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_MIDI,
+                                    WAR_MODE_ID_VISUAL, WAR_MODE_ID_WAV},
+                    1, (char*[]){"-"}, WAR_FUNCTION_ID_NONE, war_zoom_out, 0);
+    war_keymap_set(keymap, config, 4,
+                    (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_MIDI,
+                                    WAR_MODE_ID_VISUAL, WAR_MODE_ID_WAV},
+                    1, (char*[]){"="}, WAR_FUNCTION_ID_NONE, war_zoom_in, 0);
     war_keymap_set(keymap,
                    config,
                    1,
