@@ -27,6 +27,7 @@ else if (strcmp(name, "war_goto_left_visible_bound") == 0) { return war_goto_lef
 else if (strcmp(name, "war_pan_center_on_cursor") == 0) { return war_pan_center_on_cursor; }
 else if (strcmp(name, "war_goto_row_127") == 0) { return war_goto_row_127; }
 else if (strcmp(name, "war_goto_row_60") == 0) { return war_goto_row_60; }
+else if (strcmp(name, "war_clamp_cursor_row") == 0) { return war_clamp_cursor_row; }
 else if (strcmp(name, "war_goto_row_0") == 0) { return war_goto_row_0; }
 else if (strcmp(name, "war_pan_follow") == 0) { return war_pan_follow; }
 else if (strcmp(name, "war_layer_1") == 0) { return war_layer_1; }

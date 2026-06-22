@@ -37,6 +37,11 @@ static inline void war_color_default(war_color_context* color) {
     color->top_status_bar_text_foreground = 0x504944FF;
     color->middle_status_bar_text_foreground = 0x282828FF;
     color->bottom_status_bar_text_foreground = 0xDE0000FF;
+    color->extra_status_bar = 0x8B0000FF;            // dark red
+    color->extra_status_bar_cursor = 0xEBDAB0FF;
+    color->extra_status_bar_text = 0xEBDAB0FF;
+    color->extra_status_bar_line = 0xEBDAB0FF;
+    color->extra_status_bar_text_foreground = 0x8B0000FF;
     color->explore_header_text = 0xEBDAB0FF;
     color->explore_header_text_foreground = 0x282828FF;
     color->explore_text = 0xEBDAB0FF;

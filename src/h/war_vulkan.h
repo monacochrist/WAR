@@ -558,7 +558,7 @@ static inline void war_piano_gutter_render(VkCommandBuffer cmd,
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
     int32_t gutter_bottom =
         (int32_t)((float)ctx_cursor->cell_height * ctx_wayland->zoom *
-                  ctx_wayland->gutter_rows);
+                  (ctx_wayland->gutter_rows - 0.5f));
     if (gutter_bottom < 0) gutter_bottom = 0;
     if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
     VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
@@ -821,10 +821,12 @@ static inline void war_gridlines_generate(war_gridlines_context* ctx_gl,
         ctx_gl->instance[count].pos[1] = (float)y;
         ctx_gl->instance[count].pos[2] = 0.0f;
         ctx_gl->instance[count].size[0] = (float)(end_col - start_col);
-        ctx_gl->instance[count].size[1] = h_thick;
-        ctx_gl->instance[count].color[0] = 0.2f;
-        ctx_gl->instance[count].color[1] = 0.2f;
-        ctx_gl->instance[count].color[2] = 0.2f;
+        {
+            ctx_gl->instance[count].size[1] = h_thick;
+            ctx_gl->instance[count].color[0] = 0.2f;
+            ctx_gl->instance[count].color[1] = 0.2f;
+            ctx_gl->instance[count].color[2] = 0.2f;
+        }
         ctx_gl->instance[count].color[3] = 1.0f;
         ctx_gl->instance[count].flags = 0;
         count++;
@@ -877,7 +879,7 @@ static inline void war_gridlines_render(VkCommandBuffer cmd,
     if (gutter_right > (int32_t)screen_w) gutter_right = (int32_t)screen_w;
     int32_t gutter_bottom =
         (int32_t)((float)ctx_cursor->cell_height * ctx_wayland->zoom *
-                  ctx_wayland->gutter_rows);
+                  (ctx_wayland->gutter_rows - 0.5f));
     if (gutter_bottom < 0) gutter_bottom = 0;
     if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
     VkRect2D scissor = {
@@ -1311,7 +1313,7 @@ static inline void war_font_render(VkCommandBuffer cmd,
 
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
     int32_t gutter_bottom =
-        (int32_t)((float)ch * ctx_wayland->zoom * ctx_wayland->gutter_rows);
+        (int32_t)((float)ch * ctx_wayland->zoom * (ctx_wayland->gutter_rows - 0.5f));
     if (gutter_bottom < 0) gutter_bottom = 0;
     if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
     VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
@@ -1418,7 +1420,7 @@ static inline void war_cursor_render(VkCommandBuffer cmd,
     VkViewport vp = {0, 0, screen_w, screen_h, 0, 1};
     int32_t gutter_bottom =
         (int32_t)((float)ctx_cursor->cell_height * ctx_wayland->zoom *
-                  ctx_wayland->gutter_rows);
+                  (ctx_wayland->gutter_rows - 0.5f));
     if (gutter_bottom < 0) gutter_bottom = 0;
     if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
     VkRect2D scissor = {{0, 0}, {(uint32_t)screen_w, (uint32_t)(screen_h - gutter_bottom)}};
@@ -1754,7 +1756,7 @@ static inline void war_note_render(VkCommandBuffer cmd,
     if (gutter_right > (int32_t)screen_w) gutter_right = (int32_t)screen_w;
     int32_t gutter_bottom =
         (int32_t)(ctx_wayland->env->ctx_cursor->cell_height * ctx_wayland->zoom *
-                  ctx_wayland->gutter_rows);
+                  (ctx_wayland->gutter_rows - 0.5f));
     if (gutter_bottom < 0) gutter_bottom = 0;
     if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
     VkRect2D scissor = {{gutter_right, 0}, {(uint32_t)(screen_w - gutter_right), (uint32_t)(screen_h - gutter_bottom)}};
@@ -2024,7 +2026,7 @@ static inline void war_line_render(VkCommandBuffer cmd,
     if (gutter_right > (int32_t)screen_w) gutter_right = (int32_t)screen_w;
     int32_t gutter_bottom =
         (int32_t)(ctx_wayland->env->ctx_cursor->cell_height * ctx_wayland->zoom *
-                  ctx_wayland->gutter_rows);
+                  (ctx_wayland->gutter_rows - 0.5f));
     if (gutter_bottom < 0) gutter_bottom = 0;
     if (gutter_bottom > (int32_t)screen_h) gutter_bottom = (int32_t)screen_h;
     VkRect2D scissor = {
@@ -2128,7 +2130,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         int32_t _gr = (int32_t)(ctx_wayland->gutter_cols * _cw * _zoom);
         if (_gr < 0) _gr = 0;
         if (_gr > (int32_t)ctx_wayland->width) _gr = (int32_t)ctx_wayland->width;
-        int32_t _gb = (int32_t)(_ch * _zoom * ctx_wayland->gutter_rows);
+        int32_t _gb = (int32_t)(_ch * _zoom * (ctx_wayland->gutter_rows - 0.5f));
         if (_gb < 0) _gb = 0;
         if (_gb > (int32_t)ctx_wayland->height) _gb = (int32_t)ctx_wayland->height;
         VkRect2D _msc = {{_gr, 0}, {(uint32_t)(ctx_wayland->width - _gr), (uint32_t)(ctx_wayland->height - _gb)}};
@@ -2203,19 +2205,20 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                       ctx_wayland,
                       (float)ctx_wayland->width,
                       (float)ctx_wayland->height);
-    // --- 3 status bar backgrounds at bottom gutter rows ---
+    // --- 4 status bar backgrounds at bottom gutter rows ---
     {
         war_cursor_context* cur = ctx_wayland->env->ctx_cursor;
         double cw = cur->cell_width;
         double ch = cur->cell_height;
         float zoom = ctx_wayland->zoom;
-        uint32_t bar_colors[3] = {
+        uint32_t bar_colors[4] = {
+            ctx_color->extra_status_bar,
             ctx_color->top_status_bar,
             ctx_color->middle_status_bar,
             ctx_color->bottom_status_bar,
         };
-        war_vulkan_cursor_instance status[3] = {0};
-        for (int i = 0; i < 3; i++) {
+        war_vulkan_cursor_instance status[4] = {0};
+        for (int i = 0; i < 4; i++) {
             // Y is inverted: 0 = bottom of screen, gutter_rows-1 = first row above gutter
             status[i].pos[0] = ctx_wayland->panning[0];
             status[i].pos[1] = ctx_wayland->panning[1] + ctx_wayland->gutter_rows - 1 - i;
@@ -2246,7 +2249,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         VkBuffer s_bufs[] = {cur->quad_vbo, cur->instance_vbo};
         VkDeviceSize s_offsets[] = {0, 0};
         vkCmdBindVertexBuffers(cmd, 0, 2, s_bufs, s_offsets);
-        vkCmdDraw(cmd, 4, 3, 0, cur->instance_count);
+        vkCmdDraw(cmd, 4, 4, 0, cur->instance_count);
     }
     // --- visual mode selection highlight ---
     if (ctx_wayland->env->ctx_cursor->visual_active) {
@@ -2267,12 +2270,12 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             sel.pos[2] = 0.0f;
             sel.color[0] = 0.3f; sel.color[1] = 0.3f; sel.color[2] = 1.0f; sel.color[3] = 0.4f;
             sel.flags = 0;
-            // write to cursor instance buffer (past cursor + 3 status bars)
+            // write to cursor instance buffer (past cursor + 4 status bars)
             memcpy((char*)vcur->instance_mapped +
-                       sizeof(war_vulkan_cursor_instance) * (vcur->instance_count + 3),
+                       sizeof(war_vulkan_cursor_instance) * (vcur->instance_count + 4),
                    &sel, sizeof(sel));
             VkViewport svp = {0, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 1};
-            int32_t sgutter = (int32_t)(vch * vzoom * ctx_wayland->gutter_rows);
+            int32_t sgutter = (int32_t)(vch * vzoom * (ctx_wayland->gutter_rows - 0.5f));
             if (sgutter < 0) sgutter = 0;
             if (sgutter > (int32_t)ctx_wayland->height) sgutter = (int32_t)ctx_wayland->height;
             VkRect2D sscissor = {{0, 0}, {(uint32_t)ctx_wayland->width, (uint32_t)(ctx_wayland->height - sgutter)}};
@@ -2282,15 +2285,13 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             float pc_data[] = {
                 (float)vcw, (float)vch,
                 -ctx_wayland->panning[0] * vzoom, -ctx_wayland->panning[1] * vzoom,
-                vzoom, 0,
-                (float)ctx_wayland->width, (float)ctx_wayland->height,
-                0, 0,
+                vzoom, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 0,
             };
             vkCmdPushConstants(cmd, vcur->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pc_data), pc_data);
             VkBuffer bufs[] = {vcur->quad_vbo, vcur->instance_vbo};
             VkDeviceSize offsets[] = {0, 0};
             vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
-            vkCmdDraw(cmd, 4, 1, 0, vcur->instance_count + 3);
+            vkCmdDraw(cmd, 4, 1, 0, vcur->instance_count + 4);
         }
     }
     // --- waveform viewer ---
@@ -2360,7 +2361,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                            sizeof(war_vulkan_cursor_instance) * (wcur->instance_count + 4),
                        wquads, sizeof(war_vulkan_cursor_instance) * wcount);
                 VkViewport wvp = {0, 0, (float)ctx_wayland->width, (float)ctx_wayland->height, 0, 1};
-                int32_t wgb = (int32_t)(wch * wz * ctx_wayland->gutter_rows);
+                int32_t wgb = (int32_t)(wch * wz * (ctx_wayland->gutter_rows - 0.5f));
                 if (wgb < 0) wgb = 0;
                 if (wgb > (int32_t)ctx_wayland->height) wgb = (int32_t)ctx_wayland->height;
                 VkRect2D wsc = {{0, 0}, {(uint32_t)ctx_wayland->width, (uint32_t)(ctx_wayland->height - wgb)}};
@@ -2396,7 +2397,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                          ctx_wayland->env->ctx_cursor->instance[0].pos[0] - (double)(ctx_wayland->gutter_cols - 1));
         if (n < 0 || n > (int)sizeof(label)) n = 0;
         // top status bar, panning-independent
-        float label_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
+        float label_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
 #define LABEL_OFFSET 256
         war_vulkan_text_instance* dst = font->instance_mapped;
         for (int i = 0; i < n; i++) {
@@ -2447,7 +2448,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                     _lvb[_lvn++] = (char)('0' + _lvi);
             _lvb[_lvn] = '\0';
             if (_lvn > 0) {
-                float _lvr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
+                float _lvr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
 #define LV_OFFSET 410
                 for (int _lvi2 = 0; _lvi2 < _lvn; _lvi2++) {
                     unsigned char _lvc = (unsigned char)_lvb[_lvi2];
@@ -2473,6 +2474,82 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef LV_OFFSET
             }
         }
+        // master gain label on top status bar
+        {
+            float _mg = ctx_wayland->env->master_gain;
+            char _mt[16];
+            int _mn = snprintf(_mt, sizeof(_mt), "MG%.0f", _mg * 100.0f);
+            if (_mn > 0) {
+                    float _mrow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
+#define MG_OFFSET 276
+                    for (int _mi2 = 0; _mi2 < _mn; _mi2++) {
+                        unsigned char _mc = (unsigned char)_mt[_mi2];
+                        war_vulkan_text_instance* _ti = &dst[MG_OFFSET + _mi2];
+                        _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 37 + _mi2);
+                        _ti->pos[1] = _mrow;
+                        _ti->pos[2] = 0;
+                        _ti->size[0] = 1.0f;
+                        _ti->size[1] = 1.0f;
+                        _ti->uv[0] = font->glyph_uv[_mc][0];
+                        _ti->uv[1] = font->glyph_uv[_mc][1];
+                        _ti->uv[2] = font->glyph_uv[_mc][2];
+                        _ti->uv[3] = font->glyph_uv[_mc][3];
+                        _ti->glyph_scale[0] = font->glyph_norm_width[_mc];
+                        _ti->glyph_scale[1] = font->glyph_norm_height[_mc];
+                        _ti->ascent = font->glyph_norm_ascent[_mc];
+                        _ti->descent = font->glyph_norm_descent[_mc];
+                        _ti->baseline = font->glyph_norm_baseline[_mc];
+                        _ti->color[0] = 1.0f; _ti->color[1] = 0.8f; _ti->color[2] = 0.2f; _ti->color[3] = 1.0f;
+                        _ti->flags = 0;
+                    }
+                    vkCmdDraw(cmd, 4, (uint32_t)_mn, 0, MG_OFFSET);
+#undef MG_OFFSET
+            }
+        }
+        // ADSR label on extra status bar (attack/sustain/release of current slot)
+        {
+            war_cursor_context* _ac2 = ctx_wayland->env->ctx_cursor;
+            if (_ac2 && _ac2->instance_count) {
+                double _agr = _ac2->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                uint32_t _agp = _agr > 0 ? (uint32_t)(_agr + 0.5) : 0;
+                if (_agp > 127) _agp = 127;
+                uint32_t _agl2 = _ac2->layer;
+                if (_agl2 < 1 || _agl2 > 9) _agl2 = 1;
+                uint32_t _agi = _agp * WAR_CAPTURE_SLOT_LAYERS + (_agl2 - 1);
+                war_capture_slot* _cslot = &ctx_wayland->env->capture_slots[_agi];
+                float _aatk2 = _cslot->attack;
+                float _asus2 = _cslot->sustain;
+                float _arel2 = _cslot->release;
+                char _abuf2[32];
+                int _abn2 = snprintf(_abuf2, sizeof(_abuf2), "A%.0f S%.0f R%.0f", _aatk2, _asus2, _arel2);
+                if (_abn2 > 0) {
+                    float _arow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
+#define ADSR_OFFSET 300
+                    for (int _abi2 = 0; _abi2 < _abn2; _abi2++) {
+                        unsigned char _abc2 = (unsigned char)_abuf2[_abi2];
+                        war_vulkan_text_instance* _bti2 = &dst[ADSR_OFFSET + _abi2];
+                        _bti2->pos[0] = ctx_wayland->panning[0] + (float)_abi2;
+                        _bti2->pos[1] = _arow2;
+                        _bti2->pos[2] = 0;
+                        _bti2->size[0] = 1.0f;
+                        _bti2->size[1] = 1.0f;
+                        _bti2->uv[0] = font->glyph_uv[_abc2][0];
+                        _bti2->uv[1] = font->glyph_uv[_abc2][1];
+                        _bti2->uv[2] = font->glyph_uv[_abc2][2];
+                        _bti2->uv[3] = font->glyph_uv[_abc2][3];
+                        _bti2->glyph_scale[0] = font->glyph_norm_width[_abc2];
+                        _bti2->glyph_scale[1] = font->glyph_norm_height[_abc2];
+                        _bti2->ascent = font->glyph_norm_ascent[_abc2];
+                        _bti2->descent = font->glyph_norm_descent[_abc2];
+                        _bti2->baseline = font->glyph_norm_baseline[_abc2];
+                        _bti2->color[0] = 1.0f; _bti2->color[1] = 0.6f; _bti2->color[2] = 0.2f; _bti2->color[3] = 1.0f;
+                        _bti2->flags = 0;
+                    }
+                    vkCmdDraw(cmd, 4, (uint32_t)_abn2, 0, ADSR_OFFSET);
+#undef ADSR_OFFSET
+                }
+            }
+        }
         // gain label on top status bar
         {
             double _gr = ctx_wayland->env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
@@ -2486,7 +2563,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                 char _gt[16];
                 int _gn = snprintf(_gt, sizeof(_gt), "G%.0f", _gs->gain);
                 if (_gn > 0) {
-                    float _grow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+                    float _grow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
 #define GAIN_OFFSET 280
                     for (int _gi2 = 0; _gi2 < _gn; _gi2++) {
                         unsigned char _gc = (unsigned char)_gt[_gi2];
@@ -2525,7 +2602,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             char _pt2[16];
             int _pn2 = snprintf(_pt2, sizeof(_pt2), "P%d", _ps2->pan);
             if (_pn2 > 0) {
-                float _prow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+                float _prow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
 #define PAN_OFFSET 285
                 for (int _pi3 = 0; _pi3 < _pn2; _pi3++) {
                     unsigned char _pc2 = (unsigned char)_pt2[_pi3];
@@ -2563,7 +2640,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             char _et2[16];
             int _en2 = snprintf(_et2, sizeof(_et2), "E%d", _es2->eq);
             if (_en2 > 0) {
-                float _erow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+                float _erow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
 #define EQ_OFFSET 295
                 for (int _ei3 = 0; _ei3 < _en2; _ei3++) {
                     unsigned char _ec2 = (unsigned char)_et2[_ei3];
@@ -2593,7 +2670,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (!ctx_wayland->env->across_resample) {
             const char* _rst = "RESAMPLE";
             int _rsn = 8;
-            float _rsr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+            float _rsr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
 #define RSMP_OFFSET 390
             for (int _rsi = 0; _rsi < _rsn; _rsi++) {
                 unsigned char _rsc = (unsigned char)_rst[_rsi];
@@ -2622,7 +2699,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (ctx_wayland->env->play_bar_loop) {
             const char* _plt = "PB LOOP";
             int _pln = 7;
-            float _plr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+            float _plr = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
 #define PBLOOP_OFFSET 400
             for (int _pli = 0; _pli < _pln; _pli++) {
                 unsigned char _pc = (unsigned char)_plt[_pli];
@@ -2757,7 +2834,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (ctx_wayland->env->atomics->capture) {
             const char* captxt = "CAPTURE";
             int capn = 7;
-            float caprow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+            float caprow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
 #define CAP_OFFSET 308
             for (int i = 0; i < capn; i++) {
                 unsigned char c = (unsigned char)captxt[i];
@@ -2783,7 +2860,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (ctx_wayland->env->active_mode == WAR_MODE_ID_MIDI) {
             const char* midi_text = "MIDI";
             int midi_n = 4;
-            float midi_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+            float midi_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
 #define MIDI_OFFSET 310
             for (int i = 0; i < midi_n; i++) {
                 unsigned char c = (unsigned char)midi_text[i];
@@ -2812,7 +2889,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (ctx_wayland->env->tap_tempo_active) {
             const char* tap_txt = "TAP TEMPO";
             int tap_n = 9;
-            float tap_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+            float tap_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
 #define TAP_OFFSET 315
             for (int i = 0; i < tap_n; i++) {
                 unsigned char c = (unsigned char)tap_txt[i];
@@ -2838,7 +2915,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (ctx_wayland->env->ctx_cursor->visual_active) {
             const char* vis_text = "VISUAL";
             int vis_n = 6;
-            float vis_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+            float vis_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
 #define VIS_OFFSET 320
             for (int i = 0; i < vis_n; i++) {
                 unsigned char c = (unsigned char)vis_text[i];
@@ -2867,7 +2944,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (ctx_wayland->env->ctx_cursor->visual_stretch_active) {
             const char* str_text = "STRETCH";
             int str_n = 7;
-            float str_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+            float str_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
 #define STR_OFFSET 325
             for (int i = 0; i < str_n; i++) {
                 unsigned char c = (unsigned char)str_text[i];
@@ -2897,7 +2974,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             const char* sm = ctx_wayland->env->status_msg;
             int sm_n = (int)strlen(sm);
             if (sm_n > 60) sm_n = 60;
-            float sm_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 2.0f;
+            float sm_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
 #define SM_OFFSET 330
             for (int i = 0; i < sm_n; i++) {
                 unsigned char c = (unsigned char)sm[i];

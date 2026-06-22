@@ -112,6 +112,8 @@ static inline void war_pan_center_on_cursor(war_env* env) {
         wl->panning[0] = (float)(cx - vis_cols / 2.0);
         if (wl->panning[0] < 0) wl->panning[0] = 0;
         if (wl->panning[1] < 0) wl->panning[1] = 0;
+        double max_pan = cy - (double)wl->gutter_rows;
+        if ((double)wl->panning[1] > max_pan) wl->panning[1] = (float)max_pan;
     }
 }
 
@@ -125,6 +127,13 @@ static inline void war_goto_row_60(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     cur->instance[0].pos[1] = 60.0 + (double)env->ctx_wayland->gutter_rows;
     war_pan_center_on_cursor(env);
+}
+
+static inline void war_clamp_cursor_row(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    double min_row = (double)env->ctx_wayland->gutter_rows;
+    if (cur->instance_count && cur->instance[0].pos[1] < min_row)
+        cur->instance[0].pos[1] = (float)min_row;
 }
 
 static inline void war_goto_row_0(war_env* env) {
@@ -163,6 +172,8 @@ static inline void war_pan_follow(war_env* env) {
     p[1] = (float)(int)(p[1] + 0.5);
     if (p[0] < 0) p[0] = 0;
     if (p[1] < 0) p[1] = 0;
+    double max_pan_follow = cy - (double)wl->gutter_rows;
+    if ((double)p[1] > max_pan_follow) p[1] = (float)max_pan_follow;
 }
 
 static inline void war_layer_1(war_env* env) {
@@ -465,6 +476,7 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_read_limit[voice] = 0;
             env->preview_voice_filter_lp[voice][0] = 0.0f;
             env->preview_voice_filter_lp[voice][1] = 0.0f;
+            env->preview_voice_env_samples[voice] = 0;
             env->preview_voice_active[voice] = 1;
             if (env->recording_active) _war_record_place_note(env, note, (int)voice);
             return (int)voice;
@@ -483,6 +495,7 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_read_limit[voice] = 0;
             env->preview_voice_filter_lp[voice][0] = 0.0f;
             env->preview_voice_filter_lp[voice][1] = 0.0f;
+            env->preview_voice_env_samples[voice] = 0;
             env->preview_voice_active[voice] = 1;
             if (env->recording_active) _war_record_place_note(env, note, (int)voice);
             return (int)voice;
@@ -710,7 +723,7 @@ static inline void war_move_cursor_up(war_env* env) {
 
 static inline void war_move_cursor_down(war_env* env) {
     war_cursor_context* cursor = env->ctx_cursor;
-    double bound = env->ctx_wayland->gutter_rows + 0.5;
+    double bound = env->ctx_wayland->gutter_rows;
     if (cursor->instance_count) {
         double pos = cursor->instance[0].pos[1];
         if (pos > bound)
@@ -731,9 +744,11 @@ static inline void war_goto_viewport_bottom(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     war_wayland_context* wl = env->ctx_wayland;
     double bottom = wl->panning[1] + wl->gutter_rows;
-    if (bottom < wl->gutter_rows) bottom = wl->gutter_rows;
+    double min_bottom = wl->gutter_rows;
+    if (bottom < min_bottom) bottom = min_bottom;
     if (bottom > wl->top_bound) bottom = wl->top_bound;
     cur->instance[0].pos[1] = (uint32_t)(bottom + 0.5);
+    war_clamp_cursor_row(env);
 }
 
 static inline void war_goto_viewport_top(war_env* env) {
@@ -745,12 +760,14 @@ static inline void war_goto_viewport_top(war_env* env) {
         if (top < 0) top = 0;
         if (top > wl->top_bound) top = wl->top_bound;
         cur->instance[0].pos[1] = (uint32_t)(top + 0.5);
+        war_clamp_cursor_row(env);
         war_pan_follow(env);
     } else {
         double row = (double)cur->prefix;
         if (row < 0) row = 0;
         if (row > wl->top_bound) row = wl->top_bound;
         cur->instance[0].pos[1] = (float)(row + (double)wl->gutter_rows);
+        war_clamp_cursor_row(env);
         war_pan_center_on_cursor(env);
     }
 }
@@ -887,6 +904,7 @@ static inline void war_visual_swap_anchor(war_env* env) {
     float tmp_row = cur->instance[0].pos[1];
     cur->instance[0].pos[0] = cur->visual_anchor_col;
     cur->instance[0].pos[1] = cur->visual_anchor_row;
+    war_clamp_cursor_row(env);
     cur->visual_anchor_col = tmp_col;
     cur->visual_anchor_row = tmp_row;
 }
@@ -993,6 +1011,7 @@ static inline void _war_visual_move_selection(war_env* env, float dx, float dy) 
     }
     cur->instance[0].pos[0] += dx;
     cur->instance[0].pos[1] += dy;
+    war_clamp_cursor_row(env);
     cur->visual_anchor_col += dx;
     cur->visual_anchor_row += dy;
     call_king_terry("VISUAL: moved %u notes (%.0f,%.0f)", moved, dx, dy);
@@ -1489,7 +1508,6 @@ static inline void _war_chord_generic(war_env* env, const int* intervals, int n_
         note->instance[i].outline_color[0] = 0.0f;
         note->instance[i].outline_color[1] = 0.0f;
         note->instance[i].outline_color[2] = 0.0f;
-        note->instance[i].outline_color[3] = 1.0f;
         note->instance[i].flags = (uint32_t)layer << 4;
         note->instance[i].tick = note->tick_counter++;
     }

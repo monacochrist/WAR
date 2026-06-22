@@ -62,7 +62,7 @@ enum war_misc {
     MAX_SAMPLES_PER_NOTE = 128,
     UNSET = 0,
     MAX_DIGITS = 10,
-    NUM_STATUS_BARS = 3,
+    NUM_STATUS_BARS = 4,
     MAX_GRIDLINE_SPLITS = 4,
     MAX_VIEWS_SAVED = 13,
     MAX_WARPOON_TEXT_COLS = 25,
@@ -366,6 +366,9 @@ typedef struct war_capture_slot {
     float gain; // 0-200 scale (100 = 1.0x multiplier)
     int pan;    // -100 to +100 (0 = center)
     int eq;     // 0-200 scale (100 = flat, 0 = full low-pass, 200 = full high-pass)
+    float attack;   // 0-1000, default 100
+    float sustain;  // 0-100, default 100
+    float release;  // 0-1000, default 100
 } war_capture_slot;
 
 typedef struct war_glyph_info {
@@ -1068,6 +1071,11 @@ typedef struct __attribute__((packed)) war_color_body {
     uint32_t top_status_bar_text_foreground;
     uint32_t middle_status_bar_text_foreground;
     uint32_t bottom_status_bar_text_foreground;
+    uint32_t extra_status_bar;
+    uint32_t extra_status_bar_cursor;
+    uint32_t extra_status_bar_text;
+    uint32_t extra_status_bar_line;
+    uint32_t extra_status_bar_text_foreground;
     uint32_t explore_header_text;
     uint32_t explore_header_text_foreground;
     uint32_t explore_text;
@@ -1827,6 +1835,7 @@ typedef enum war_mode_id_enum {
     WAR_MODE_ID_WAV,
     WAR_MODE_ID_VISUAL,
     WAR_MODE_ID_CHORD,
+    WAR_MODE_ID_MASTER,
     //
     WAR_MODE_COUNT,
 } war_mode_id_enum;
@@ -1842,6 +1851,7 @@ typedef enum war_mode_flags_bits {
     WAR_MODE_WAV = 1ULL << WAR_MODE_ID_WAV,
     WAR_MODE_VISUAL = 1ULL << WAR_MODE_ID_VISUAL,
     WAR_MODE_CHORD = 1ULL << WAR_MODE_ID_CHORD,
+    WAR_MODE_MASTER = 1ULL << WAR_MODE_ID_MASTER,
 } war_mode_flags_bits;
 typedef uint64_t war_keymap_flags;
 typedef enum war_keymap_flags_bits {
@@ -1893,12 +1903,17 @@ typedef struct war_color_context {
     uint32_t top_status_bar_text_foreground;
     uint32_t middle_status_bar_text_foreground;
     uint32_t bottom_status_bar_text_foreground;
+    uint32_t extra_status_bar;
+    uint32_t extra_status_bar_cursor;
+    uint32_t extra_status_bar_text;
+    uint32_t extra_status_bar_line;
+    uint32_t extra_status_bar_text_foreground;
     uint32_t explore_header_text;
     uint32_t explore_header_text_foreground;
     uint32_t explore_text;
     uint32_t explore_text_foreground;
-    uint32_t explore_editable_text;            // editable by war
-    uint32_t explore_editable_text_foreground; // editable by war
+    uint32_t explore_editable_text;
+    uint32_t explore_editable_text_foreground;
     uint32_t explore_line;
     uint32_t explore_directory_text;
     uint32_t explore_directory_text_foreground;
@@ -2715,14 +2730,17 @@ struct war_env {
     uint64_t play_bar_voice_read_pos[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
     float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][2];
+    uint64_t play_bar_voice_env_samples[WAR_PLAY_BAR_VOICES];
     float play_bar_direct_filter_lp[128 * WAR_CAPTURE_SLOT_LAYERS][2];
     uint32_t play_bar_mute_mask;
+    float master_gain;
     uint8_t preview_voice_active[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_note[WAR_PREVIEW_VOICES];
     uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_pos[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_limit[WAR_PREVIEW_VOICES];
     float preview_voice_filter_lp[WAR_PREVIEW_VOICES][2];
+    uint64_t preview_voice_env_samples[WAR_PREVIEW_VOICES];
     // recording state
     uint8_t recording_active;
     uint8_t loop_mode;
