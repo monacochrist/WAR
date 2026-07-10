@@ -428,16 +428,6 @@ static inline void war_record_midi(war_env* env) {
         env->recording_last_frame_ms = 0;
         for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++)
             env->recording_start_col[v] = 0.0;
-        // reset playback bar to start and begin playing
-        float _gc = (float)env->ctx_wayland->gutter_cols;
-        env->play_bar_position_seconds = 0.0;
-        env->play_bar_last_frame_ms = 0;
-        env->play_bar_last_us = 0;
-        env->play_bar_prev_cell_pos = (double)_gc;
-        memset(env->play_bar_voice_active, 0, sizeof(env->play_bar_voice_active));
-        memset(env->play_bar_direct_filter_lp, 0, sizeof(env->play_bar_direct_filter_lp));
-        if (env->ctx_line)
-            env->ctx_line->instance[0].pos[0] = _gc;
         env->play_bar_playing = 1;
     }
 }
@@ -835,6 +825,45 @@ static inline void war_go_to_note_end(war_env* env) {
     }
 }
 
+static inline void war_set_width_to_note(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_note_context* note = env->ctx_note;
+    if (!cur->instance_count || !note || !note->instance_count) return;
+    float cy = cur->instance[0].pos[1];
+    float cx = cur->instance[0].pos[0];
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        if (note->instance[i].pos[1] != cy) continue;
+        uint32_t _nl = (note->instance[i].flags >> 4) & 0xF;
+        if (_nl >= 1 && _nl <= 9 && !(env->layer_visible & (1 << (_nl - 1)))) continue;
+        float ns = note->instance[i].pos[0];
+        float ne = ns + note->instance[i].size[0];
+        if (cx >= ns && cx < ne) {
+            cur->x_width[0] = (double)note->instance[i].size[0];
+            cur->instance[0].size[0] = note->instance[i].size[0];
+            snprintf(env->status_msg, sizeof(env->status_msg), "width %.1f", note->instance[i].size[0]);
+            return;
+        }
+    }
+}
+
+static inline void war_set_loop_end(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
+    env->loop_end_col = cur->instance[0].pos[0];
+    if (env->ctx_line && env->ctx_line->instance_count >= 2)
+        env->ctx_line->instance[1].pos[0] = env->loop_end_col;
+    snprintf(env->status_msg, sizeof(env->status_msg), "loop end %.1f", env->loop_end_col);
+}
+
+static inline void war_set_loop_start(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
+    env->loop_start_col = cur->instance[0].pos[0];
+    if (env->ctx_line && env->ctx_line->instance_count >= 3)
+        env->ctx_line->instance[2].pos[0] = env->loop_start_col;
+    snprintf(env->status_msg, sizeof(env->status_msg), "loop start %.1f", env->loop_start_col);
+}
+
 static inline void war_prev_note_same_row(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     war_note_context* note = env->ctx_note;
@@ -869,6 +898,7 @@ static inline void war_zoom_in(war_env* env) {
         wl->panning[1] = (float)(cy - (cy - (double)wl->panning[1]) * (double)ratio);
     }
     wl->zoom = z;
+    war_pan_follow(env);
 }
 
 static inline void war_zoom_out(war_env* env) {
@@ -885,6 +915,7 @@ static inline void war_zoom_out(war_env* env) {
         wl->panning[1] = (float)(cy - (cy - (double)wl->panning[1]) * (double)ratio);
     }
     wl->zoom = z;
+    war_pan_follow(env);
 }
 
 static inline void war_zoom_reset(war_env* env) {
@@ -1023,6 +1054,10 @@ static inline void _war_visual_move_selection(war_env* env, float dx, float dy) 
             if (_vl >= 1 && _vl <= 9 && !(env->layer_visible & (1 << (_vl - 1)))) continue;
             note->instance[i].pos[0] += dx;
             note->instance[i].pos[1] += dy;
+            if (note->instance[i].pos[0] < (float)env->ctx_wayland->gutter_cols)
+                note->instance[i].pos[0] = (float)env->ctx_wayland->gutter_cols;
+            if (note->instance[i].pos[1] < (float)env->ctx_wayland->gutter_rows)
+                note->instance[i].pos[1] = (float)env->ctx_wayland->gutter_rows;
             moved++;
         }
     }
@@ -1294,6 +1329,12 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
             env->capture_slots[tidx].samples = dst;
             env->capture_slots[tidx].count = dst_cnt;
             env->capture_slots[tidx].capacity = dst_cnt;
+            env->capture_slots[tidx].gain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].gain;
+            env->capture_slots[tidx].pan = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].pan;
+            env->capture_slots[tidx].eq = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].eq;
+            env->capture_slots[tidx].attack = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].attack;
+            env->capture_slots[tidx].sustain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].sustain;
+            env->capture_slots[tidx].release = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].release;
         } else {
             // non-resample: changes pitch, preserves duration
             uint64_t dst_frames = src_frames;
@@ -1317,6 +1358,12 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
             env->capture_slots[tidx].samples = dst;
             env->capture_slots[tidx].count = dst_cnt;
             env->capture_slots[tidx].capacity = dst_cnt;
+            env->capture_slots[tidx].gain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].gain;
+            env->capture_slots[tidx].pan = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].pan;
+            env->capture_slots[tidx].eq = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].eq;
+            env->capture_slots[tidx].attack = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].attack;
+            env->capture_slots[tidx].sustain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].sustain;
+            env->capture_slots[tidx].release = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].release;
         }
     }
     call_king_terry("ACROSS: pitch-shifted note=%u radius=%d resample=%d", src_note, rad, env->across_resample);
@@ -1335,9 +1382,6 @@ static inline void war_capture_audio(war_env* env) {
             env->capture_slots[idx].count = env->capture_accumulator_count;
             env->capture_slots[idx].capacity =
                 env->capture_accumulator_capacity;
-            if (env->capture_slots[idx].attack <= 0.0f) env->capture_slots[idx].attack = 100.0f;
-            if (env->capture_slots[idx].sustain <= 0.0f) env->capture_slots[idx].sustain = 100.0f;
-            if (env->capture_slots[idx].release <= 0.0f) env->capture_slots[idx].release = 100.0f;
             env->capture_accumulator = NULL;
             env->capture_accumulator_count = 0;
             env->capture_accumulator_capacity = 0;
@@ -1653,7 +1697,7 @@ static inline void war_undo_save(war_env* env) {
     war_note_context* note = env->ctx_note;
     if (!note) return;
     // discard any redo branches beyond current position
-    for (uint32_t i = env->undo_pos + 1; i < env->undo_count; i++) {
+    for (uint32_t i = env->undo_pos + 1; i < env->undo_count && i < WAR_UNDO_MAX; i++) {
         free(env->undo_notes[i]);
         env->undo_notes[i] = NULL;
     }
@@ -1661,8 +1705,12 @@ static inline void war_undo_save(war_env* env) {
     // shift if full
     if (env->undo_count > WAR_UNDO_MAX) {
         free(env->undo_notes[0]);
-        for (uint32_t i = 1; i < env->undo_count; i++)
+        for (uint32_t i = 1; i < WAR_UNDO_MAX; i++) {
             env->undo_notes[i - 1] = env->undo_notes[i];
+            env->undo_note_counts[i - 1] = env->undo_note_counts[i];
+        }
+        env->undo_notes[WAR_UNDO_MAX - 1] = NULL;
+        env->undo_note_counts[WAR_UNDO_MAX - 1] = 0;
         env->undo_count--;
         env->undo_pos--;
     }
@@ -1705,7 +1753,7 @@ static inline void war_undo(war_env* env) {
 
 static inline void war_redo(war_env* env) {
     war_note_context* note = env->ctx_note;
-    if (!note || env->undo_pos >= env->undo_count - 1) return;
+    if (!note || env->undo_count < 2 || env->undo_pos >= env->undo_count - 1) return;
     uint32_t restore_idx = env->undo_pos + 1;
     uint32_t cnt = env->undo_note_counts[restore_idx];
     if (cnt > note->max_instances) cnt = note->max_instances;
@@ -1911,7 +1959,12 @@ static inline void war_paste(war_env* env) {
     if (!cur || !cur->instance_count) return;
     war_note_context* note = env->ctx_note;
     if (!note || env->yank_count == 0 || !env->yank_buffer) return;
-    if (note->instance_count + env->yank_count > note->max_instances) return;
+    if (note->instance_count >= note->max_instances ||
+        note->instance_count + env->yank_count > note->max_instances) {
+        snprintf(env->status_msg, sizeof(env->status_msg), "paste: note limit (%u + %u > %u)",
+                 note->instance_count, env->yank_count, note->max_instances);
+        return;
+    }
     war_undo_save(env);
     float cx = cur->instance[0].pos[0];
     float cy = cur->instance[0].pos[1];
@@ -1920,6 +1973,10 @@ static inline void war_paste(war_env* env) {
         note->instance[dst] = env->yank_buffer[i];
         note->instance[dst].pos[0] += cx;
         note->instance[dst].pos[1] += cy;
+        if (note->instance[dst].pos[0] < (float)env->ctx_wayland->gutter_cols)
+            note->instance[dst].pos[0] = (float)env->ctx_wayland->gutter_cols;
+        if (note->instance[dst].pos[1] < (float)env->ctx_wayland->gutter_rows)
+            note->instance[dst].pos[1] = (float)env->ctx_wayland->gutter_rows;
         note->instance[dst].tick = note->tick_counter++;
     }
     call_king_terry("PASTE: %u notes at (%.1f,%.1f)", env->yank_count, cx, cy);

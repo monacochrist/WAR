@@ -363,12 +363,12 @@ typedef struct war_capture_slot {
     float* samples;
     uint64_t count;
     uint64_t capacity;
-    float gain; // 0-200 scale (100 = 1.0x multiplier)
-    int pan;    // -100 to +100 (0 = center)
-    int eq;     // 0-200 scale (100 = flat, 0 = full low-pass, 200 = full high-pass)
-    float attack;   // 0-1000, default 100
-    float sustain;  // 0-100, default 100
-    float release;  // 0-1000, default 100
+    float gain; // -1000..1000, default 0 (100%)
+    int pan;    // -1000..1000, default 0 (center)
+    int eq;     // -1000..1000, default 0 (flat)
+    float attack;   // -1000..1000, default 0
+    float sustain;  // -1000..1000, default 0
+    float release;  // -1000..1000, default 0
 } war_capture_slot;
 
 typedef struct war_glyph_info {
@@ -2720,6 +2720,8 @@ struct war_env {
     uint32_t play_bar_last_frame_ms;
     uint64_t play_bar_last_us;
     double play_bar_prev_cell_pos;
+    float loop_start_col;
+    float loop_end_col;
 #define WAR_PLAY_BAR_VOICES 64
 #define WAR_PREVIEW_VOICES 16
 

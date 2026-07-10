@@ -2453,7 +2453,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                 for (int _lvi2 = 0; _lvi2 < _lvn; _lvi2++) {
                     unsigned char _lvc = (unsigned char)_lvb[_lvi2];
                     war_vulkan_text_instance* _lti = &dst[LV_OFFSET + _lvi2];
-                    _lti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 2 + _lvi2);
+                    _lti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 20 + _lvi2);
                     _lti->pos[1] = _lvr;
                     _lti->pos[2] = 0;
                     _lti->size[0] = 1.0f;
@@ -2474,18 +2474,18 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef LV_OFFSET
             }
         }
-        // master gain label on top status bar
+        // master gain label on extra status bar (topmost)
         {
             float _mg = ctx_wayland->env->master_gain;
             char _mt[16];
-            int _mn = snprintf(_mt, sizeof(_mt), "MG%.0f", _mg * 100.0f);
+            int _mn = snprintf(_mt, sizeof(_mt), "MG%+.0f", _mg);
             if (_mn > 0) {
-                    float _mrow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
+                    float _mrow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
 #define MG_OFFSET 276
                     for (int _mi2 = 0; _mi2 < _mn; _mi2++) {
                         unsigned char _mc = (unsigned char)_mt[_mi2];
                         war_vulkan_text_instance* _ti = &dst[MG_OFFSET + _mi2];
-                        _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 37 + _mi2);
+                        _ti->pos[0] = ctx_wayland->panning[0] + (float)(25 + _mi2);
                         _ti->pos[1] = _mrow;
                         _ti->pos[2] = 0;
                         _ti->size[0] = 1.0f;
@@ -2521,10 +2521,10 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                 float _asus2 = _cslot->sustain;
                 float _arel2 = _cslot->release;
                 char _abuf2[32];
-                int _abn2 = snprintf(_abuf2, sizeof(_abuf2), "A%.0f S%.0f R%.0f", _aatk2, _asus2, _arel2);
+                int _abn2 = snprintf(_abuf2, sizeof(_abuf2), "A%+-6.0f S%+-6.0f R%+-6.0f", _aatk2, _asus2, _arel2);
                 if (_abn2 > 0) {
                     float _arow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
-#define ADSR_OFFSET 300
+#define ADSR_OFFSET 304
                     for (int _abi2 = 0; _abi2 < _abn2; _abi2++) {
                         unsigned char _abc2 = (unsigned char)_abuf2[_abi2];
                         war_vulkan_text_instance* _bti2 = &dst[ADSR_OFFSET + _abi2];
@@ -2559,12 +2559,12 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             if (_gl < 1 || _gl > 9) _gl = 1;
             uint32_t _gi = _gp * WAR_CAPTURE_SLOT_LAYERS + (_gl - 1);
             war_capture_slot* _gs = &ctx_wayland->env->capture_slots[_gi];
-            if (_gs->gain > 0.0f) {
+            {
                 char _gt[16];
-                int _gn = snprintf(_gt, sizeof(_gt), "G%.0f", _gs->gain);
+                int _gn = snprintf(_gt, sizeof(_gt), "G%+.0f", _gs->gain);
                 if (_gn > 0) {
                     float _grow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
-#define GAIN_OFFSET 280
+#define GAIN_OFFSET 284
                     for (int _gi2 = 0; _gi2 < _gn; _gi2++) {
                         unsigned char _gc = (unsigned char)_gt[_gi2];
                         war_vulkan_text_instance* _ti = &dst[GAIN_OFFSET + _gi2];
@@ -2600,10 +2600,10 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             uint32_t _pi2 = _pp2 * WAR_CAPTURE_SLOT_LAYERS + (_pl2 - 1);
             war_capture_slot* _ps2 = &ctx_wayland->env->capture_slots[_pi2];
             char _pt2[16];
-            int _pn2 = snprintf(_pt2, sizeof(_pt2), "P%d", _ps2->pan);
+            int _pn2 = snprintf(_pt2, sizeof(_pt2), "P%+d", _ps2->pan);
             if (_pn2 > 0) {
                 float _prow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
-#define PAN_OFFSET 285
+#define PAN_OFFSET 292
                 for (int _pi3 = 0; _pi3 < _pn2; _pi3++) {
                     unsigned char _pc2 = (unsigned char)_pt2[_pi3];
                     war_vulkan_text_instance* _ti2 = &dst[PAN_OFFSET + _pi3];
@@ -2638,14 +2638,14 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             uint32_t _ei2 = _ep2 * WAR_CAPTURE_SLOT_LAYERS + (_el2 - 1);
             war_capture_slot* _es2 = &ctx_wayland->env->capture_slots[_ei2];
             char _et2[16];
-            int _en2 = snprintf(_et2, sizeof(_et2), "E%d", _es2->eq);
+            int _en2 = snprintf(_et2, sizeof(_et2), "P%+d", _es2->eq);
             if (_en2 > 0) {
                 float _erow2 = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 4.0f;
-#define EQ_OFFSET 295
+#define EQ_OFFSET 298
                 for (int _ei3 = 0; _ei3 < _en2; _ei3++) {
                     unsigned char _ec2 = (unsigned char)_et2[_ei3];
                     war_vulkan_text_instance* _ti2 = &dst[EQ_OFFSET + _ei3];
-                    _ti2->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 12 + _ei3);
+                    _ti2->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 11 + _ei3);
                     _ti2->pos[1] = _erow2;
                     _ti2->pos[2] = 0;
                     _ti2->size[0] = 1.0f;
@@ -2675,7 +2675,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             for (int _rsi = 0; _rsi < _rsn; _rsi++) {
                 unsigned char _rsc = (unsigned char)_rst[_rsi];
                 war_vulkan_text_instance* _ti = &dst[RSMP_OFFSET + _rsi];
-                _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 20 + _rsi);
+                _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 26 + _rsi);
                 _ti->pos[1] = _rsr;
                 _ti->pos[2] = 0;
                 _ti->size[0] = 1.0f;
@@ -2704,7 +2704,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             for (int _pli = 0; _pli < _pln; _pli++) {
                 unsigned char _pc = (unsigned char)_plt[_pli];
                 war_vulkan_text_instance* _ti = &dst[PBLOOP_OFFSET + _pli];
-                _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 29 + _pli);
+                _ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 35 + _pli);
                 _ti->pos[1] = _plr;
                 _ti->pos[2] = 0;
                 _ti->size[0] = 1.0f;
@@ -2725,22 +2725,20 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef PBLOOP_OFFSET
         }
         // loop mode label
-        if (ctx_wayland->env->loop_mode) {
+        if (ctx_wayland->env->loop_mode && ctx_wayland->env->active_mode == WAR_MODE_ID_MIDI) {
             const char* loop_text = "LOOP";
             int loop_n = 4;
-#define LOOP_OFFSET 300
+#define LOOP_OFFSET 335
             for (int i = 0; i < loop_n; i++) {
                 unsigned char c = (unsigned char)loop_text[i];
                 war_vulkan_text_instance* ti = &dst[LOOP_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 12 + i);
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 26 + i);
                 ti->pos[1] = label_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f;
                 ti->size[1] = 1.0f;
-                ti->uv[0] = font->glyph_uv[c][0];
-                ti->uv[1] = font->glyph_uv[c][1];
-                ti->uv[2] = font->glyph_uv[c][2];
-                ti->uv[3] = font->glyph_uv[c][3];
+                ti->uv[0] = font->glyph_uv[c][0]; ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2]; ti->uv[3] = font->glyph_uv[c][3];
                 ti->glyph_scale[0] = font->glyph_norm_width[c];
                 ti->glyph_scale[1] = font->glyph_norm_height[c];
                 ti->ascent = font->glyph_norm_ascent[c];
@@ -2753,14 +2751,14 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef LOOP_OFFSET
         }
         // across mode label
-        if (ctx_wayland->env->across_mode) {
+        if (ctx_wayland->env->across_mode && ctx_wayland->env->active_mode != WAR_MODE_ID_MIDI) {
             const char* atext = "ACROSS";
             int an = 6;
-#define ACROSS_OFFSET 305
+#define ACROSS_OFFSET 328
             for (int i = 0; i < an; i++) {
                 unsigned char c = (unsigned char)atext[i];
                 war_vulkan_text_instance* ti = &dst[ACROSS_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 17 + i);
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 31 + i);
                 ti->pos[1] = label_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f;
@@ -2781,14 +2779,14 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
 #undef ACROSS_OFFSET
         }
         // toggle label (purple)
-        if (ctx_wayland->env->midi_toggle) {
+        if (ctx_wayland->env->midi_toggle && ctx_wayland->env->active_mode == WAR_MODE_ID_MIDI) {
             const char* tog_txt = "TOGGLE";
             int tog_n = 6;
-#define TOG_OFFSET 307
+#define TOG_OFFSET 344
             for (int i = 0; i < tog_n; i++) {
                 unsigned char c = (unsigned char)tog_txt[i];
                 war_vulkan_text_instance* ti = &dst[TOG_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 20 + i);
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 34 + i);
                 ti->pos[1] = label_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f; ti->size[1] = 1.0f;
@@ -2809,11 +2807,11 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         if (ctx_wayland->env->crop_active) {
             const char* croptxt = "CROP";
             int cropn = 4;
-#define CROP_OFFSET 309
+#define CROP_OFFSET 325
             for (int i = 0; i < cropn; i++) {
                 unsigned char c = (unsigned char)croptxt[i];
                 war_vulkan_text_instance* ti = &dst[CROP_OFFSET + i];
-                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 31 + i);
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)(n + 32 + i);
                 ti->pos[1] = label_row;
                 ti->pos[2] = 0;
                 ti->size[0] = 1.0f; ti->size[1] = 1.0f;
@@ -2835,7 +2833,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             const char* captxt = "CAPTURE";
             int capn = 7;
             float caprow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define CAP_OFFSET 308
+#define CAP_OFFSET 349
             for (int i = 0; i < capn; i++) {
                 unsigned char c = (unsigned char)captxt[i];
                 war_vulkan_text_instance* ti = &dst[CAP_OFFSET + i];
@@ -2858,10 +2856,10 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         }
         // midi mode label on middle status bar
         if (ctx_wayland->env->active_mode == WAR_MODE_ID_MIDI) {
-            const char* midi_text = "MIDI";
-            int midi_n = 4;
+            const char* midi_text = ctx_wayland->env->recording_active ? "MIDI RECORD" : "MIDI";
+            int midi_n = ctx_wayland->env->recording_active ? 11 : 4;
             float midi_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define MIDI_OFFSET 310
+#define MIDI_OFFSET 326
             for (int i = 0; i < midi_n; i++) {
                 unsigned char c = (unsigned char)midi_text[i];
                 war_vulkan_text_instance* ti = &dst[MIDI_OFFSET + i];
@@ -2885,12 +2883,41 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             vkCmdDraw(cmd, 4, (uint32_t)midi_n, 0, MIDI_OFFSET);
 #undef MIDI_OFFSET
         }
+        // master mode label on middle status bar
+        if (ctx_wayland->env->active_mode == WAR_MODE_ID_MASTER) {
+            const char* mast_text = "MASTER";
+            int mast_n = 6;
+            float mast_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
+#define MASTER_OFFSET 372
+            for (int i = 0; i < mast_n; i++) {
+                unsigned char c = (unsigned char)mast_text[i];
+                war_vulkan_text_instance* ti = &dst[MASTER_OFFSET + i];
+                ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i;
+                ti->pos[1] = mast_row;
+                ti->pos[2] = 0;
+                ti->size[0] = 1.0f;
+                ti->size[1] = 1.0f;
+                ti->uv[0] = font->glyph_uv[c][0];
+                ti->uv[1] = font->glyph_uv[c][1];
+                ti->uv[2] = font->glyph_uv[c][2];
+                ti->uv[3] = font->glyph_uv[c][3];
+                ti->glyph_scale[0] = font->glyph_norm_width[c];
+                ti->glyph_scale[1] = font->glyph_norm_height[c];
+                ti->ascent = font->glyph_norm_ascent[c];
+                ti->descent = font->glyph_norm_descent[c];
+                ti->baseline = font->glyph_norm_baseline[c];
+                ti->color[0] = 1.0f; ti->color[1] = 0.3f; ti->color[2] = 0.3f; ti->color[3] = 1.0f;
+                ti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)mast_n, 0, MASTER_OFFSET);
+#undef MASTER_OFFSET
+        }
         // tap tempo label on middle status bar
         if (ctx_wayland->env->tap_tempo_active) {
             const char* tap_txt = "TAP TEMPO";
             int tap_n = 9;
             float tap_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define TAP_OFFSET 315
+#define TAP_OFFSET 354
             for (int i = 0; i < tap_n; i++) {
                 unsigned char c = (unsigned char)tap_txt[i];
                 war_vulkan_text_instance* ti = &dst[TAP_OFFSET + i];
@@ -2916,7 +2943,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             const char* vis_text = "VISUAL";
             int vis_n = 6;
             float vis_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define VIS_OFFSET 320
+#define VIS_OFFSET 332
             for (int i = 0; i < vis_n; i++) {
                 unsigned char c = (unsigned char)vis_text[i];
                 war_vulkan_text_instance* ti = &dst[VIS_OFFSET + i];
@@ -2945,7 +2972,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             const char* str_text = "STRETCH";
             int str_n = 7;
             float str_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define STR_OFFSET 325
+#define STR_OFFSET 358
             for (int i = 0; i < str_n; i++) {
                 unsigned char c = (unsigned char)str_text[i];
                 war_vulkan_text_instance* ti = &dst[STR_OFFSET + i];
@@ -2975,7 +3002,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             int sm_n = (int)strlen(sm);
             if (sm_n > 60) sm_n = 60;
             float sm_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
-#define SM_OFFSET 330
+#define SM_OFFSET 363
             for (int i = 0; i < sm_n; i++) {
                 unsigned char c = (unsigned char)sm[i];
                 if (c < 32 || c > 126) c = '?';

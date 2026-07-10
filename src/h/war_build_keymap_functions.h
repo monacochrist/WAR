@@ -92,6 +92,9 @@ else if (strcmp(name, "war_move_cursor_left_leap") == 0) { return war_move_curso
 else if (strcmp(name, "war_move_cursor_right_leap") == 0) { return war_move_cursor_right_leap; }
 else if (strcmp(name, "war_next_note_same_row") == 0) { return war_next_note_same_row; }
 else if (strcmp(name, "war_go_to_note_end") == 0) { return war_go_to_note_end; }
+else if (strcmp(name, "war_set_width_to_note") == 0) { return war_set_width_to_note; }
+else if (strcmp(name, "war_set_loop_end") == 0) { return war_set_loop_end; }
+else if (strcmp(name, "war_set_loop_start") == 0) { return war_set_loop_start; }
 else if (strcmp(name, "war_prev_note_same_row") == 0) { return war_prev_note_same_row; }
 else if (strcmp(name, "war_zoom_in") == 0) { return war_zoom_in; }
 else if (strcmp(name, "war_zoom_out") == 0) { return war_zoom_out; }

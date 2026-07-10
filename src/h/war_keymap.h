@@ -264,8 +264,17 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    1,
                    (char*[]){"e"},
                    WAR_FUNCTION_ID_NONE,
-                   war_go_to_note_end,
-                   0);
+                    war_go_to_note_end,
+                    0);
+    // loop markers (n = end, N = start)
+    war_keymap_set(keymap, config, 2,
+                    (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                    1, (char*[]){"n"}, WAR_FUNCTION_ID_NONE,
+                    war_set_loop_end, 0);
+    war_keymap_set(keymap, config, 2,
+                    (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                    1, (char*[]){"N"}, WAR_FUNCTION_ID_NONE,
+                    war_set_loop_start, 0);
     // visual mode toggle (v) — bound in both ROLL and VISUAL modes
     war_keymap_set(keymap,
                    config,
@@ -389,8 +398,13 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    1,
                    (char*[]){"<S-l>"},
                    WAR_FUNCTION_ID_NONE,
-                    war_toggle_playbar_loop,
-                    0);
+                     war_toggle_playbar_loop,
+                     0);
+    // toggle playback loop in midi mode (shift+l)
+    war_keymap_set(keymap, config, 1,
+                    (war_mode_id[]){WAR_MODE_ID_MIDI}, 1,
+                    (char*[]){"<S-l>"}, WAR_FUNCTION_ID_NONE,
+                    war_toggle_playbar_loop, 0);
     // tap tempo (shift+B)
     war_keymap_set(keymap,
                    config,
