@@ -878,9 +878,9 @@ static void war_keyboard_key(void* data,
                         }
                         // graceful release: set read_limit so release envelope plays out
                         uint32_t _rlidx = rel_note * WAR_CAPTURE_SLOT_LAYERS + (ctx_wayland->env->preview_voice_layer[v] - 1);
-                        float _rel_target = (ctx_wayland->env->capture_slots[_rlidx].release + 1000.0f) / 1000.0f * 256.0f;
+                        float _rel_target = ctx_wayland->env->capture_slots[_rlidx].release / 1000.0f * 48000.0f;
                         uint64_t _rel_min = (uint64_t)_rel_target;
-                        if (_rel_min < 256) _rel_min = 256;
+                        if (_rel_min < 2400) _rel_min = 2400;
                         ctx_wayland->env->preview_voice_read_limit[v] = ctx_wayland->env->preview_voice_read_pos[v] + _rel_min;
                     }
                 }
@@ -1053,7 +1053,77 @@ static void war_keyboard_key(void* data,
                     snprintf(env->status_msg, sizeof(env->status_msg), "radius = %d", val);
                 } else
                     fprintf(stderr, "RADIUS: usage :radius <n>\n");
-             } else if (env->cmd_len >= 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v' && env->cmd_buf[3] != 'u' && env->cmd_buf[3] != 'd') {
+              } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'p' && env->cmd_buf[3] == 'u') {
+                int n = 0;
+                if (sscanf(env->cmd_buf + 4, " %d", &n) == 1 && n > 0) {
+                    double row = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    int32_t pitch = row > 0 ? (int32_t)(row + 0.5) : 0;
+                    if (pitch + n > 127) n = 127 - pitch;
+                    if (n > 0) {
+                        uint32_t layer = cur->layer;
+                        if (layer < 1 || layer > 9) layer = 1;
+                        uint32_t src = (uint32_t)pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        uint32_t dst = ((uint32_t)pitch + (uint32_t)n) * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        if (env->capture_slots[src].samples && env->capture_slots[src].count > 0) {
+                            uint64_t cnt = env->capture_slots[src].count;
+                            float* copy = malloc(cnt * sizeof(float));
+                            if (copy) {
+                                memcpy(copy, env->capture_slots[src].samples, cnt * sizeof(float));
+                                free(env->capture_slots[dst].samples);
+                                env->capture_slots[dst].samples = copy;
+                                env->capture_slots[dst].count = cnt;
+                                env->capture_slots[dst].capacity = cnt;
+                                env->capture_slots[dst].gain = env->capture_slots[src].gain;
+                                env->capture_slots[dst].pan = env->capture_slots[src].pan;
+                                env->capture_slots[dst].eq = env->capture_slots[src].eq;
+                                env->capture_slots[dst].attack = env->capture_slots[src].attack;
+                                env->capture_slots[dst].sustain = env->capture_slots[src].sustain;
+                                env->capture_slots[dst].release = env->capture_slots[src].release;
+                                snprintf(env->status_msg, sizeof(env->status_msg), "cpu: pitch %d -> %u", pitch, pitch + n);
+                            }
+                        } else {
+                            snprintf(env->status_msg, sizeof(env->status_msg), "cpu FAILED: no capture at pitch %d", pitch);
+                        }
+                    }
+                } else {
+                    fprintf(stderr, "CPU: usage :cpu <n>\n");
+                }
+              } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'p' && env->cmd_buf[3] == 'd') {
+                int n = 0;
+                if (sscanf(env->cmd_buf + 4, " %d", &n) == 1 && n > 0) {
+                    double row = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
+                    int32_t pitch = row > 0 ? (int32_t)(row + 0.5) : 0;
+                    if ((int32_t)pitch - n < 0) n = (int32_t)pitch;
+                    if (n > 0) {
+                        uint32_t layer = cur->layer;
+                        if (layer < 1 || layer > 9) layer = 1;
+                        uint32_t src = (uint32_t)pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        uint32_t dst = ((uint32_t)pitch - (uint32_t)n) * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+                        if (env->capture_slots[src].samples && env->capture_slots[src].count > 0) {
+                            uint64_t cnt = env->capture_slots[src].count;
+                            float* copy = malloc(cnt * sizeof(float));
+                            if (copy) {
+                                memcpy(copy, env->capture_slots[src].samples, cnt * sizeof(float));
+                                free(env->capture_slots[dst].samples);
+                                env->capture_slots[dst].samples = copy;
+                                env->capture_slots[dst].count = cnt;
+                                env->capture_slots[dst].capacity = cnt;
+                                env->capture_slots[dst].gain = env->capture_slots[src].gain;
+                                env->capture_slots[dst].pan = env->capture_slots[src].pan;
+                                env->capture_slots[dst].eq = env->capture_slots[src].eq;
+                                env->capture_slots[dst].attack = env->capture_slots[src].attack;
+                                env->capture_slots[dst].sustain = env->capture_slots[src].sustain;
+                                env->capture_slots[dst].release = env->capture_slots[src].release;
+                                snprintf(env->status_msg, sizeof(env->status_msg), "cpd: pitch %d -> %u", pitch, pitch - n);
+                            }
+                        } else {
+                            snprintf(env->status_msg, sizeof(env->status_msg), "cpd FAILED: no capture at pitch %d", pitch);
+                        }
+                    }
+                } else {
+                    fprintf(stderr, "CPD: usage :cpd <n>\n");
+                }
+              } else if (env->cmd_len >= 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'v' && env->cmd_buf[3] != 'u' && env->cmd_buf[3] != 'd') {
                 int to_layer = 0;
                 if (sscanf(env->cmd_buf + 3, " %d", &to_layer) == 1 && to_layer >= 1 && to_layer <= 9) {
                     double row = env->ctx_cursor->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
@@ -1561,8 +1631,9 @@ static void war_keyboard_key(void* data,
                 if (raw_sym == XKB_KEY_Up || raw_sym == XKB_KEY_Right) delta = 10;
                 if (raw_sym == XKB_KEY_Down || raw_sym == XKB_KEY_Left) delta = -10;
                 if (delta) {
+                    float _minv = (target == &_cs->sustain) ? -max_val : 0.0f;
                     *target += (float)delta;
-                    if (*target < -max_val) *target = -max_val;
+                    if (*target < _minv) *target = _minv;
                     if (*target > max_val) *target = max_val;
                     snprintf(env->status_msg, sizeof(env->status_msg), "%s %.0f A%.0f S%.0f R%.0f",
                              name, *target,
@@ -2595,7 +2666,7 @@ int main(int argc, char** argv) {
                             if (_rmdelta != 0) {
                                 if (_mrmod & MOD_ALT) {
                                     _rmcs->attack += (float)_rmdelta;
-                                    if (_rmcs->attack < -1000.0f) _rmcs->attack = -1000.0f;
+                                    if (_rmcs->attack < 0.0f) _rmcs->attack = 0.0f;
                                     if (_rmcs->attack > 1000.0f) _rmcs->attack = 1000.0f;
                                     continue;
                                 } else if (_mrmod & MOD_SHIFT) {
@@ -2605,7 +2676,7 @@ int main(int argc, char** argv) {
                                     continue;
                                 } else if (_mrmod & MOD_CTRL) {
                                     _rmcs->release += (float)_rmdelta;
-                                    if (_rmcs->release < -1000.0f) _rmcs->release = -1000.0f;
+                                    if (_rmcs->release < 0.0f) _rmcs->release = 0.0f;
                                     if (_rmcs->release > 1000.0f) _rmcs->release = 1000.0f;
                                     continue;
                                 }
@@ -2784,7 +2855,7 @@ int main(int argc, char** argv) {
                         }
                         if (_off2 >= _mf) continue;
                         if (_sl->count > 0 && _off2 >= _sl->count)
-                            _off2 %= _sl->count;
+                            continue;
                         for (uint32_t _v = 0; _v < WAR_PLAY_BAR_VOICES; _v++) {
                             if (env->play_bar_voice_active[_v] == 0) {
                                 // skip if same note already playing as preview voice (recording mode double-play)
@@ -2800,6 +2871,8 @@ int main(int argc, char** argv) {
                                 env->play_bar_voice_tick[_v] = _tik;
                                 env->play_bar_voice_read_pos[_v] = _off2;
                                 env->play_bar_voice_read_limit[_v] = _mf;
+                                if (_sl->count > 0 && env->play_bar_voice_read_limit[_v] > _sl->count)
+                                    env->play_bar_voice_read_limit[_v] = _sl->count;
                                 env->play_bar_voice_filter_lp[_v][0] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][1] = 0.0f;
                                 env->play_bar_voice_env_samples[_v] = 0;
@@ -2899,9 +2972,9 @@ int main(int argc, char** argv) {
                             _mix_r = _s_r - _t * _lp1;
                         }
                     float _a_g = _gm;
-                    float _atk_samples = (slot->attack + 1000.0f) / 1000.0f * 64.0f;
+                    float _atk_samples = slot->attack / 1000.0f * 48000.0f;
                     float _sus_level = (slot->sustain + 1000.0f) / 1000.0f;
-                    float _rel_samples = (slot->release + 1000.0f) / 1000.0f * 256.0f;
+                    float _rel_samples = slot->release / 1000.0f * 48000.0f;
                     int64_t _rem_preview = (int64_t)(slot_avail - read_pos) - (int64_t)f;
                     float _env = _sus_level;
                     if (_atk_samples > 0.0f) {
@@ -2914,6 +2987,8 @@ int main(int argc, char** argv) {
                         else _env = ((float)_rem_preview / _rel_samples) * _sus_level;
                     }
                     _a_g *= _env;
+                    mix[f]   += _mix_l * _a_g * _pl;
+                    mix[f+1] += _mix_r * _a_g * _pr;
                     mix[f]   += _mix_l * _a_g * _pl;
                     mix[f+1] += _mix_r * _a_g * _pr;
                     }
@@ -2963,10 +3038,11 @@ int main(int argc, char** argv) {
                         uint64_t batch = PW_CHUNK_FLOATS;
                         if (batch > remain) batch = remain & ~1ULL;
                         // don't cross slot boundary within a batch
-                        uint64_t slot_offset = read_pos % slot_avail;
+                        uint64_t slot_offset = read_pos;
                         uint64_t to_slot_end = slot_avail - slot_offset;
                         if (batch > to_slot_end) batch = to_slot_end & ~1ULL;
                         voice_batch[vi] = batch;
+                        if (batch == 0) { env->play_bar_voice_active[v] = 0; continue; }
                         float _gm = (slot->gain + 1000.0f) / 1000.0f;
                         float _pp2 = (float)(slot->pan + 1000) / 2000.0f;
                         float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
@@ -2994,9 +3070,9 @@ int main(int argc, char** argv) {
                                 _mix_r = _s_r - _t * _lp1;
                             }
                             float _a_g2 = _gm;
-                            float _atk_s = (slot->attack + 1000.0f) / 1000.0f * 64.0f;
+                            float _atk_s = slot->attack / 1000.0f * 48000.0f;
                             float _sus_l = (slot->sustain + 1000.0f) / 1000.0f;
-                            float _rel_s = (slot->release + 1000.0f) / 1000.0f * 256.0f;
+                            float _rel_s = slot->release / 1000.0f * 48000.0f;
                             int64_t _rem_playbar = (int64_t)remain - (int64_t)f;
                             float _env2 = _sus_l;
                             if (_atk_s > 0.0f) {
@@ -3059,15 +3135,15 @@ int main(int argc, char** argv) {
         // playbar visual position update and loop detection
         if (env->play_bar_playing) {
             env->ctx_line->instance[0].pos[0] = (float)_pb_ccp;
-            if (env->play_bar_loop && env->ctx_note && env->ctx_note->instance_count > 0) {
+            if (env->play_bar_loop) {
                 double _rmax = env->loop_end_col > 0.0f ? (double)env->loop_end_col : 0.0;
-                if (_rmax <= 0.0f) {
+                if (_rmax <= 0.0f && env->ctx_note && env->ctx_note->instance_count > 0) {
                     for (uint32_t _ri = 0; _ri < env->ctx_note->instance_count; _ri++) {
                         double _re = env->ctx_note->instance[_ri].pos[0] + env->ctx_note->instance[_ri].size[0];
                         if (_re > _rmax) _rmax = _re;
                     }
                 }
-                if (_pb_ccp >= _rmax) {
+                if (_rmax > 0.0f && _pb_ccp >= _rmax) {
                     double _bpm2 = env->atomics->bpm;
                     if (_bpm2 <= 0.0) _bpm2 = 100.0;
                     double _spc2 = 15.0 / _bpm2;
