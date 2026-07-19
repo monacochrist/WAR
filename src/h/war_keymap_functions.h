@@ -15,6 +15,9 @@
 #include "war_debug_macros.h"
 #include "war_functions.h"
 
+extern void war_reconnect_capture(war_env* env, const char* target);
+extern void war_reconnect_loopback(war_env* env, const char* target);
+
 #include <assert.h>
 #include <ctype.h>
 #include <float.h>
@@ -1431,6 +1434,15 @@ static inline void war_capture_audio_midi(war_env* env) {
         uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
         if (note > 127) note = 127;
         if (!was_capturing && env->atomics->capture) {
+            // reconnect capture stream to selected device
+            const char* _dname = env->dev_nodes[env->capture_mode > 0 ? env->capture_mode - 1 : 0];
+            if (_dname && strstr(_dname, "monitor")) {
+                war_reconnect_loopback(env, _dname);
+            } else if (_dname && strstr(_dname, "loopback")) {
+                war_reconnect_loopback(env, NULL);
+            } else if (_dname) {
+                war_reconnect_capture(env, _dname);
+            }
             double _pb_bpm = env->atomics->bpm;
             if (_pb_bpm <= 0.0) _pb_bpm = 100.0;
             double _pb_spc = 15.0 / _pb_bpm;

@@ -835,6 +835,43 @@ static int _war_crop_adjust(war_env* env, uint32_t raw_sym, uint32_t mod) {
     return modded;
 }
 
+// Reconnect capture stream to a specific PipeWire node by name
+void war_reconnect_capture(war_env* env, const char* target) {
+    if (!env->ctx_pw || !env->ctx_pw->capture_stream) return;
+    pw_stream_disconnect(env->ctx_pw->capture_stream);
+    struct pw_properties* _cp = pw_stream_get_properties(env->ctx_pw->capture_stream);
+    if (_cp) {
+        if (target) pw_properties_set(_cp, "target.object", target);
+        else pw_properties_set(_cp, "target.object", NULL);
+    }
+    struct spa_audio_info_raw info = { .format = SPA_AUDIO_FORMAT_F32, .rate = 48000, .channels = 2 };
+    uint8_t buf[1024];
+    struct spa_pod_builder bld = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+    const struct spa_pod* params[1];
+    params[0] = spa_format_audio_raw_build(&bld, SPA_PARAM_EnumFormat, &info);
+    pw_stream_connect(env->ctx_pw->capture_stream, PW_DIRECTION_INPUT, PW_ID_ANY,
+                      PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS,
+                      params, 1);
+}
+
+void war_reconnect_loopback(war_env* env, const char* target) {
+    if (!env->ctx_pw || !env->ctx_pw->loopback_capture_stream) return;
+    pw_stream_disconnect(env->ctx_pw->loopback_capture_stream);
+    struct pw_properties* _lp = pw_stream_get_properties(env->ctx_pw->loopback_capture_stream);
+    if (_lp) {
+        if (target) pw_properties_set(_lp, "target.object", target);
+        else pw_properties_set(_lp, "target.object", NULL);
+    }
+    struct spa_audio_info_raw info = { .format = SPA_AUDIO_FORMAT_F32, .rate = 48000, .channels = 2 };
+    uint8_t buf[1024];
+    struct spa_pod_builder bld = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
+    const struct spa_pod* params[1];
+    params[0] = spa_format_audio_raw_build(&bld, SPA_PARAM_EnumFormat, &info);
+    pw_stream_connect(env->ctx_pw->loopback_capture_stream, PW_DIRECTION_INPUT, PW_ID_ANY,
+                      PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS,
+                      params, 1);
+}
+
 static void war_keyboard_key(void* data,
                              struct wl_keyboard* keyboard,
                              uint32_t serial,
