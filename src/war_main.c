@@ -3244,6 +3244,22 @@ int main(int argc, char** argv) {
                     }
                 }
                 if (_rmax > 0.0f && _pb_ccp >= _rmax) {
+                    // if capture is active, end capture and finalize note
+                    if (env->atomics->capture && env->active_mode == WAR_MODE_ID_MIDI) {
+                        env->atomics->capture = 0;
+                        int32_t _cni = env->capture_note_idx;
+                        if (_cni >= 0 && env->ctx_note && (uint32_t)_cni < env->ctx_note->instance_count) {
+                            double _bpm3 = env->atomics->bpm;
+                            if (_bpm3 <= 0.0) _bpm3 = 100.0;
+                            double _spc3 = 15.0 / _bpm3;
+                            float _pb3 = (float)((double)ctx_wayland->gutter_cols + env->play_bar_position_seconds / _spc3);
+                            float _s2 = env->ctx_note->instance[_cni].pos[0];
+                            env->ctx_note->instance[_cni].size[0] = _pb3 - _s2;
+                            if (env->ctx_note->instance[_cni].size[0] < 0.02f)
+                                env->ctx_note->instance[_cni].size[0] = 0.02f;
+                        }
+                        env->capture_note_idx = -1;
+                    }
                     double _bpm2 = env->atomics->bpm;
                     if (_bpm2 <= 0.0) _bpm2 = 100.0;
                     double _spc2 = 15.0 / _bpm2;

@@ -2753,6 +2753,7 @@ struct war_env {
     uint8_t dev_sel_active;
     int32_t dev_sel_cursor;
     uint32_t dev_sel_offset;
+    int32_t capture_note_idx;
     uint32_t dev_count;
     char** dev_names;
     char* dev_nodes[4]; // PipeWire node name for each capture mode

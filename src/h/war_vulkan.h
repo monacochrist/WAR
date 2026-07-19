@@ -2921,8 +2921,10 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         }
         // midi mode label on middle status bar
         if (ctx_wayland->env->active_mode == WAR_MODE_ID_MIDI) {
-            const char* midi_text = ctx_wayland->env->recording_active ? "MIDI RECORD" : "MIDI";
-            int midi_n = ctx_wayland->env->recording_active ? 11 : 4;
+            char midi_text[32];
+            int midi_n = ctx_wayland->env->recording_active 
+                ? snprintf(midi_text, sizeof(midi_text), "MIDI RECORD C%u", ctx_wayland->env->capture_mode)
+                : snprintf(midi_text, sizeof(midi_text), "MIDI");
             float midi_row = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
 #define MIDI_OFFSET 326
             for (int i = 0; i < midi_n; i++) {

@@ -1422,25 +1422,57 @@ static inline void war_capture_audio(war_env* env) {
     }
 }
 
-static inline void war_capture_mode1(war_env* env) {
-    env->capture_mode = 1;
+static inline void war_capture_audio_midi(war_env* env) {
+    int was_capturing = env->atomics->capture;
     war_capture_audio(env);
+    if (env->active_mode == WAR_MODE_ID_MIDI && env->play_bar_playing && env->ctx_cursor->instance_count) {
+        uint32_t layer = env->ctx_cursor->layer;
+        if (layer < 1 || layer > 9) layer = 1;
+        uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+        if (note > 127) note = 127;
+        if (!was_capturing && env->atomics->capture) {
+            double _pb_bpm = env->atomics->bpm;
+            if (_pb_bpm <= 0.0) _pb_bpm = 100.0;
+            double _pb_spc = 15.0 / _pb_bpm;
+            float _pb_pos = (float)((double)env->ctx_wayland->gutter_cols + env->play_bar_position_seconds / _pb_spc);
+            if (env->ctx_note && env->ctx_note->instance_count < env->ctx_note->max_instances) {
+                war_undo_save(env);
+                uint32_t i = env->ctx_note->instance_count++;
+                uint32_t col = (&env->ctx_color->layer_none)[layer];
+                env->ctx_note->instance[i].pos[0] = _pb_pos;
+                env->ctx_note->instance[i].pos[1] = (float)note + (float)env->ctx_wayland->gutter_rows;
+                env->ctx_note->instance[i].pos[2] = 0.0f;
+                env->ctx_note->instance[i].size[0] = 0.02f;
+                env->ctx_note->instance[i].size[1] = 1.0f;
+                env->ctx_note->instance[i].color[0] = ((col >> 24) & 0xFF) / 255.0f;
+                env->ctx_note->instance[i].color[1] = ((col >> 16) & 0xFF) / 255.0f;
+                env->ctx_note->instance[i].color[2] = ((col >> 8) & 0xFF) / 255.0f;
+                env->ctx_note->instance[i].color[3] = (col & 0xFF) / 255.0f;
+                env->ctx_note->instance[i].flags = (uint32_t)layer << 4;
+                env->ctx_note->instance[i].tick = env->ctx_note->tick_counter++;
+                env->capture_note_idx = (int32_t)i;
+            }
+        } else if (was_capturing && !env->atomics->capture && env->capture_note_idx >= 0) {
+            uint32_t ni = (uint32_t)env->capture_note_idx;
+            if (ni < env->ctx_note->instance_count) {
+                double _pb_bpm2 = env->atomics->bpm;
+                if (_pb_bpm2 <= 0.0) _pb_bpm2 = 100.0;
+                double _pb_spc2 = 15.0 / _pb_bpm2;
+                float _pb_pos2 = (float)((double)env->ctx_wayland->gutter_cols + env->play_bar_position_seconds / _pb_spc2);
+                float _start = env->ctx_note->instance[ni].pos[0];
+                env->ctx_note->instance[ni].size[0] = _pb_pos2 - _start;
+                if (env->ctx_note->instance[ni].size[0] < 0.02f)
+                    env->ctx_note->instance[ni].size[0] = 0.02f;
+            }
+            env->capture_note_idx = -1;
+        }
+    }
 }
 
-static inline void war_capture_mode2(war_env* env) {
-    env->capture_mode = 2;
-    war_capture_audio(env);
-}
-
-static inline void war_capture_mode3(war_env* env) {
-    env->capture_mode = 3;
-    war_capture_audio(env);
-}
-
-static inline void war_capture_mode4(war_env* env) {
-    env->capture_mode = 4;
-    war_capture_audio(env);
-}
+static inline void war_capture_mode1(war_env* env) { env->capture_mode = 1; war_capture_audio_midi(env); }
+static inline void war_capture_mode2(war_env* env) { env->capture_mode = 2; war_capture_audio_midi(env); }
+static inline void war_capture_mode3(war_env* env) { env->capture_mode = 3; war_capture_audio_midi(env); }
+static inline void war_capture_mode4(war_env* env) { env->capture_mode = 4; war_capture_audio_midi(env); }
 
 static inline void war_capture_advance(war_env* env) {
     if (!env->atomics->capture) return;
