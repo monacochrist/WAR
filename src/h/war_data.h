@@ -1836,6 +1836,7 @@ typedef enum war_mode_id_enum {
     WAR_MODE_ID_VISUAL,
     WAR_MODE_ID_CHORD,
     WAR_MODE_ID_MASTER,
+    WAR_MODE_ID_DEVICE,
     //
     WAR_MODE_COUNT,
 } war_mode_id_enum;
@@ -1852,6 +1853,7 @@ typedef enum war_mode_flags_bits {
     WAR_MODE_VISUAL = 1ULL << WAR_MODE_ID_VISUAL,
     WAR_MODE_CHORD = 1ULL << WAR_MODE_ID_CHORD,
     WAR_MODE_MASTER = 1ULL << WAR_MODE_ID_MASTER,
+    WAR_MODE_DEVICE = 1ULL << WAR_MODE_ID_DEVICE,
 } war_mode_flags_bits;
 typedef uint64_t war_keymap_flags;
 typedef enum war_keymap_flags_bits {
@@ -2746,6 +2748,14 @@ struct war_env {
     // recording state
     uint8_t recording_active;
     uint8_t loop_mode;
+    uint8_t capture_mode;
+    // device selection HUD
+    uint8_t dev_sel_active;
+    int32_t dev_sel_cursor;
+    uint32_t dev_sel_offset;
+    uint32_t dev_count;
+    char** dev_names;
+    char* dev_nodes[4]; // PipeWire node name for each capture mode
     uint8_t across_mode;
     uint8_t across_resample;
     uint8_t midi_toggle;

@@ -917,7 +917,7 @@ static inline void war_font_init(war_font_context* font,
                                  FT_Face face,
                                  double cell_px_w,
                                  double cell_px_h) {
-    font->instance_count = 512;
+    font->instance_count = 2048;
     font->cmd_instance_count = 0;
 
     // load '*' at the display size to get display metrics
@@ -2200,6 +2200,71 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         ctx_wayland->env->ctx_cursor->instance[0].color[2] = 0.3f;
         ctx_wayland->env->ctx_cursor->instance[0].color[3] = 0.6f;
     }
+    // device selector HUD overlay (over full screen, panning-independent)
+    if (ctx_wayland->env->dev_sel_active && ctx_wayland->env->ctx_font) {
+        war_font_context* _df = ctx_wayland->env->ctx_font;
+        double _dcw = ctx_wayland->env->ctx_cursor->cell_width;
+        double _dch = ctx_wayland->env->ctx_cursor->cell_height;
+        float _dz = ctx_wayland->zoom;
+        float _dsw = (float)ctx_wayland->width;
+        float _dsh = (float)ctx_wayland->height;
+        VkViewport _dvp = {0, 0, _dsw, _dsh, 0, 1};
+        VkRect2D _dsc = {{0, 0}, {(uint32_t)_dsw, (uint32_t)_dsh}};
+        vkCmdSetViewport(cmd, 0, 1, &_dvp);
+        vkCmdSetScissor(cmd, 0, 1, &_dsc);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _df->pipeline);
+        float _dpc[] = {(float)_dcw, (float)_dch,
+                        -ctx_wayland->panning[0] * _dz, 0,
+                        _dz, 0, _dsw, _dsh, 0, 0};
+        vkCmdPushConstants(cmd, _df->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_dpc), _dpc);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                _df->pipeline_layout, 0, 1, &_df->desc_set, 0, NULL);
+        VkBuffer _dbufs[] = {_df->quad_vbo, _df->instance_vbo};
+        VkDeviceSize _doffs[] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, _dbufs, _doffs);
+        war_vulkan_text_instance* _ddst = (war_vulkan_text_instance*)_df->instance_mapped;
+        const char* _dcur = ctx_wayland->env->dev_nodes[ctx_wayland->env->capture_mode - 1];
+        uint32_t _dwritten = 0;
+        uint32_t _dmaxrow = 15;
+        for (uint32_t _dr = ctx_wayland->env->dev_sel_offset;
+             _dr < ctx_wayland->env->dev_count && _dr < ctx_wayland->env->dev_sel_offset + _dmaxrow;
+             _dr++) {
+            char _dline[256];
+            int _dp = 0;
+            if ((int32_t)_dr == ctx_wayland->env->dev_sel_cursor)
+                _dline[_dp++] = '>';
+            if (_dcur && strcmp(ctx_wayland->env->dev_names[_dr], _dcur) == 0)
+                _dline[_dp++] = '*';
+            int _dn = snprintf(_dline + _dp, sizeof(_dline) - _dp, "%s", ctx_wayland->env->dev_names[_dr]);
+            if (_dn < 0) _dn = 0;
+            if (_dp + _dn > (int)sizeof(_dline) - 1) _dn = (int)sizeof(_dline) - 1 - _dp;
+            _dn += _dp;
+            if (_dn > 60) _dn = 60;
+            for (int _di = 0; _di < _dn; _di++) {
+                unsigned char _dc = (unsigned char)_dline[_di];
+                if (_dc < 32) _dc = ' ';
+                war_vulkan_text_instance* _dti = &_ddst[_dwritten + _di];
+                _dti->pos[0] = (float)ctx_wayland->gutter_cols + 2.0f + (float)_di;
+                _dti->pos[1] = (float)ctx_wayland->gutter_rows + (float)(_dr - ctx_wayland->env->dev_sel_offset);
+                _dti->pos[2] = 0;
+                _dti->size[0] = 1.0f;
+                _dti->size[1] = 1.0f;
+                _dti->uv[0] = _df->glyph_uv[_dc][0];
+                _dti->uv[1] = _df->glyph_uv[_dc][1];
+                _dti->uv[2] = _df->glyph_uv[_dc][2];
+                _dti->uv[3] = _df->glyph_uv[_dc][3];
+                _dti->glyph_scale[0] = _df->glyph_norm_width[_dc];
+                _dti->glyph_scale[1] = _df->glyph_norm_height[_dc];
+                _dti->ascent = _df->glyph_norm_ascent[_dc];
+                _dti->descent = _df->glyph_norm_descent[_dc];
+                _dti->baseline = _df->glyph_norm_baseline[_dc];
+                _dti->color[0] = 1.0f; _dti->color[1] = 1.0f; _dti->color[2] = 1.0f; _dti->color[3] = 1.0f;
+                _dti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)_dn, 0, _dwritten);
+            _dwritten += _dn;
+        }
+    }
     war_cursor_render(cmd,
                       ctx_wayland->env->ctx_cursor,
                       ctx_wayland,
@@ -2830,8 +2895,8 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         }
         // capture label on middle status bar
         if (ctx_wayland->env->atomics->capture) {
-            const char* captxt = "CAPTURE";
-            int capn = 7;
+            char captxt[16];
+            int capn = snprintf(captxt, sizeof(captxt), "CAPTURE %u", ctx_wayland->env->capture_mode);
             float caprow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 3.0f;
 #define CAP_OFFSET 349
             for (int i = 0; i < capn; i++) {

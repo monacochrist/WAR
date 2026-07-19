@@ -598,16 +598,22 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_FUNCTION_ID_NONE,
                    war_toggle_all_layers,
                    0);
-    // capture audio toggle (Q = shift+q)
-    war_keymap_set(keymap,
-                   config,
-                   1,
-                   (war_mode_id[]){WAR_MODE_ID_ROLL},
-                   1,
-                   (char*[]){"<S-q>", "Q"},
-                   WAR_FUNCTION_ID_NONE,
-                    war_capture_audio,
-                    0);
+    // capture audio toggle (Shift+Q, Alt+Q, Ctrl+Q = modes 1, 2, 3)
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_ROLL}, 1,
+                    (char*[]){"<S-q>", "Q"}, WAR_FUNCTION_ID_NONE,
+                    war_capture_mode1, 0);
+    // capture audio toggle (Alt+Q = capture mode 2)
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_ROLL}, 1,
+                    (char*[]){"<A-q>"}, WAR_FUNCTION_ID_NONE,
+                    war_capture_mode2, 0);
+    // capture audio toggle (Ctrl+Q = capture mode 3)
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_ROLL}, 1,
+                    (char*[]){"<C-q>"}, WAR_FUNCTION_ID_NONE,
+                    war_capture_mode3, 0);
+    // capture audio toggle (Alt+Shift+Q = capture mode 4)
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_ROLL}, 1,
+                    (char*[]){"<A-S-q>"}, WAR_FUNCTION_ID_NONE,
+                    war_capture_mode4, 0);
     // capture and advance (q during capture — saves and moves to next row)
     war_keymap_set(keymap,
                    config,

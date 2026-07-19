@@ -32,6 +32,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <luajit-2.1/lauxlib.h>
 #include <luajit-2.1/lua.h>
 #include <luajit-2.1/lualib.h>
@@ -1459,6 +1460,65 @@ static void war_keyboard_key(void* data,
         return;
     }
 
+    // device selector HUD
+    if (env->dev_sel_active) {
+        int _dprev = env->dev_sel_cursor;
+        if (raw_sym == XKB_KEY_Escape) {
+            env->dev_sel_active = 0;
+        } else if (raw_sym == XKB_KEY_Up || raw_sym == XKB_KEY_j) {
+            if (env->dev_sel_cursor > 0) {
+                env->dev_sel_cursor--;
+                if ((uint32_t)env->dev_sel_cursor < env->dev_sel_offset)
+                    env->dev_sel_offset = (uint32_t)env->dev_sel_cursor;
+            }
+            snprintf(env->status_msg, sizeof(env->status_msg), "[%d/%u] off=%u", env->dev_sel_cursor, env->dev_count, env->dev_sel_offset);
+        } else if (raw_sym == XKB_KEY_Down || raw_sym == XKB_KEY_k) {
+            if ((uint32_t)(env->dev_sel_cursor + 1) < env->dev_count) {
+                env->dev_sel_cursor++;
+                if ((uint32_t)(env->dev_sel_cursor) >= env->dev_sel_offset + 15)
+                    env->dev_sel_offset = (uint32_t)(env->dev_sel_cursor) - 14;
+            }
+            snprintf(env->status_msg, sizeof(env->status_msg), "[%d/%u] off=%u", env->dev_sel_cursor, env->dev_count, env->dev_sel_offset);
+        } else if (raw_sym == XKB_KEY_Left || raw_sym == XKB_KEY_h) {
+            if (ctx_wayland->panning[0] > 0) ctx_wayland->panning[0] -= 1.0f;
+        } else if (raw_sym == XKB_KEY_Right || raw_sym == XKB_KEY_l) {
+            ctx_wayland->panning[0] += 1.0f;
+        } else if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
+            if (env->dev_count > 0 && env->dev_names && (uint32_t)env->dev_sel_cursor < env->dev_count) {
+                free(env->dev_nodes[env->capture_mode - 1]);
+                env->dev_nodes[env->capture_mode - 1] = strdup(env->dev_names[env->dev_sel_cursor]);
+                snprintf(env->status_msg, sizeof(env->status_msg), "CAPTURE %u: %s",
+                         env->capture_mode, env->dev_names[env->dev_sel_cursor]);
+                // save global config
+                FILE* _gs = fopen("global_war.config", "w");
+                if (_gs) {
+                    for (int _gsi = 0; _gsi < 4; _gsi++)
+                        if (env->dev_nodes[_gsi])
+                            fprintf(_gs, "%s\n", env->dev_nodes[_gsi]);
+                        else
+                            fprintf(_gs, "\n");
+                    fclose(_gs);
+                }
+            }
+            env->dev_sel_active = 0;
+        }
+        cur->prefix = 0;
+        return;
+    }
+    
+    // open device selector (Alt+O) — only during active capture
+    if (raw_sym == XKB_KEY_o && (mod & MOD_ALT) && !env->cmd_active && env->atomics->capture) {
+        if (env->dev_count > 0 && env->dev_names) {
+            env->dev_sel_active = 1;
+            env->dev_sel_cursor = 0;
+            env->dev_sel_offset = 0;
+        } else {
+            snprintf(env->status_msg, sizeof(env->status_msg), "no devices found");
+        }
+        cur->prefix = 0;
+        return;
+    }
+
     // enter command mode on ':' (check raw sym before normalizer maps it to ';')
     if (raw_sym == XKB_KEY_Escape) {
         if (env->atomics->capture) {
@@ -1968,7 +2028,7 @@ void* war_pipewire(void* args) {
         struct spa_audio_info_raw capture_info = {
             .format = SPA_AUDIO_FORMAT_F32,
             .rate = 48000,
-            .channels = 1,
+            .channels = 2,
         };
         uint8_t buf[1024];
         struct spa_pod_builder bld = SPA_POD_BUILDER_INIT(buf, sizeof(buf));
@@ -2471,6 +2531,43 @@ int main(int argc, char** argv) {
     pthread_t pw_thread;
     WASSERT(pthread_create(&pw_thread, NULL, war_pipewire, env) == 0);
 
+    // enumerate audio sources for device selector HUD
+    env->dev_count = 1;
+    env->dev_names = calloc(64, sizeof(char*));
+    env->dev_names[0] = strdup("loopback");
+    {
+        char buf[256];
+        FILE* pw_fp = popen("pactl list sources short 2>/dev/null | cut -f2", "r");
+        if (pw_fp) {
+            while (fgets(buf, sizeof(buf), pw_fp) && env->dev_count < 64) {
+                size_t len = strlen(buf);
+                if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
+                if (len > 1 && env->dev_count < 64) {
+                    env->dev_names[env->dev_count] = strdup(buf);
+                    env->dev_count++;
+                }
+            }
+            pclose(pw_fp);
+        }
+    }
+
+    // load global device config
+    {
+        FILE* _gf = fopen("global_war.config", "r");
+        if (_gf) {
+            char _gbuf[256];
+            for (int _gi = 0; _gi < 4 && fgets(_gbuf, sizeof(_gbuf), _gf); _gi++) {
+                size_t _gl = strlen(_gbuf);
+                if (_gl > 0 && _gbuf[_gl-1] == '\n') _gbuf[_gl-1] = '\0';
+                if (_gbuf[0]) {
+                    free(env->dev_nodes[_gi]);
+                    env->dev_nodes[_gi] = strdup(_gbuf);
+                }
+            }
+            fclose(_gf);
+        }
+    }
+
     // init capture slots and accumulator
     memset(env->capture_slots, 0, sizeof(env->capture_slots));
     for (int _gi = 0; _gi < 128 * WAR_CAPTURE_SLOT_LAYERS; _gi++) {
@@ -2765,7 +2862,10 @@ int main(int argc, char** argv) {
         if (env->atomics->capture) {
             uint32_t hdr, sz;
             uint8_t buf[65536];
-            while (war_pc_from_a(env->pc_loopback, &hdr, &sz, buf) && sz > 0) {
+            const char* _dname = env->dev_nodes[env->capture_mode - 1];
+            int _use_mic = _dname && strstr(_dname, "monitor") == NULL && strstr(_dname, "loopback") == NULL;
+            war_producer_consumer* _dcap = _use_mic ? env->pc_capture : env->pc_loopback;
+            while (war_pc_from_a(_dcap, &hdr, &sz, buf) && sz > 0) {
                 uint32_t n_floats = sz / sizeof(float);
                 uint64_t needed = env->capture_accumulator_count + n_floats;
                 if (needed > env->capture_accumulator_capacity) {

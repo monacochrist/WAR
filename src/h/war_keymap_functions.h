@@ -1407,8 +1407,11 @@ static inline void war_capture_audio(war_env* env) {
             env->capture_slots[idx].capacity = 0;
         }
         env->atomics->capture = 1;
-        // flush stale data from previous capture in the loopback ring buffer
-        env->pc_loopback->i_from_a = env->pc_loopback->i_to_wr;
+        // flush stale data from previous capture
+        const char* _dcname = env->dev_nodes[env->capture_mode > 0 ? env->capture_mode - 1 : 0];
+        int _use_mic2 = _dcname && strstr(_dcname, "monitor") == NULL && strstr(_dcname, "loopback") == NULL;
+        war_producer_consumer* _dcap2 = _use_mic2 ? env->pc_capture : env->pc_loopback;
+        _dcap2->i_from_a = _dcap2->i_to_wr;
         free(env->capture_accumulator);
         env->capture_accumulator = NULL;
         env->capture_accumulator_count = 0;
@@ -1417,6 +1420,26 @@ static inline void war_capture_audio(war_env* env) {
                         (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows),
                         env->ctx_cursor->layer);
     }
+}
+
+static inline void war_capture_mode1(war_env* env) {
+    env->capture_mode = 1;
+    war_capture_audio(env);
+}
+
+static inline void war_capture_mode2(war_env* env) {
+    env->capture_mode = 2;
+    war_capture_audio(env);
+}
+
+static inline void war_capture_mode3(war_env* env) {
+    env->capture_mode = 3;
+    war_capture_audio(env);
+}
+
+static inline void war_capture_mode4(war_env* env) {
+    env->capture_mode = 4;
+    war_capture_audio(env);
 }
 
 static inline void war_capture_advance(war_env* env) {
