@@ -1428,21 +1428,33 @@ static inline void war_capture_audio(war_env* env) {
 static inline void war_capture_audio_midi(war_env* env) {
     int was_capturing = env->atomics->capture;
     war_capture_audio(env);
+    // device routing — runs in any mode when capture starts
+    if (!was_capturing && env->atomics->capture) {
+        const char* _dname = env->dev_nodes[env->capture_mode > 0 ? env->capture_mode - 1 : 0];
+        if (_dname && strstr(_dname, "loopback")) {
+        } else if (_dname && strstr(_dname, ".monitor")) {
+            char _snk[1024];
+            size_t _sln = strlen(_dname);
+            size_t _clen = _sln > 8 ? _sln - 8 : 0;
+            if (_clen > sizeof(_snk) - 1) _clen = sizeof(_snk) - 1;
+            memcpy(_snk, _dname, _clen);
+            _snk[_clen] = '\0';
+            char _cmd[1024];
+            snprintf(_cmd, sizeof(_cmd), "pactl set-default-sink \"%s\" 2>/dev/null", _snk);
+            system(_cmd);
+        } else if (_dname) {
+            char _cmd[1024];
+            snprintf(_cmd, sizeof(_cmd), "pactl set-default-source \"%s\" 2>/dev/null", _dname);
+            system(_cmd);
+        }
+    }
+    // MIDI note placement
     if (env->active_mode == WAR_MODE_ID_MIDI && env->play_bar_playing && env->ctx_cursor->instance_count) {
         uint32_t layer = env->ctx_cursor->layer;
         if (layer < 1 || layer > 9) layer = 1;
         uint32_t note = (uint32_t)(env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
         if (note > 127) note = 127;
         if (!was_capturing && env->atomics->capture) {
-            // reconnect capture stream to selected device
-            const char* _dname = env->dev_nodes[env->capture_mode > 0 ? env->capture_mode - 1 : 0];
-            if (_dname && strstr(_dname, "monitor")) {
-                war_reconnect_loopback(env, _dname);
-            } else if (_dname && strstr(_dname, "loopback")) {
-                war_reconnect_loopback(env, NULL);
-            } else if (_dname) {
-                war_reconnect_capture(env, _dname);
-            }
             double _pb_bpm = env->atomics->bpm;
             if (_pb_bpm <= 0.0) _pb_bpm = 100.0;
             double _pb_spc = 15.0 / _pb_bpm;

@@ -859,8 +859,8 @@ void war_reconnect_loopback(war_env* env, const char* target) {
     pw_stream_disconnect(env->ctx_pw->loopback_capture_stream);
     struct pw_properties* _lp = pw_stream_get_properties(env->ctx_pw->loopback_capture_stream);
     if (_lp) {
-        if (target) pw_properties_set(_lp, "target.object", target);
-        else pw_properties_set(_lp, "target.object", NULL);
+        pw_properties_set(_lp, "target.object", NULL);
+        pw_properties_set(_lp, "node.target", NULL);
     }
     struct spa_audio_info_raw info = { .format = SPA_AUDIO_FORMAT_F32, .rate = 48000, .channels = 2 };
     uint8_t buf[1024];
@@ -2570,21 +2570,43 @@ int main(int argc, char** argv) {
 
     // enumerate audio sources for device selector HUD
     env->dev_count = 1;
-    env->dev_names = calloc(64, sizeof(char*));
+    env->dev_names = calloc(128, sizeof(char*));
     env->dev_names[0] = strdup("loopback");
+    // clean up any stale virtual loopback sinks from previous run
+    system("pactl list-modules 2>/dev/null | grep 'war_loopback' | grep -o '[0-9]*' | while read m; do pactl unload-module $m 2>/dev/null; done");
     {
         char buf[256];
         FILE* pw_fp = popen("pactl list sources short 2>/dev/null | cut -f2", "r");
         if (pw_fp) {
-            while (fgets(buf, sizeof(buf), pw_fp) && env->dev_count < 64) {
+            while (fgets(buf, sizeof(buf), pw_fp) && env->dev_count < 128) {
                 size_t len = strlen(buf);
                 if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
-                if (len > 1 && env->dev_count < 64) {
+                if (len > 1 && env->dev_count < 128) {
                     env->dev_names[env->dev_count] = strdup(buf);
                     env->dev_count++;
                 }
             }
             pclose(pw_fp);
+        }
+    }
+    // create additional virtual loopback sinks for capture modes
+    system("pactl unload-module $(pactl list-modules | grep 'war_loopback' | grep -o 'Module #[0-9]*' | cut -d# -f2) 2>/dev/null");
+    for (int _li = 0; _li < 4; _li++) env->loopback_modules[_li] = 0;
+    for (int _li = 2; _li <= 4; _li++) {
+        char _lb[256];
+        snprintf(_lb, sizeof(_lb), "war_loopback%d", _li);
+        if (env->dev_count < 128) {
+            char _nname[64];
+            snprintf(_nname, sizeof(_nname), "%s.monitor", _lb);
+            env->dev_names[env->dev_count++] = strdup(_nname);
+        }
+        char _cmd[256];
+        snprintf(_cmd, sizeof(_cmd), "pactl load-module module-null-sink sink_name=%s", _lb);
+        FILE* _fp = popen(_cmd, "r");
+        if (_fp) {
+            if (fgets(_cmd, sizeof(_cmd), _fp))
+                env->loopback_modules[_li - 2] = (uint32_t)atol(_cmd);
+            pclose(_fp);
         }
     }
 
@@ -3386,4 +3408,11 @@ int main(int argc, char** argv) {
     FT_Done_Face(env->ft_face);
     FT_Done_FreeType(env->ft_lib);
     wl_display_disconnect(ctx_wayland->display);
+    // unload virtual loopback sinks created at startup
+    for (int _li = 0; _li < 3; _li++)
+        if (env->loopback_modules[_li]) {
+            char _uc[64];
+            snprintf(_uc, sizeof(_uc), "pactl unload-module %u 2>/dev/null", env->loopback_modules[_li]);
+            system(_uc);
+        }
 }
