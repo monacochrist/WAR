@@ -1139,6 +1139,20 @@ static inline void war_toggle_playback(war_env* env) {
     }
 }
 
+static inline void war_goto_playback(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    double bpm = env->atomics->bpm;
+    if (bpm <= 0.0) bpm = 100.0;
+    double sec_per_cell = 15.0 / bpm;
+    double gc = (double)env->ctx_wayland->gutter_cols;
+    double pb_col = gc + env->play_bar_position_seconds / sec_per_cell;
+    if (pb_col < gc) pb_col = gc;
+    if (pb_col > env->ctx_wayland->right_bound) pb_col = env->ctx_wayland->right_bound;
+    cur->instance[0].pos[0] = (float)pb_col;
+    war_pan_follow(env);
+}
+
 static inline void war_playbar_goto_cursor(war_env* env) {
     war_simple_line_context* line = env->ctx_line;
     if (!line) return;
@@ -1779,17 +1793,25 @@ static inline void war_undo_save(war_env* env) {
     for (uint32_t i = env->undo_pos + 1; i < env->undo_count && i < WAR_UNDO_MAX; i++) {
         free(env->undo_notes[i]);
         env->undo_notes[i] = NULL;
+        free(env->undo_audio_data[i]);
+        env->undo_audio_data[i] = NULL;
+        env->undo_audio_size[i] = 0;
     }
     env->undo_count = env->undo_pos + 1;
     // shift if full
     if (env->undo_count > WAR_UNDO_MAX) {
         free(env->undo_notes[0]);
+        free(env->undo_audio_data[0]);
         for (uint32_t i = 1; i < WAR_UNDO_MAX; i++) {
             env->undo_notes[i - 1] = env->undo_notes[i];
             env->undo_note_counts[i - 1] = env->undo_note_counts[i];
+            env->undo_audio_data[i - 1] = env->undo_audio_data[i];
+            env->undo_audio_size[i - 1] = env->undo_audio_size[i];
         }
         env->undo_notes[WAR_UNDO_MAX - 1] = NULL;
         env->undo_note_counts[WAR_UNDO_MAX - 1] = 0;
+        env->undo_audio_data[WAR_UNDO_MAX - 1] = NULL;
+        env->undo_audio_size[WAR_UNDO_MAX - 1] = 0;
         env->undo_count--;
         env->undo_pos--;
     }
@@ -1801,16 +1823,90 @@ static inline void war_undo_save(war_env* env) {
     env->undo_notes[idx] = malloc(sz);
     if (env->undo_notes[idx])
         memcpy(env->undo_notes[idx], note->instance, sz);
+    // free stale audio data at this index
+    free(env->undo_audio_data[idx]);
+    env->undo_audio_data[idx] = NULL;
+    env->undo_audio_size[idx] = 0;
     env->undo_pos++;
     if (env->undo_pos > env->undo_count)
         env->undo_count = env->undo_pos;
 }
 
+// save current capture_slot state for the same slots encoded in entry save_idx-1
+static inline void _war_undo_save_current_audio(war_env* env, uint32_t save_idx) {
+    uint8_t* prev = env->undo_audio_data[save_idx - 1];
+    if (!prev || env->undo_audio_size[save_idx - 1] < 4) return;
+    uint32_t n = *(uint32_t*)prev;
+    if (n == 0 || n > 256) return;
+    uint32_t slots[256];
+    uint8_t* rp = prev + 4;
+    for (uint32_t i = 0; i < n; i++) {
+        slots[i] = *(uint32_t*)rp; rp += 4;
+        uint64_t cnt = *(uint64_t*)rp; rp += 8;
+        rp += 8; // skip capacity
+        rp += cnt * sizeof(float);
+    }
+    uint64_t total = 4;
+    for (uint32_t i = 0; i < n; i++) {
+        total += 4 + 8 + 8 + env->capture_slots[slots[i]].count * sizeof(float);
+    }
+    uint8_t* buf = malloc(total);
+    if (!buf) return;
+    uint8_t* wp = buf;
+    *(uint32_t*)wp = n; wp += 4;
+    for (uint32_t i = 0; i < n; i++) {
+        war_capture_slot* sl = &env->capture_slots[slots[i]];
+        *(uint32_t*)wp = slots[i]; wp += 4;
+        *(uint64_t*)wp = sl->count; wp += 8;
+        *(uint64_t*)wp = sl->capacity; wp += 8;
+        if (sl->samples && sl->count > 0)
+            memcpy(wp, sl->samples, sl->count * sizeof(float));
+        wp += sl->count * sizeof(float);
+    }
+    free(env->undo_audio_data[save_idx]);
+    env->undo_audio_data[save_idx] = buf;
+    env->undo_audio_size[save_idx] = total;
+}
+
+// restore capture_slot state from undo entry restore_idx
+static inline void _war_undo_restore_audio(war_env* env, uint32_t restore_idx) {
+    uint8_t* data = env->undo_audio_data[restore_idx];
+    if (!data || env->undo_audio_size[restore_idx] < 4) return;
+    uint32_t n = *(uint32_t*)data;
+    if (n == 0 || n > 256) return;
+    uint8_t* rp = data + 4;
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t si = *(uint32_t*)rp; rp += 4;
+        uint64_t cnt = *(uint64_t*)rp; rp += 8;
+        uint64_t cap = *(uint64_t*)rp; rp += 8;
+        if (si < 128 * WAR_CAPTURE_SLOT_LAYERS) {
+            war_capture_slot* sl = &env->capture_slots[si];
+            free(sl->samples);
+            if (cnt > 0) {
+                sl->samples = malloc(cnt * sizeof(float));
+                if (sl->samples) {
+                    memcpy(sl->samples, rp, cnt * sizeof(float));
+                    sl->count = cnt;
+                    sl->capacity = cap;
+                }
+            } else {
+                sl->samples = NULL;
+                sl->count = 0;
+                sl->capacity = 0;
+            }
+        }
+        rp += cnt * sizeof(float);
+    }
+}
+
 static inline void war_undo(war_env* env) {
     war_note_context* note = env->ctx_note;
     if (!note || env->undo_pos == 0) return;
-    // save current live state at undo_pos so redo can find it
     uint32_t save_idx = env->undo_pos;
+    // save current audio state of slots from the previous operation (for redo)
+    if (save_idx > 0)
+        _war_undo_save_current_audio(env, save_idx);
+    // save current live note state at undo_pos so redo can find it
     env->undo_note_counts[save_idx] = note->instance_count;
     size_t sz = note->instance_count * sizeof(war_new_vulkan_note_instance);
     free(env->undo_notes[save_idx]);
@@ -1821,6 +1917,9 @@ static inline void war_undo(war_env* env) {
         env->undo_count = save_idx + 1;
     // restore previous state
     uint32_t restore_idx = env->undo_pos - 1;
+    // restore audio
+    _war_undo_restore_audio(env, restore_idx);
+    // restore notes
     uint32_t cnt = env->undo_note_counts[restore_idx];
     if (cnt > note->max_instances) cnt = note->max_instances;
     if (env->undo_notes[restore_idx]) {
@@ -1834,6 +1933,9 @@ static inline void war_redo(war_env* env) {
     war_note_context* note = env->ctx_note;
     if (!note || env->undo_count < 2 || env->undo_pos >= env->undo_count - 1) return;
     uint32_t restore_idx = env->undo_pos + 1;
+    // restore audio
+    _war_undo_restore_audio(env, restore_idx);
+    // restore notes
     uint32_t cnt = env->undo_note_counts[restore_idx];
     if (cnt > note->max_instances) cnt = note->max_instances;
     if (env->undo_notes[restore_idx]) {
@@ -1945,6 +2047,172 @@ static inline void war_delete_note_under_cursor(war_env* env) {
                         note->instance[best].pos[1],
                         note->instance_count);
     }
+}
+
+static inline void war_split_note(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_note_context* note = env->ctx_note;
+    if (!cur->instance_count || !note || !note->instance_count) return;
+    float cx = cur->instance[0].pos[0];
+    float cy = cur->instance[0].pos[1];
+    uint32_t best = UINT32_MAX;
+    uint64_t best_tick = 0;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        float nx0 = note->instance[i].pos[0];
+        float nx1 = nx0 + note->instance[i].size[0];
+        float ny = note->instance[i].pos[1];
+        if (cx >= nx0 && cx < nx1 && ny == cy) {
+            uint32_t _nl = (note->instance[i].flags >> 4) & 0xF;
+            if (_nl >= 1 && _nl <= 9 && !(env->layer_visible & (1 << (_nl - 1)))) continue;
+            if (best == UINT32_MAX || note->instance[i].tick > best_tick) {
+                best = i; best_tick = note->instance[i].tick;
+            }
+        }
+    }
+    if (best == UINT32_MAX) return;
+    float note_start = note->instance[best].pos[0];
+    float note_end = note_start + note->instance[best].size[0];
+    float left_w = cx - note_start;
+    float right_w = note_end - cx;
+    if (left_w < 0.02f || right_w < 0.02f) return;
+    uint32_t src_pitch = (uint32_t)(cy - (double)env->ctx_wayland->gutter_rows);
+    uint32_t layer = (note->instance[best].flags >> 4) & 0xF;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t src_idx = src_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    // compute sample split point: left_w columns worth of audio
+    double bpm = env->atomics->bpm;
+    if (bpm <= 0.0) bpm = 100.0;
+    double sec_per_cell = 15.0 / bpm;
+    uint64_t split_frames = (uint64_t)((double)left_w * sec_per_cell * 48000.0);
+    if (split_frames < 1) return;
+    uint64_t split_samples = split_frames * 2;
+    war_capture_slot* src_slot = &env->capture_slots[src_idx];
+    if (split_samples >= src_slot->count) return;
+    uint64_t right_samples = src_slot->count - split_samples;
+    if (right_samples & 1) right_samples &= ~1ULL;
+    // find empty dest slot first
+    uint32_t dest_pitch = UINT32_MAX;
+    uint32_t mi = 0;
+    for (uint32_t p = src_pitch + 1; p < 128; p++) {
+        mi = p * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+        if (!env->capture_slots[mi].samples || env->capture_slots[mi].count < 2) {
+            dest_pitch = p;
+            break;
+        }
+    }
+    if (dest_pitch == UINT32_MAX) return;
+    // save pre-split audio state for both slots
+    uint64_t src_size = src_slot->count * sizeof(float);
+    uint64_t dst_cnt = env->capture_slots[mi].count;
+    uint64_t dst_size = dst_cnt * sizeof(float);
+    // flat buffer: [n(4) src_idx(4) cnt(8) cap(8) samples(n*4) dst_idx(4) cnt(8) cap(8) samples(n*4)]
+    uint64_t audio_total = 4 + 4+8+8+src_size + 4+8+8+dst_size;
+    uint8_t* audio_data = malloc(audio_total);
+    if (!audio_data) return;
+    {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 2; p += 4;
+        *(uint32_t*)p = src_idx; p += 4;
+        *(uint64_t*)p = src_slot->count; p += 8;
+        *(uint64_t*)p = src_slot->capacity; p += 8;
+        if (src_slot->samples && src_slot->count > 0)
+            memcpy(p, src_slot->samples, src_size);
+        p += src_size;
+        *(uint32_t*)p = mi; p += 4;
+        *(uint64_t*)p = dst_cnt; p += 8;
+        *(uint64_t*)p = env->capture_slots[mi].capacity; p += 8;
+        if (env->capture_slots[mi].samples && dst_cnt > 0)
+            memcpy(p, env->capture_slots[mi].samples, dst_size);
+    }
+    // save note state
+    war_undo_save(env);
+    // store audio snapshot at the same undo index
+    uint32_t audio_idx = env->undo_pos - 1;
+    free(env->undo_audio_data[audio_idx]);
+    env->undo_audio_data[audio_idx] = audio_data;
+    env->undo_audio_size[audio_idx] = audio_total;
+    // now perform the split
+    float keep_w, move_w;
+    uint32_t keep_i;
+    float move_pitch_row = (float)dest_pitch + (float)env->ctx_wayland->gutter_rows;
+    uint32_t col = (&env->ctx_color->layer_none)[layer];
+    if (left_w >= right_w) {
+        // left (larger) stays at original pitch, right (smaller) moves up
+        keep_w = left_w; move_w = right_w;
+        keep_i = best;
+        // copy only RIGHT portion audio to new slot (from split_samples onward)
+        float* copy = malloc(right_samples * sizeof(float));
+        if (copy) {
+            memcpy(copy, src_slot->samples + split_samples, right_samples * sizeof(float));
+            free(env->capture_slots[mi].samples);
+            env->capture_slots[mi] = *src_slot;
+            env->capture_slots[mi].samples = copy;
+            env->capture_slots[mi].count = right_samples;
+            env->capture_slots[mi].capacity = right_samples;
+        }
+        // trim original slot to LEFT portion only (first split_samples)
+        float* trim = malloc(split_samples * sizeof(float));
+        if (trim) {
+            memcpy(trim, src_slot->samples, split_samples * sizeof(float));
+            free(src_slot->samples);
+            src_slot->samples = trim;
+            src_slot->count = split_samples;
+            src_slot->capacity = split_samples;
+        }
+        note->instance[keep_i].size[0] = keep_w;
+        if (note->instance_count < note->max_instances) {
+            uint32_t ni = note->instance_count++;
+            note->instance[ni] = note->instance[keep_i];
+            note->instance[ni].pos[0] = cx;
+            note->instance[ni].pos[1] = move_pitch_row;
+            note->instance[ni].size[0] = move_w;
+            note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
+            note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
+            note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
+            note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
+            note->instance[ni].tick = note->tick_counter++;
+        }
+    } else {
+        // right (larger) stays at original pitch, left (smaller) moves up
+        keep_w = right_w; move_w = left_w;
+        note->instance[best].pos[0] = cx;
+        note->instance[best].size[0] = keep_w;
+        keep_i = best;
+        // copy only LEFT portion audio to new slot (first split_samples)
+        float* copy = malloc(split_samples * sizeof(float));
+        if (copy) {
+            memcpy(copy, src_slot->samples, split_samples * sizeof(float));
+            free(env->capture_slots[mi].samples);
+            env->capture_slots[mi] = *src_slot;
+            env->capture_slots[mi].samples = copy;
+            env->capture_slots[mi].count = split_samples;
+            env->capture_slots[mi].capacity = split_samples;
+        }
+        // trim original slot to RIGHT portion only (from split_samples onward)
+        if (right_samples > 0) {
+            float* trim = malloc(right_samples * sizeof(float));
+            if (trim) {
+                memcpy(trim, src_slot->samples + split_samples, right_samples * sizeof(float));
+                free(src_slot->samples);
+                src_slot->samples = trim;
+                src_slot->count = right_samples;
+                src_slot->capacity = right_samples;
+            }
+        }
+        if (note->instance_count < note->max_instances) {
+            uint32_t ni = note->instance_count++;
+            note->instance[ni] = note->instance[keep_i];
+            note->instance[ni].pos[0] = note_start;
+            note->instance[ni].pos[1] = move_pitch_row;
+            note->instance[ni].size[0] = move_w;
+            note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
+            note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
+            note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
+            note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
+            note->instance[ni].tick = note->tick_counter++;
+        }
+    }
+    snprintf(env->status_msg, sizeof(env->status_msg), "split: left=%.1f right=%.1f", left_w, right_w);
 }
 
 static inline void war_wave_view(war_env* env) {

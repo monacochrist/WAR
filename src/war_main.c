@@ -373,7 +373,7 @@ static void war_export_wav(war_env* env, const char* filename) {
         if (!env->capture_slots[idx].samples || env->capture_slots[idx].count < 2) continue;
         float* _s = env->capture_slots[idx].samples;
         uint64_t _sc = env->capture_slots[idx].count;
-        float _sg = (env->capture_slots[idx].gain + 1000.0f) / 1000.0f;
+        float _sg = (env->capture_slots[idx].gain + 5000.0f) / 5000.0f;
         int _sp = env->capture_slots[idx].pan;
         float _pe = (float)(_sp + 1000) / 2000.0f;
         float _ple = sinf((1.0f - _pe) * (float)(M_PI / 2.0));
@@ -410,7 +410,7 @@ static void war_export_wav(war_env* env, const char* filename) {
 
     // apply master gain
     if (env->master_gain != 0.0f) {
-        float _mgm = (env->master_gain + 1000.0f) / 1000.0f;
+        float _mgm = (env->master_gain + 5000.0f) / 5000.0f;
         for (uint64_t i = 0; i < total_floats; i++)
             mix[i] *= _mgm;
     }
@@ -648,7 +648,7 @@ static void war_load_project(war_env* env, const char* filename) {
         }
     }
     fclose(f);
-    if (env->master_gain < -1000.0f) env->master_gain = 0.0f;
+    if (env->master_gain < -5000.0f) env->master_gain = 0.0f;
     snprintf(env->status_msg, sizeof(env->status_msg), "%s loaded (%u notes, %u slots)",
              strlen(path) > 75 ? path + strlen(path) - 75 : path, note_count, slot_count);
     fprintf(stderr, "LOAD: loaded %s (%u notes, %u slots, bpm=%.1f)\n",
@@ -1267,7 +1267,7 @@ static void war_keyboard_key(void* data,
                 }
              } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 'n') {
                 double _gv = 0;
-                if (sscanf(env->cmd_buf + 5, " %lf", &_gv) == 1 && _gv >= -1000 && _gv <= 1000) {
+                if (sscanf(env->cmd_buf + 5, " %lf", &_gv) == 1 && _gv >= -5000 && _gv <= 5000) {
                     double _gr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
                     uint32_t _gp = _gr > 0 ? (uint32_t)(_gr + 0.5) : 0;
                     if (_gp > 127) _gp = 127;
@@ -1277,7 +1277,7 @@ static void war_keyboard_key(void* data,
                     env->capture_slots[_gi].gain = (float)_gv;
                     snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", (float)_gv);
                 } else {
-                    fprintf(stderr, "GAIN: usage :gain <-1000..1000>\n");
+                    fprintf(stderr, "GAIN: usage :gain <-5000..5000>\n");
                 }
              } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'p' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'n') {
                 int _pv = 0;
@@ -1356,6 +1356,9 @@ static void war_keyboard_key(void* data,
                 war_export_mp3(env, name);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
+            } else if (env->cmd_len == 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'p') {
+                war_goto_playback(env);
+                snprintf(env->status_msg, sizeof(env->status_msg), "goto playback");
             } else if (env->cmd_len >= 6 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'm' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'j' && env->cmd_buf[4] == '1' && env->cmd_buf[5] == '1') {
                 war_chord_maj11(env);
                 snprintf(env->status_msg, sizeof(env->status_msg), "maj11");
@@ -1682,14 +1685,14 @@ static void war_keyboard_key(void* data,
     if (mode == WAR_MODE_ID_MASTER) {
         if (raw_sym == XKB_KEY_Up && !(mod & (MOD_SHIFT | MOD_CTRL | MOD_ALT))) {
             env->master_gain += 10.0f;
-            if (env->master_gain > 1000.0f) env->master_gain = 1000.0f;
+            if (env->master_gain > 5000.0f) env->master_gain = 5000.0f;
             snprintf(env->status_msg, sizeof(env->status_msg), "MASTER %+.0f", env->master_gain);
             cur->prefix = 0;
             return;
         }
         if (raw_sym == XKB_KEY_Down && !(mod & (MOD_SHIFT | MOD_CTRL | MOD_ALT))) {
             env->master_gain -= 10.0f;
-            if (env->master_gain < -1000.0f) env->master_gain = -1000.0f;
+            if (env->master_gain < -5000.0f) env->master_gain = -5000.0f;
             snprintf(env->status_msg, sizeof(env->status_msg), "MASTER %+.0f", env->master_gain);
             cur->prefix = 0;
             return;
@@ -1753,14 +1756,14 @@ static void war_keyboard_key(void* data,
         if (_gs->samples && _gs->count > 0) {
             if (raw_sym == XKB_KEY_Up && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
                 _gs->gain += 10.0f;
-                if (_gs->gain > 1000.0f) _gs->gain = 1000.0f;
+                if (_gs->gain > 5000.0f) _gs->gain = 5000.0f;
                 snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", _gs->gain);
                 cur->prefix = 0;
                 return;
             }
             if (raw_sym == XKB_KEY_Down && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
                 _gs->gain -= 10.0f;
-                if (_gs->gain < -1000.0f) _gs->gain = -1000.0f;
+                if (_gs->gain < -5000.0f) _gs->gain = -5000.0f;
                 snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", _gs->gain);
                 cur->prefix = 0;
                 return;
@@ -2373,6 +2376,8 @@ int main(int argc, char** argv) {
     env->undo_pos = 0;
     env->undo_note_counts = calloc(WAR_UNDO_MAX, sizeof(uint32_t));
     env->undo_notes = calloc(WAR_UNDO_MAX, sizeof(war_new_vulkan_note_instance*));
+    env->undo_audio_data = calloc(WAR_UNDO_MAX, sizeof(uint8_t*));
+    env->undo_audio_size = calloc(WAR_UNDO_MAX, sizeof(uint64_t));
     env->across_radius = 16;
     env->across_resample = 0;
     ctx_hot->fn_id[0] = WAR_HOT_ID_COLOR;
@@ -2841,12 +2846,12 @@ int main(int argc, char** argv) {
                         // fallback: master gain
                         if (_mrsym == XKB_KEY_Up) {
                             env->master_gain += 10.0f;
-                            if (env->master_gain > 1000.0f) env->master_gain = 1000.0f;
+            if (env->master_gain > 5000.0f) env->master_gain = 5000.0f;
                             continue;
                         }
                         if (_mrsym == XKB_KEY_Down) {
                             env->master_gain -= 10.0f;
-                            if (env->master_gain < -1000.0f) env->master_gain = -1000.0f;
+                            if (env->master_gain < -5000.0f) env->master_gain = -5000.0f;
                             continue;
                         }
                     }
@@ -2869,10 +2874,10 @@ int main(int argc, char** argv) {
                             if (_rgs->samples && _rgs->count > 0) {
                                 if (_rsym == XKB_KEY_Up && !(_rmod & MOD_SHIFT)) {
                                     _rgs->gain += 10.0f;
-                                    if (_rgs->gain > 1000.0f) _rgs->gain = 1000.0f;
-                                } else if (_rsym == XKB_KEY_Down && !(_rmod & MOD_SHIFT)) {
-                                    _rgs->gain -= 10.0f;
-                                    if (_rgs->gain < -1000.0f) _rgs->gain = -1000.0f;
+                                     if (_rgs->gain > 5000.0f) _rgs->gain = 5000.0f;
+                                 } else if (_rsym == XKB_KEY_Down && !(_rmod & MOD_SHIFT)) {
+                                     _rgs->gain -= 10.0f;
+                                     if (_rgs->gain < -5000.0f) _rgs->gain = -5000.0f;
                                 } else if (_rsym == XKB_KEY_Left && !(_rmod & MOD_SHIFT)) {
                                     _rgs->pan -= 10;
                                     if (_rgs->pan < -1000) _rgs->pan = -1000;
@@ -3104,7 +3109,7 @@ int main(int argc, char** argv) {
                                          (avail & ~1ULL) :
                                          PW_CHUNK_FLOATS;
                     voice_batch[v] = batch;
-                    float _gm = (slot->gain + 1000.0f) / 1000.0f;
+                    float _gm = (slot->gain + 5000.0f) / 5000.0f;
                     float _pp = (float)(slot->pan + 1000) / 2000.0f;
                     float _pl = sinf((1.0f - _pp) * (float)(M_PI / 2.0));
                     float _pr = sinf(_pp * (float)(M_PI / 2.0));
@@ -3202,7 +3207,7 @@ int main(int argc, char** argv) {
                         if (batch > to_slot_end) batch = to_slot_end & ~1ULL;
                         voice_batch[vi] = batch;
                         if (batch == 0) { env->play_bar_voice_active[v] = 0; continue; }
-                        float _gm = (slot->gain + 1000.0f) / 1000.0f;
+                        float _gm = (slot->gain + 5000.0f) / 5000.0f;
                         float _pp2 = (float)(slot->pan + 1000) / 2000.0f;
                         float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
                         float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
@@ -3252,7 +3257,7 @@ int main(int argc, char** argv) {
                 }
                 if (!any_active && !env->play_bar_playing) break;
                 if (env->master_gain != 0.0f) {
-                    float _mg_live = (env->master_gain + 1000.0f) / 1000.0f;
+                    float _mg_live = (env->master_gain + 5000.0f) / 5000.0f;
                     for (int _mf = 0; _mf < PW_CHUNK_FLOATS; _mf++)
                         mix[_mf] *= _mg_live;
                 }

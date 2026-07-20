@@ -108,6 +108,7 @@ else if (strcmp(name, "war_visual_move_left") == 0) { return war_visual_move_lef
 else if (strcmp(name, "war_visual_move_up") == 0) { return war_visual_move_up; }
 else if (strcmp(name, "war_visual_move_down") == 0) { return war_visual_move_down; }
 else if (strcmp(name, "war_toggle_playback") == 0) { return war_toggle_playback; }
+else if (strcmp(name, "war_goto_playback") == 0) { return war_goto_playback; }
 else if (strcmp(name, "war_playbar_goto_cursor") == 0) { return war_playbar_goto_cursor; }
 else if (strcmp(name, "war_toggle_playbar_loop") == 0) { return war_toggle_playbar_loop; }
 else if (strcmp(name, "war_playbar_goto_start") == 0) { return war_playbar_goto_start; }
@@ -146,6 +147,7 @@ else if (strcmp(name, "war_undo") == 0) { return war_undo; }
 else if (strcmp(name, "war_redo") == 0) { return war_redo; }
 else if (strcmp(name, "war_trim_note_under_cursor") == 0) { return war_trim_note_under_cursor; }
 else if (strcmp(name, "war_delete_note_under_cursor") == 0) { return war_delete_note_under_cursor; }
+else if (strcmp(name, "war_split_note") == 0) { return war_split_note; }
 else if (strcmp(name, "war_wave_view") == 0) { return war_wave_view; }
 else if (strcmp(name, "war_yank") == 0) { return war_yank; }
 else if (strcmp(name, "war_paste") == 0) { return war_paste; }

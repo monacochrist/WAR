@@ -322,16 +322,6 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                     WAR_FUNCTION_ID_NONE,
                     war_visual_move_down,
                     0);
-    // visual stretch toggle (shift+s)
-    war_keymap_set(keymap,
-                   config,
-                   1,
-                   (war_mode_id[]){WAR_MODE_ID_VISUAL},
-                   1,
-                   (char*[]){"<S-s>"},
-                   WAR_FUNCTION_ID_NONE,
-                   war_visual_stretch_toggle,
-                   0);
     // snap cursor to nearest cell (s) — in both ROLL and VISUAL
     war_keymap_set(keymap,
                    config,
@@ -341,7 +331,12 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    (char*[]){"s"},
                    WAR_FUNCTION_ID_NONE,
                    war_reset_step,
-                   0);
+                    0);
+    // split note at cursor (S = shift+s)
+    war_keymap_set(keymap, config, 2,
+                    (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                    1, (char*[]){"<S-s>"}, WAR_FUNCTION_ID_NONE,
+                    war_split_note, 0);
     // zoom ('=' zoom in, '-' zoom out)
     war_keymap_set(keymap, config, 4,
                     (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_MIDI,
@@ -774,6 +769,8 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                    WAR_KEYMAP_UNIQUE_PREFIX);
     // waveform view — go to definition (gd)
     war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_ROLL}, 1, (char*[]){"gd"}, WAR_FUNCTION_ID_NONE, war_wave_view, 0);
+    // goto playback (gp)
+    war_keymap_set(keymap, config, 1, (war_mode_id[]){WAR_MODE_ID_ROLL}, 1, (char*[]){"gp"}, WAR_FUNCTION_ID_NONE, war_goto_playback, 0);
     // absolute row jumps
     war_keymap_set(keymap,
                    config,

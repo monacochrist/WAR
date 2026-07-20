@@ -2806,6 +2806,8 @@ struct war_env {
     uint32_t undo_pos; // current position in tree (0 = no undo, >0 = can undo)
     uint32_t* undo_note_counts; // instance_count per snapshot
     struct war_vulkan_note_instance** undo_notes; // instance copies
+    uint8_t** undo_audio_data; // flat per-entry: [n_slots(uint32), slot_idx(uint32), count(uint64), cap(uint64), samples(count*float), ...]
+    uint64_t* undo_audio_size; // byte size of each undo_audio_data entry
 };
 
 typedef struct war_wayland_context {
