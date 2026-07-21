@@ -1875,6 +1875,213 @@ static inline void war_deesser(war_env* env) {
              threshold_db, freq_hz, attack_ms, release_ms);
 }
 
+static inline void war_chorus(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    if (!slot->samples || slot->count < 4) return;
+    double rate_hz = 0.5, depth_ms = 5.0, mix = 0.5, base_ms = 20.0;
+    if (env->cmd_active && env->cmd_len > 8) {
+        int n = sscanf(env->cmd_buf + 8, " %lf %lf %lf %lf",
+                       &rate_hz, &depth_ms, &mix, &base_ms);
+        if (n < 1) rate_hz = 0.5;
+        if (n < 2) depth_ms = 5.0;
+        if (n < 3) mix = 0.5;
+        if (n < 4) base_ms = 20.0;
+    }
+    if (rate_hz <= 0.0 || depth_ms <= 0.0 || mix < 0.0 || mix > 1.0 || base_ms < 1.0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "chorus: usage :chorus [rate(Hz) depth(ms) mix(0-1) base(ms)]");
+        return;
+    }
+    uint64_t frames = slot->count / 2;
+    uint64_t base_samp = (uint64_t)(base_ms * 0.001 * 48000.0);
+    uint64_t depth_samp = (uint64_t)(depth_ms * 0.001 * 48000.0);
+    if (depth_samp < 1) depth_samp = 1;
+    uint64_t delay_len = base_samp + depth_samp + 1;
+    float* delay_l = calloc(delay_len, sizeof(float));
+    float* delay_r = calloc(delay_len, sizeof(float));
+    float* out = malloc(slot->count * sizeof(float));
+    if (!delay_l || !delay_r || !out) { free(delay_l); free(delay_r); free(out); return; }
+    uint64_t wp = 0;
+    double phase = 0.0;
+    double phase_inc = rate_hz / 48000.0;
+    for (uint64_t f = 0; f < frames; f++) {
+        float in_l = slot->samples[f * 2];
+        float in_r = slot->samples[f * 2 + 1];
+        delay_l[wp] = in_l;
+        delay_r[wp] = in_r;
+        // LFO: left channel uses sin, right channel uses sin + 90deg for stereo spread
+        float lfo_l = sinf((float)(2.0 * M_PI * phase));
+        float lfo_r = sinf((float)(2.0 * M_PI * phase + M_PI_2));
+        float mod_l = (float)base_samp + (float)depth_samp * (0.5f + 0.5f * lfo_l);
+        float mod_r = (float)base_samp + (float)depth_samp * (0.5f + 0.5f * lfo_r);
+        // linear interpolation of delay read
+        float rp_l = fmodf((float)wp + (float)delay_len - mod_l, (float)delay_len);
+        float rp_r = fmodf((float)wp + (float)delay_len - mod_r, (float)delay_len);
+        uint64_t ri_l = (uint64_t)rp_l;
+        uint64_t ri_r = (uint64_t)rp_r;
+        float frac_l = rp_l - (float)ri_l;
+        float frac_r = rp_r - (float)ri_r;
+        uint64_t ri_l2 = (ri_l + 1) % delay_len;
+        uint64_t ri_r2 = (ri_r + 1) % delay_len;
+        float dl = delay_l[ri_l] + frac_l * (delay_l[ri_l2] - delay_l[ri_l]);
+        float dr = delay_r[ri_r] + frac_r * (delay_r[ri_r2] - delay_r[ri_r]);
+        out[f * 2] = in_l * (1.0f - (float)mix) + dl * (float)mix;
+        out[f * 2 + 1] = in_r * (1.0f - (float)mix) + dr * (float)mix;
+        wp = (wp + 1) % delay_len;
+        phase += phase_inc;
+        if (phase >= 1.0) phase -= 1.0;
+    }
+    free(delay_l); free(delay_r);
+    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
+    uint8_t* audio_data = malloc(buf_size);
+    if (audio_data) {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 1; p += 4;
+        *(uint32_t*)p = idx; p += 4;
+        *(uint64_t*)p = slot->count; p += 8;
+        *(uint64_t*)p = slot->capacity; p += 8;
+        memcpy(p, slot->samples, slot->count * sizeof(float));
+    }
+    war_undo_save(env);
+    if (audio_data) {
+        uint32_t audio_idx = env->undo_pos - 1;
+        free(env->undo_audio_data[audio_idx]);
+        env->undo_audio_data[audio_idx] = audio_data;
+        env->undo_audio_size[audio_idx] = buf_size;
+    }
+    free(slot->samples);
+    slot->samples = out;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "chorus: rate=%.1fHz depth=%.1fms mix=%.2f base=%.0fms",
+             rate_hz, depth_ms, mix, base_ms);
+}
+
+static inline void war_autotune(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    if (!slot->samples || slot->count < 4) return;
+    double retune_ms = 20.0;
+    if (env->cmd_active && env->cmd_len > 10) {
+        sscanf(env->cmd_buf + 10, " %lf", &retune_ms);
+    }
+    if (retune_ms < 0.0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "autotune: usage :autotune [retune(ms)]");
+        return;
+    }
+    uint64_t total_frames = slot->count / 2;
+    // analyze in overlapping frames, detect pitch, shift to nearest semitone
+    uint64_t win_size = 2048;
+    uint64_t hop = win_size / 4; // 75% overlap
+    uint64_t n_frames = total_frames / hop;
+    if (n_frames < 2) return;
+    float* out = calloc(total_frames * 2, sizeof(float));
+    if (!out) return;
+    // fill output with original signal
+    memcpy(out, slot->samples, total_frames * 2 * sizeof(float));
+    double smooth_ratio = 1.0;
+    double smooth_coef = retune_ms > 0.0 ? exp(-1.0 / (retune_ms * 0.001 * 48000.0 * 0.25)) : 0.0;
+    float* window = malloc(win_size * sizeof(float));
+    if (!window) { free(out); return; }
+    for (uint64_t i = 0; i < win_size; i++)
+        window[i] = 0.5f * (1.0f - cosf(2.0f * (float)M_PI * (float)i / (float)(win_size - 1)));
+    float* frame_buf = malloc(win_size * sizeof(float));
+    if (!frame_buf) { free(window); free(out); return; }
+    for (uint64_t fr = 0; fr < n_frames; fr++) {
+        uint64_t start = fr * hop;
+        if (start + win_size > total_frames) break;
+        // copy frame from original source for clean pitch detection
+        for (uint64_t i = 0; i < win_size; i++)
+            frame_buf[i] = (slot->samples[(start + i) * 2] + slot->samples[(start + i) * 2 + 1]) * 0.5f;
+        // ACF-based pitch detection
+        uint64_t min_lag = 48000 / 2000;
+        uint64_t max_lag = 48000 / 50;
+        if (max_lag > win_size / 2) max_lag = win_size / 2;
+        if (min_lag < 1) min_lag = 1;
+        double best_norm = 0.0;
+        uint64_t best_lag = 0;
+        double energy = 0.0;
+        for (uint64_t i = 0; i < win_size; i++) energy += (double)(frame_buf[i] * frame_buf[i]);
+        if (energy < 1e-10) continue;
+        for (uint64_t lag = min_lag; lag <= max_lag; lag++) {
+            double acf = 0.0;
+            for (uint64_t i = 0; i < win_size - lag; i++)
+                acf += (double)(frame_buf[i] * frame_buf[i + lag]);
+            double norm = acf / energy;
+            if (norm > best_norm) { best_norm = norm; best_lag = lag; }
+        }
+        if (best_lag == 0 || best_norm < 0.1) continue;
+        double detected_hz = 48000.0 / (double)best_lag;
+        double semitone = 12.0 * log2(detected_hz / 440.0);
+        double nearest = round(semitone);
+        double target_hz = 440.0 * pow(2.0, nearest / 12.0);
+        double ratio = target_hz / detected_hz;
+        if (ratio < 0.5 || ratio > 2.0) continue;
+        if (smooth_coef > 0.0)
+            smooth_ratio = smooth_coef * smooth_ratio + (1.0 - smooth_coef) * ratio;
+        else
+            smooth_ratio = ratio;
+        uint64_t dst_frames = (uint64_t)((double)win_size / smooth_ratio);
+        if (dst_frames < 1) dst_frames = 1;
+        if (dst_frames > win_size * 2) dst_frames = win_size * 2;
+        float* resampled = malloc(dst_frames * sizeof(float));
+        if (!resampled) continue;
+        for (uint64_t i = 0; i < dst_frames; i++) {
+            double sp = (double)i * smooth_ratio;
+            uint64_t si = (uint64_t)sp;
+            double fr = sp - (double)si;
+            if (si >= win_size - 1)
+                resampled[i] = frame_buf[win_size - 1];
+            else
+                resampled[i] = (float)((double)frame_buf[si] * (1.0 - fr) + (double)frame_buf[si + 1] * fr);
+        }
+        // overlap-add into output (clear original first, then add)
+        for (uint64_t i = 0; i < win_size && i < dst_frames; i++) {
+            double w = (double)window[i];
+            double val = (double)resampled[i] * w;
+            out[(start + i) * 2] += (float)(val * 0.25);
+            out[(start + i) * 2 + 1] += (float)(val * 0.25);
+        }
+        free(resampled);
+    }
+    free(frame_buf);
+    free(window);
+    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
+    uint8_t* audio_data = malloc(buf_size);
+    if (audio_data) {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 1; p += 4;
+        *(uint32_t*)p = idx; p += 4;
+        *(uint64_t*)p = slot->count; p += 8;
+        *(uint64_t*)p = slot->capacity; p += 8;
+        memcpy(p, slot->samples, slot->count * sizeof(float));
+    }
+    war_undo_save(env);
+    if (audio_data) {
+        uint32_t audio_idx = env->undo_pos - 1;
+        free(env->undo_audio_data[audio_idx]);
+        env->undo_audio_data[audio_idx] = audio_data;
+        env->undo_audio_size[audio_idx] = buf_size;
+    }
+    free(slot->samples);
+    slot->samples = out;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "autotune: retune=%.0fms", retune_ms);
+}
+
 static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint32_t layer, int32_t radius) {
     if (!env || src_note > 127 || layer < 1 || layer > 9) return;
     uint32_t li = layer - 1;
@@ -2647,6 +2854,7 @@ static inline void war_split_note(war_env* env) {
     float right_w = note_end - cx;
     if (left_w < 0.02f || right_w < 0.02f) return;
     uint32_t src_pitch = (uint32_t)(cy - (double)env->ctx_wayland->gutter_rows);
+    if (src_pitch > 127) return;
     uint32_t layer = (note->instance[best].flags >> 4) & 0xF;
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t src_idx = src_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
@@ -2658,7 +2866,7 @@ static inline void war_split_note(war_env* env) {
     if (split_frames < 1) return;
     uint64_t split_samples = split_frames * 2;
     war_capture_slot* src_slot = &env->capture_slots[src_idx];
-    if (split_samples >= src_slot->count) return;
+    if (!src_slot->samples || split_samples >= src_slot->count) return;
     uint64_t right_samples = src_slot->count - split_samples;
     if (right_samples & 1) right_samples &= ~1ULL;
     // find empty dest slot first

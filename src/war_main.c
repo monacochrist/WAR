@@ -1366,6 +1366,10 @@ static void war_keyboard_key(void* data,
                 war_gate(env);
             } else if (env->cmd_len >= 8 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'd' && env->cmd_buf[2] == 'e' && env->cmd_buf[3] == 'e' && env->cmd_buf[4] == 's' && env->cmd_buf[5] == 's' && env->cmd_buf[6] == 'e' && env->cmd_buf[7] == 'r') {
                 war_deesser(env);
+            } else if (env->cmd_len >= 8 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'h' && env->cmd_buf[3] == 'o' && env->cmd_buf[4] == 'r' && env->cmd_buf[5] == 'u' && env->cmd_buf[6] == 's') {
+                war_chorus(env);
+            } else if (env->cmd_len >= 10 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'a' && env->cmd_buf[2] == 'u' && env->cmd_buf[3] == 't' && env->cmd_buf[4] == 'o' && env->cmd_buf[5] == 't' && env->cmd_buf[6] == 'u' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 'e') {
+                war_autotune(env);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
             } else if (env->cmd_len == 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'p') {
@@ -3053,6 +3057,7 @@ int main(int argc, char** argv) {
                                 env->play_bar_voice_filter_lp[_v][1] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][2] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][3] = 0.0f;
+                                env->play_bar_voice_filter_lp[_v][4] = 0.0f;
                                 env->play_bar_voice_env_samples[_v] = 0;
                                 env->play_bar_voice_active[_v] = 1;
                                 break;
@@ -3141,11 +3146,14 @@ int main(int argc, char** argv) {
                         float _t_target = (float)slot->eq / 1000.0f;
                         if (_t_target < 0.0f) _t_target = -_t_target;
                         if (_t_target > 1.0f) _t_target = 1.0f;
-                        if (f == 0 && env->preview_voice_env_samples[v] == 0) {
+                        int _new_eq = slot->eq;
+                        int _last_eq = (int)env->preview_voice_filter_lp[v][4];
+                        if (_new_eq != _last_eq || (f == 0 && env->preview_voice_env_samples[v] == 0)) {
                             env->preview_voice_filter_lp[v][0] = _s_l;
                             env->preview_voice_filter_lp[v][1] = _s_r;
                             env->preview_voice_filter_lp[v][2] = _alpha_target;
                             env->preview_voice_filter_lp[v][3] = _t_target;
+                            env->preview_voice_filter_lp[v][4] = (float)_new_eq;
                         }
                         float _alpha = env->preview_voice_filter_lp[v][2];
                         _alpha += 0.2f * (_alpha_target - _alpha);
@@ -3257,11 +3265,14 @@ int main(int argc, char** argv) {
                             float _t_target = (float)slot->eq / 1000.0f;
                             if (_t_target < 0.0f) _t_target = -_t_target;
                             if (_t_target > 1.0f) _t_target = 1.0f;
-                            if (f == 0 && env->play_bar_voice_env_samples[v] == 0) {
+                            int _new_eq = slot->eq;
+                            int _last_eq = (int)env->play_bar_voice_filter_lp[v][4];
+                            if (_new_eq != _last_eq || (f == 0 && env->play_bar_voice_env_samples[v] == 0)) {
                                 env->play_bar_voice_filter_lp[v][0] = _s_l;
                                 env->play_bar_voice_filter_lp[v][1] = _s_r;
                                 env->play_bar_voice_filter_lp[v][2] = _alpha_target;
                                 env->play_bar_voice_filter_lp[v][3] = _t_target;
+                                env->play_bar_voice_filter_lp[v][4] = (float)_new_eq;
                             }
                             float _alpha = env->play_bar_voice_filter_lp[v][2];
                             _alpha += 0.2f * (_alpha_target - _alpha);
