@@ -123,6 +123,7 @@ else if (strcmp(name, "war_saturate") == 0) { return war_saturate; }
 else if (strcmp(name, "war_reverb") == 0) { return war_reverb; }
 else if (strcmp(name, "war_delay") == 0) { return war_delay; }
 else if (strcmp(name, "war_gate") == 0) { return war_gate; }
+else if (strcmp(name, "war_deesser") == 0) { return war_deesser; }
 else if (strcmp(name, "war_capture_audio") == 0) { return war_capture_audio; }
 else if (strcmp(name, "war_capture_audio_midi") == 0) { return war_capture_audio_midi; }
 else if (strcmp(name, "war_capture_mode1") == 0) { return war_capture_mode1; }

@@ -2733,7 +2733,7 @@ struct war_env {
     uint64_t play_bar_voice_tick[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_pos[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
-    float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][4]; // [v][0]=bp_l, [1]=bp_r, [2]=lp_l, [3]=lp_r
+    float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][3]; // [v][0]=lp_l, [1]=lp_r, [2]=smoothed_alpha
     uint64_t play_bar_voice_env_samples[WAR_PLAY_BAR_VOICES];
     float play_bar_direct_filter_lp[128 * WAR_CAPTURE_SLOT_LAYERS][4];
     uint32_t play_bar_mute_mask;
@@ -2743,7 +2743,7 @@ struct war_env {
     uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_pos[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_limit[WAR_PREVIEW_VOICES];
-    float preview_voice_filter_lp[WAR_PREVIEW_VOICES][4]; // [v][0]=bp_l, [1]=bp_r, [2]=lp_l, [3]=lp_r
+    float preview_voice_filter_lp[WAR_PREVIEW_VOICES][3]; // [v][0]=lp_l, [1]=lp_r, [2]=smoothed_alpha
     uint64_t preview_voice_env_samples[WAR_PREVIEW_VOICES];
     // recording state
     uint8_t recording_active;

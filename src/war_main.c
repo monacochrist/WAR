@@ -1364,6 +1364,8 @@ static void war_keyboard_key(void* data,
                 war_delay(env);
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 't' && env->cmd_buf[4] == 'e') {
                 war_gate(env);
+            } else if (env->cmd_len >= 8 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'd' && env->cmd_buf[2] == 'e' && env->cmd_buf[3] == 'e' && env->cmd_buf[4] == 's' && env->cmd_buf[5] == 's' && env->cmd_buf[6] == 'e' && env->cmd_buf[7] == 'r') {
+                war_deesser(env);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
             } else if (env->cmd_len == 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'p') {
@@ -3050,7 +3052,6 @@ int main(int argc, char** argv) {
                                 env->play_bar_voice_filter_lp[_v][0] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][1] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][2] = 0.0f;
-                                env->play_bar_voice_filter_lp[_v][3] = 0.0f;
                                 env->play_bar_voice_env_samples[_v] = 0;
                                 env->play_bar_voice_active[_v] = 1;
                                 break;
@@ -3128,27 +3129,28 @@ int main(int argc, char** argv) {
                     for (uint64_t f = 0; f < batch; f += 2) {
                         float _s_l = slot->samples[read_pos + f];
                         float _s_r = slot->samples[read_pos + f + 1];
-                        if (f == 0 && env->preview_voice_env_samples[v] == 0) {
-                            env->preview_voice_filter_lp[v][0] = 0.0f;
-                            env->preview_voice_filter_lp[v][1] = 0.0f;
-                            env->preview_voice_filter_lp[v][2] = _s_l;
-                            env->preview_voice_filter_lp[v][3] = _s_r;
-                        }
                         float _ae = (float)fabsf((float)slot->eq);
-                        float _fc = 20000.0f * expf(logf(40.0f / 20000.0f) * _ae / 1000.0f);
-                        float _ff = 2.0f * sinf((float)M_PI * _fc / 48000.0f);
-                        if (_ff > 1.0f) _ff = 1.0f;
-                        float _rq = 1.414f;
-                        float _hp0 = _s_l - _rq * env->preview_voice_filter_lp[v][0] - env->preview_voice_filter_lp[v][2];
-                        float _hp1 = _s_r - _rq * env->preview_voice_filter_lp[v][1] - env->preview_voice_filter_lp[v][3];
-                        float _bp0 = env->preview_voice_filter_lp[v][0] + _ff * _hp0;
-                        float _bp1 = env->preview_voice_filter_lp[v][1] + _ff * _hp1;
-                        float _lp0 = env->preview_voice_filter_lp[v][2] + _ff * _bp0;
-                        float _lp1 = env->preview_voice_filter_lp[v][3] + _ff * _bp1;
-                        env->preview_voice_filter_lp[v][0] = _bp0;
-                        env->preview_voice_filter_lp[v][1] = _bp1;
-                        env->preview_voice_filter_lp[v][2] = _lp0;
-                        env->preview_voice_filter_lp[v][3] = _lp1;
+                        float _fc;
+                        if (slot->eq <= 0)
+                            _fc = 20000.0f * expf(logf(20.0f / 20000.0f) * _ae / 1000.0f);
+                        else
+                            _fc = 20.0f * expf(logf(20000.0f / 20.0f) * _ae / 1000.0f);
+                        float _alpha_target = 1.0f - expf(-2.0f * (float)M_PI * _fc / 48000.0f);
+                        if (_alpha_target > 1.0f) _alpha_target = 1.0f;
+                        if (f == 0 && env->preview_voice_env_samples[v] == 0) {
+                            env->preview_voice_filter_lp[v][0] = _s_l;
+                            env->preview_voice_filter_lp[v][1] = _s_r;
+                            env->preview_voice_filter_lp[v][2] = _alpha_target;
+                        }
+                        float _alpha = env->preview_voice_filter_lp[v][2];
+                        _alpha += 0.2f * (_alpha_target - _alpha);
+                        env->preview_voice_filter_lp[v][2] = _alpha;
+                        float _lp0 = env->preview_voice_filter_lp[v][0] + _alpha * (_s_l - env->preview_voice_filter_lp[v][0]);
+                        float _lp1 = env->preview_voice_filter_lp[v][1] + _alpha * (_s_r - env->preview_voice_filter_lp[v][1]);
+                        env->preview_voice_filter_lp[v][0] = _lp0;
+                        env->preview_voice_filter_lp[v][1] = _lp1;
+                        float _hp0 = _s_l - _lp0;
+                        float _hp1 = _s_r - _lp1;
                         float _mix_l, _mix_r;
                         if (slot->eq <= 0) {
                             float _t = (float)(-slot->eq) / 1000.0f;
@@ -3238,27 +3240,28 @@ int main(int argc, char** argv) {
                         for (uint64_t f = 0; f < batch; f += 2) {
                             float _s_l = slot->samples[slot_offset + f];
                             float _s_r = slot->samples[slot_offset + f + 1];
-                            if (f == 0 && env->play_bar_voice_env_samples[v] == 0) {
-                                env->play_bar_voice_filter_lp[v][0] = 0.0f;
-                                env->play_bar_voice_filter_lp[v][1] = 0.0f;
-                                env->play_bar_voice_filter_lp[v][2] = _s_l;
-                                env->play_bar_voice_filter_lp[v][3] = _s_r;
-                            }
                             float _ae = (float)fabsf((float)slot->eq);
-                            float _fc = 20000.0f * expf(logf(40.0f / 20000.0f) * _ae / 1000.0f);
-                            float _ff = 2.0f * sinf((float)M_PI * _fc / 48000.0f);
-                            if (_ff > 1.0f) _ff = 1.0f;
-                            float _rq = 1.414f;
-                            float _hp0 = _s_l - _rq * env->play_bar_voice_filter_lp[v][0] - env->play_bar_voice_filter_lp[v][2];
-                            float _hp1 = _s_r - _rq * env->play_bar_voice_filter_lp[v][1] - env->play_bar_voice_filter_lp[v][3];
-                            float _bp0 = env->play_bar_voice_filter_lp[v][0] + _ff * _hp0;
-                            float _bp1 = env->play_bar_voice_filter_lp[v][1] + _ff * _hp1;
-                            float _lp0 = env->play_bar_voice_filter_lp[v][2] + _ff * _bp0;
-                            float _lp1 = env->play_bar_voice_filter_lp[v][3] + _ff * _bp1;
-                            env->play_bar_voice_filter_lp[v][0] = _bp0;
-                            env->play_bar_voice_filter_lp[v][1] = _bp1;
-                            env->play_bar_voice_filter_lp[v][2] = _lp0;
-                            env->play_bar_voice_filter_lp[v][3] = _lp1;
+                            float _fc;
+                            if (slot->eq <= 0)
+                                _fc = 20000.0f * expf(logf(20.0f / 20000.0f) * _ae / 1000.0f);
+                            else
+                                _fc = 20.0f * expf(logf(20000.0f / 20.0f) * _ae / 1000.0f);
+                            float _alpha_target = 1.0f - expf(-2.0f * (float)M_PI * _fc / 48000.0f);
+                            if (_alpha_target > 1.0f) _alpha_target = 1.0f;
+                            if (f == 0 && env->play_bar_voice_env_samples[v] == 0) {
+                                env->play_bar_voice_filter_lp[v][0] = _s_l;
+                                env->play_bar_voice_filter_lp[v][1] = _s_r;
+                                env->play_bar_voice_filter_lp[v][2] = _alpha_target;
+                            }
+                            float _alpha = env->play_bar_voice_filter_lp[v][2];
+                            _alpha += 0.2f * (_alpha_target - _alpha);
+                            env->play_bar_voice_filter_lp[v][2] = _alpha;
+                            float _lp0 = env->play_bar_voice_filter_lp[v][0] + _alpha * (_s_l - env->play_bar_voice_filter_lp[v][0]);
+                            float _lp1 = env->play_bar_voice_filter_lp[v][1] + _alpha * (_s_r - env->play_bar_voice_filter_lp[v][1]);
+                            env->play_bar_voice_filter_lp[v][0] = _lp0;
+                            env->play_bar_voice_filter_lp[v][1] = _lp1;
+                            float _hp0 = _s_l - _lp0;
+                            float _hp1 = _s_r - _lp1;
                             float _mix_l, _mix_r;
                             if (slot->eq <= 0) {
                                 float _t = (float)(-slot->eq) / 1000.0f;
