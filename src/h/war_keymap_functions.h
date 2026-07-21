@@ -1314,15 +1314,15 @@ static inline void war_compress(war_env* env) {
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
     if (!slot->samples || slot->count < 4) return;
-    double threshold_db = -24.0, ratio = 3.0, attack_ms = 2.0, release_ms = 50.0, makeup_db = 6.0;
+    double threshold_db = -20.0, ratio = 4.0, attack_ms = 1.0, release_ms = 40.0, makeup_db = 4.0;
     if (env->cmd_active && env->cmd_len > 9) {
         int n = sscanf(env->cmd_buf + 9, " %lf %lf %lf %lf %lf",
                        &threshold_db, &ratio, &attack_ms, &release_ms, &makeup_db);
-        if (n < 1) threshold_db = -24.0;
-        if (n < 2) ratio = 3.0;
-        if (n < 3) attack_ms = 2.0;
-        if (n < 4) release_ms = 50.0;
-        if (n < 5) makeup_db = 6.0;
+        if (n < 1) threshold_db = -20.0;
+        if (n < 2) ratio = 4.0;
+        if (n < 3) attack_ms = 1.0;
+        if (n < 4) release_ms = 40.0;
+        if (n < 5) makeup_db = 4.0;
     }
     if (threshold_db >= 0.0 || ratio < 1.0 || attack_ms < 0.0 || release_ms < 0.0) {
         snprintf(env->status_msg, sizeof(env->status_msg),
@@ -1406,12 +1406,12 @@ static inline void war_saturate(war_env* env) {
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
     if (!slot->samples || slot->count < 4) return;
-    double drive = 2.0, mix = 1.0, makeup_db = 0.0;
+    double drive = 3.0, mix = 0.4, makeup_db = 2.0;
     if (env->cmd_active && env->cmd_len > 10) {
         int n = sscanf(env->cmd_buf + 10, " %lf %lf %lf", &drive, &mix, &makeup_db);
-        if (n < 1) drive = 2.0;
-        if (n < 2) mix = 1.0;
-        if (n < 3) makeup_db = 0.0;
+        if (n < 1) drive = 3.0;
+        if (n < 2) mix = 0.4;
+        if (n < 3) makeup_db = 2.0;
     }
     if (drive < 0.0 || mix < 0.0 || mix > 1.0) {
         snprintf(env->status_msg, sizeof(env->status_msg),
@@ -1485,11 +1485,11 @@ static inline void war_reverb(war_env* env) {
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
     if (!slot->samples || slot->count < 4) return;
-    double decay = 0.5, mix = 0.3, predelay_ms = 0.0, damping = 0.3;
+    double decay = 0.4, mix = 0.15, predelay_ms = 0.0, damping = 0.3;
     if (env->cmd_active && env->cmd_len > 7) {
         int n = sscanf(env->cmd_buf + 7, " %lf %lf %lf %lf", &decay, &mix, &predelay_ms, &damping);
-        if (n < 1) decay = 0.5;
-        if (n < 2) mix = 0.3;
+        if (n < 1) decay = 0.4;
+        if (n < 2) mix = 0.15;
         if (n < 3) predelay_ms = 0.0;
         if (n < 4) damping = 0.3;
     }
@@ -1577,8 +1577,10 @@ static inline void war_reverb(war_env* env) {
         double norm = 1.0 / (double)n_combs;
         double wet_l = ap_in_l * norm;
         double wet_r = ap_in_r * norm;
-        out[f * 2] = (float)(dry_l * (1.0 - mix) + wet_l * mix);
-        out[f * 2 + 1] = (float)(dry_r * (1.0 - mix) + wet_r * mix);
+        uint64_t reverb_fade = 4800; // 100ms
+        double wet_gain = f < reverb_fade ? (double)(f + 1) / (double)reverb_fade : 1.0;
+        out[f * 2] = (float)(dry_l * (1.0 - mix * wet_gain) + wet_l * mix * wet_gain);
+        out[f * 2 + 1] = (float)(dry_r * (1.0 - mix * wet_gain) + wet_r * mix * wet_gain);
     }
     for (uint32_t c = 0; c < n_combs; c++) { free(comb_l[c]); free(comb_r[c]); free(comb_dl[c]); free(comb_dr[c]); }
     free(ap_l); free(ap_r); free(pd_l); free(pd_r);
@@ -1615,13 +1617,13 @@ static inline void war_delay(war_env* env) {
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
     if (!slot->samples || slot->count < 4) return;
-    double time_ms = 200.0, feedback = 0.3, mix = 0.5, fb_damping = 0.0;
+    double time_ms = 60.0, feedback = 0.2, mix = 0.4, fb_damping = 0.3;
     if (env->cmd_active && env->cmd_len > 7) {
         int n = sscanf(env->cmd_buf + 7, " %lf %lf %lf %lf", &time_ms, &feedback, &mix, &fb_damping);
-        if (n < 1) time_ms = 200.0;
-        if (n < 2) feedback = 0.3;
-        if (n < 3) mix = 0.5;
-        if (n < 4) fb_damping = 0.0;
+        if (n < 1) time_ms = 60.0;
+        if (n < 2) feedback = 0.2;
+        if (n < 3) mix = 0.4;
+        if (n < 4) fb_damping = 0.3;
     }
     if (time_ms < 1.0 || feedback < 0.0 || feedback >= 1.0 || mix < 0.0 || mix > 1.0 || fb_damping < 0.0 || fb_damping > 1.0) {
         snprintf(env->status_msg, sizeof(env->status_msg),
@@ -1644,12 +1646,13 @@ static inline void war_delay(war_env* env) {
         float dl = delay_line[wp * 2];
         float dr = delay_line[wp * 2 + 1];
         // damping: low-pass filtered feedback
-        damp_l += damp_coef * (dl - damp_l);
-        damp_r += damp_coef * (dr - damp_r);
-        delay_line[wp * 2] = in_l + (float)feedback * damp_l;
-        delay_line[wp * 2 + 1] = in_r + (float)feedback * damp_r;
-        out[f * 2] = in_l * (1.0f - (float)mix) + dl * (float)mix;
-        out[f * 2 + 1] = in_r * (1.0f - (float)mix) + dr * (float)mix;
+    damp_l += damp_coef * (dl - damp_l);
+    damp_r += damp_coef * (dr - damp_r);
+    delay_line[wp * 2] = in_l + (float)feedback * damp_l;
+    delay_line[wp * 2 + 1] = in_r + (float)feedback * damp_r;
+    float wet_gain = f < delay_samp ? (float)(f + 1) / (float)delay_samp : 1.0f;
+    out[f * 2] = in_l * (1.0f - (float)mix * wet_gain) + dl * (float)mix * wet_gain;
+    out[f * 2 + 1] = in_r * (1.0f - (float)mix * wet_gain) + dr * (float)mix * wet_gain;
         wp = (wp + 1) % delay_samp;
     }
     free(delay_line);
@@ -1885,14 +1888,14 @@ static inline void war_chorus(war_env* env) {
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
     if (!slot->samples || slot->count < 4) return;
-    double rate_hz = 0.5, depth_ms = 5.0, mix = 0.5, base_ms = 20.0;
+    double rate_hz = 0.3, depth_ms = 8.0, mix = 0.3, base_ms = 25.0;
     if (env->cmd_active && env->cmd_len > 8) {
         int n = sscanf(env->cmd_buf + 8, " %lf %lf %lf %lf",
                        &rate_hz, &depth_ms, &mix, &base_ms);
-        if (n < 1) rate_hz = 0.5;
-        if (n < 2) depth_ms = 5.0;
-        if (n < 3) mix = 0.5;
-        if (n < 4) base_ms = 20.0;
+        if (n < 1) rate_hz = 0.3;
+        if (n < 2) depth_ms = 8.0;
+        if (n < 3) mix = 0.3;
+        if (n < 4) base_ms = 25.0;
     }
     if (rate_hz <= 0.0 || depth_ms <= 0.0 || mix < 0.0 || mix > 1.0 || base_ms < 1.0) {
         snprintf(env->status_msg, sizeof(env->status_msg),
@@ -1911,17 +1914,16 @@ static inline void war_chorus(war_env* env) {
     uint64_t wp = 0;
     double phase = 0.0;
     double phase_inc = rate_hz / 48000.0;
+    uint64_t fade_len = base_samp < 480 ? base_samp : 480; // 10ms max fade
     for (uint64_t f = 0; f < frames; f++) {
         float in_l = slot->samples[f * 2];
         float in_r = slot->samples[f * 2 + 1];
         delay_l[wp] = in_l;
         delay_r[wp] = in_r;
-        // LFO: left channel uses sin, right channel uses sin + 90deg for stereo spread
         float lfo_l = sinf((float)(2.0 * M_PI * phase));
         float lfo_r = sinf((float)(2.0 * M_PI * phase + M_PI_2));
         float mod_l = (float)base_samp + (float)depth_samp * (0.5f + 0.5f * lfo_l);
         float mod_r = (float)base_samp + (float)depth_samp * (0.5f + 0.5f * lfo_r);
-        // linear interpolation of delay read
         float rp_l = fmodf((float)wp + (float)delay_len - mod_l, (float)delay_len);
         float rp_r = fmodf((float)wp + (float)delay_len - mod_r, (float)delay_len);
         uint64_t ri_l = (uint64_t)rp_l;
@@ -1932,8 +1934,9 @@ static inline void war_chorus(war_env* env) {
         uint64_t ri_r2 = (ri_r + 1) % delay_len;
         float dl = delay_l[ri_l] + frac_l * (delay_l[ri_l2] - delay_l[ri_l]);
         float dr = delay_r[ri_r] + frac_r * (delay_r[ri_r2] - delay_r[ri_r]);
-        out[f * 2] = in_l * (1.0f - (float)mix) + dl * (float)mix;
-        out[f * 2 + 1] = in_r * (1.0f - (float)mix) + dr * (float)mix;
+        float wet_gain = f < fade_len ? (float)(f + 1) / (float)fade_len : 1.0f;
+        out[f * 2] = in_l * (1.0f - (float)mix * wet_gain) + dl * (float)mix * wet_gain;
+        out[f * 2 + 1] = in_r * (1.0f - (float)mix * wet_gain) + dr * (float)mix * wet_gain;
         wp = (wp + 1) % delay_len;
         phase += phase_inc;
         if (phase >= 1.0) phase -= 1.0;
@@ -1973,7 +1976,7 @@ static inline void war_autotune(war_env* env) {
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
     if (!slot->samples || slot->count < 4) return;
-    double retune_ms = 20.0;
+    double retune_ms = 3.0;
     if (env->cmd_active && env->cmd_len > 10) {
         sscanf(env->cmd_buf + 10, " %lf", &retune_ms);
     }
