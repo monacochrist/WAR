@@ -363,7 +363,7 @@ typedef struct war_capture_slot {
     float* samples;
     uint64_t count;
     uint64_t capacity;
-    float gain; // -1000..1000, default 0 (100%)
+    float gain; // -10000..10000, default 0 (100%)
     int pan;    // -1000..1000, default 0 (center)
     int eq;     // -1000..1000, default 0 (flat)
     float attack;   // -1000..1000, default 0
@@ -2733,9 +2733,9 @@ struct war_env {
     uint64_t play_bar_voice_tick[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_pos[WAR_PLAY_BAR_VOICES];
     uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
-    float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][2];
+    float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][4]; // [v][0]=bp_l, [1]=bp_r, [2]=lp_l, [3]=lp_r
     uint64_t play_bar_voice_env_samples[WAR_PLAY_BAR_VOICES];
-    float play_bar_direct_filter_lp[128 * WAR_CAPTURE_SLOT_LAYERS][2];
+    float play_bar_direct_filter_lp[128 * WAR_CAPTURE_SLOT_LAYERS][4];
     uint32_t play_bar_mute_mask;
     float master_gain;
     uint8_t preview_voice_active[WAR_PREVIEW_VOICES];
@@ -2743,7 +2743,7 @@ struct war_env {
     uint32_t preview_voice_layer[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_pos[WAR_PREVIEW_VOICES];
     uint64_t preview_voice_read_limit[WAR_PREVIEW_VOICES];
-    float preview_voice_filter_lp[WAR_PREVIEW_VOICES][2];
+    float preview_voice_filter_lp[WAR_PREVIEW_VOICES][4]; // [v][0]=bp_l, [1]=bp_r, [2]=lp_l, [3]=lp_r
     uint64_t preview_voice_env_samples[WAR_PREVIEW_VOICES];
     // recording state
     uint8_t recording_active;

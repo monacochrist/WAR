@@ -1304,6 +1304,435 @@ static inline void war_toggle_crop(war_env* env) {
     }
 }
 
+static inline void war_compress(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    if (!slot->samples || slot->count < 4) return;
+    double threshold_db = -24.0, ratio = 3.0, attack_ms = 2.0, release_ms = 50.0, makeup_db = 0.0;
+    if (env->cmd_active && env->cmd_len > 9) {
+        int n = sscanf(env->cmd_buf + 9, " %lf %lf %lf %lf %lf",
+                       &threshold_db, &ratio, &attack_ms, &release_ms, &makeup_db);
+        if (n < 1) threshold_db = -24.0;
+        if (n < 2) ratio = 3.0;
+        if (n < 3) attack_ms = 2.0;
+        if (n < 4) release_ms = 50.0;
+        if (n < 5) makeup_db = 0.0;
+    }
+    if (threshold_db >= 0.0 || ratio < 1.0 || attack_ms < 0.0 || release_ms < 0.0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "compress: usage :compress [thresh(dB) ratio attack(ms) release(ms) makeup(dB)]");
+        return;
+    }
+    uint64_t frames = slot->count / 2;
+    double threshold_lin = pow(10.0, threshold_db / 20.0);
+    double attack_coef = attack_ms > 0.0 ? exp(-1.0 / (attack_ms * 0.001 * 48000.0)) : 0.0;
+    double release_coef = release_ms > 0.0 ? exp(-1.0 / (release_ms * 0.001 * 48000.0)) : 0.0;
+    double makeup_lin = pow(10.0, makeup_db / 20.0);
+    float* new_data = malloc(slot->count * sizeof(float));
+    if (!new_data) return;
+    double env_l = 0.0, env_r = 0.0;
+    uint64_t attack_frames = (uint64_t)(attack_ms * 0.001 * 48000.0);
+    if (attack_frames < 1) attack_frames = 1;
+    for (uint64_t f = 0; f < frames; f++) {
+        double in_l = (double)slot->samples[f * 2];
+        double in_r = (double)slot->samples[f * 2 + 1];
+        double abs_l = fabs(in_l);
+        double abs_r = fabs(in_r);
+        if (attack_ms > 0.0) {
+            env_l = attack_coef * env_l + (1.0 - attack_coef) * abs_l;
+            env_r = attack_coef * env_r + (1.0 - attack_coef) * abs_r;
+        } else {
+            env_l = abs_l;
+            env_r = abs_r;
+        }
+        double gr_l = 1.0, gr_r = 1.0;
+        if (env_l > threshold_lin) {
+            double db = 20.0 * log10(env_l > 0.0 ? env_l : 1e-10);
+            double out_db = threshold_db + (db - threshold_db) / ratio;
+            gr_l = pow(10.0, (out_db - db) / 20.0);
+        }
+        if (env_r > threshold_lin) {
+            double db = 20.0 * log10(env_r > 0.0 ? env_r : 1e-10);
+            double out_db = threshold_db + (db - threshold_db) / ratio;
+            gr_r = pow(10.0, (out_db - db) / 20.0);
+        }
+        new_data[f * 2] = (float)(in_l * gr_l * makeup_lin);
+        new_data[f * 2 + 1] = (float)(in_r * gr_r * makeup_lin);
+    }
+    // save pre-compress audio state for undo
+    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
+    uint8_t* audio_data = malloc(buf_size);
+    if (audio_data) {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 1; p += 4;
+        *(uint32_t*)p = idx; p += 4;
+        *(uint64_t*)p = slot->count; p += 8;
+        *(uint64_t*)p = slot->capacity; p += 8;
+        memcpy(p, slot->samples, slot->count * sizeof(float));
+    }
+    war_undo_save(env);
+    if (audio_data) {
+        uint32_t audio_idx = env->undo_pos - 1;
+        free(env->undo_audio_data[audio_idx]);
+        env->undo_audio_data[audio_idx] = audio_data;
+        env->undo_audio_size[audio_idx] = buf_size;
+    }
+    free(slot->samples);
+    slot->samples = new_data;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "compress: thresh=%.0f ratio=%.1f attack=%.0fms release=%.0fms makeup=%.0fdB",
+             threshold_db, ratio, attack_ms, release_ms, makeup_db);
+}
+
+static inline void war_saturate(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    if (!slot->samples || slot->count < 4) return;
+    double drive = 2.0, mix = 1.0, makeup_db = 0.0;
+    if (env->cmd_active && env->cmd_len > 10) {
+        int n = sscanf(env->cmd_buf + 10, " %lf %lf %lf", &drive, &mix, &makeup_db);
+        if (n < 1) drive = 2.0;
+        if (n < 2) mix = 1.0;
+        if (n < 3) makeup_db = 0.0;
+    }
+    if (drive < 0.0 || mix < 0.0 || mix > 1.0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "saturate: usage :saturate [drive(>=0) mix(0-1) makeup(dB)]");
+        return;
+    }
+    uint64_t frames = slot->count / 2;
+    double makeup_lin = pow(10.0, makeup_db / 20.0);
+    float* new_data = malloc(slot->count * sizeof(float));
+    if (!new_data) return;
+    for (uint64_t f = 0; f < frames; f++) {
+        double in_l = (double)slot->samples[f * 2];
+        double in_r = (double)slot->samples[f * 2 + 1];
+        double sat_l = tanh(in_l * drive) * makeup_lin;
+        double sat_r = tanh(in_r * drive) * makeup_lin;
+        new_data[f * 2] = (float)(sat_l * mix + in_l * (1.0 - mix));
+        new_data[f * 2 + 1] = (float)(sat_r * mix + in_r * (1.0 - mix));
+    }
+    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
+    uint8_t* audio_data = malloc(buf_size);
+    if (audio_data) {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 1; p += 4;
+        *(uint32_t*)p = idx; p += 4;
+        *(uint64_t*)p = slot->count; p += 8;
+        *(uint64_t*)p = slot->capacity; p += 8;
+        memcpy(p, slot->samples, slot->count * sizeof(float));
+    }
+    war_undo_save(env);
+    if (audio_data) {
+        uint32_t audio_idx = env->undo_pos - 1;
+        free(env->undo_audio_data[audio_idx]);
+        env->undo_audio_data[audio_idx] = audio_data;
+        env->undo_audio_size[audio_idx] = buf_size;
+    }
+    free(slot->samples);
+    slot->samples = new_data;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "saturate: drive=%.1f mix=%.2f makeup=%.0fdB", drive, mix, makeup_db);
+}
+
+static inline void war_reverb(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    if (!slot->samples || slot->count < 4) return;
+    double decay = 0.5, mix = 0.3, predelay_ms = 0.0;
+    if (env->cmd_active && env->cmd_len > 7) {
+        int n = sscanf(env->cmd_buf + 7, " %lf %lf %lf", &decay, &mix, &predelay_ms);
+        if (n < 1) decay = 0.5;
+        if (n < 2) mix = 0.3;
+        if (n < 3) predelay_ms = 0.0;
+    }
+    if (decay < 0.0 || decay >= 1.0 || mix < 0.0 || mix > 1.0 || predelay_ms < 0.0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "reverb: usage :reverb [decay(0-0.99) mix(0-1) predelay(ms)]");
+        return;
+    }
+    uint64_t frames = slot->count / 2;
+    // Schroeder reverb: 4 parallel comb → 2 series all-pass
+    static const uint32_t comb_delays[] = {1427, 1783, 1979, 2341};
+    uint32_t n_combs = 4;
+    double comb_fb = decay * 0.7;
+    static const uint32_t ap_delays[] = {241, 83};
+    double ap_gain = 0.5;
+    uint64_t pd_samp = (uint64_t)(predelay_ms * 0.001 * 48000.0);
+    // allocate per-comb delay lines (each is a ring buffer of size delay)
+    float* comb_l[4]; float* comb_r[4];
+    uint32_t comb_pos[4] = {0, 0, 0, 0};
+    for (uint32_t c = 0; c < n_combs; c++) {
+        comb_l[c] = calloc(comb_delays[c], sizeof(float));
+        comb_r[c] = calloc(comb_delays[c], sizeof(float));
+        if (!comb_l[c] || !comb_r[c]) {
+            for (uint32_t j = 0; j <= c; j++) { free(comb_l[j]); free(comb_r[j]); }
+            return;
+        }
+    }
+    // all-pass delay buffer (large enough for both stages, reused in series)
+    uint32_t ap_max = ap_delays[0] > ap_delays[1] ? ap_delays[0] : ap_delays[1];
+    float* ap_l = calloc(ap_max, sizeof(float));
+    float* ap_r = calloc(ap_max, sizeof(float));
+    uint32_t ap_pos = 0;
+    // pre-delay buffer
+    float* pd_l = calloc(pd_samp + 1, sizeof(float));
+    float* pd_r = calloc(pd_samp + 1, sizeof(float));
+    uint32_t pd_pos = 0;
+    float* out = malloc(slot->count * sizeof(float));
+    if (!out || !ap_l || !ap_r || !pd_l || !pd_r) {
+        for (uint32_t c = 0; c < n_combs; c++) { free(comb_l[c]); free(comb_r[c]); }
+        free(ap_l); free(ap_r); free(pd_l); free(pd_r); free(out);
+        return;
+    }
+    for (uint64_t f = 0; f < frames; f++) {
+        double in_l = (double)slot->samples[f * 2];
+        double in_r = (double)slot->samples[f * 2 + 1];
+        // pre-delay
+        pd_l[pd_pos] = (float)in_l;
+        pd_r[pd_pos] = (float)in_r;
+        uint32_t pd_rp = (uint32_t)((pd_pos + pd_samp + 1 - pd_samp) % (pd_samp + 1));
+        double dry_l = (double)pd_l[pd_rp];
+        double dry_r = (double)pd_r[pd_rp];
+        pd_pos = (pd_pos + 1) % (uint32_t)(pd_samp + 1);
+        // comb filters (parallel)
+        double sum_l = 0.0, sum_r = 0.0;
+        for (uint32_t c = 0; c < n_combs; c++) {
+            uint32_t d = comb_delays[c];
+            double dl = (double)comb_l[c][comb_pos[c]];
+            double dr = (double)comb_r[c][comb_pos[c]];
+            comb_l[c][comb_pos[c]] = (float)(dry_l + comb_fb * dl);
+            comb_r[c][comb_pos[c]] = (float)(dry_r + comb_fb * dr);
+            sum_l += dl;
+            sum_r += dr;
+            comb_pos[c] = (comb_pos[c] + 1) % d;
+        }
+        // all-pass filters (series, 2 stages in same buffer)
+        double ap_in_l = sum_l, ap_in_r = sum_r;
+        for (uint32_t a = 0; a < 2; a++) {
+            uint32_t d = ap_delays[a];
+            double dl = (double)ap_l[ap_pos];
+            double dr = (double)ap_r[ap_pos];
+            // y[n] = -g*x[n] + s[n-D], where s[n] = x[n] + g*y[n] stored in buffer
+            double y_l = -ap_gain * ap_in_l + dl;
+            double y_r = -ap_gain * ap_in_r + dr;
+            ap_l[ap_pos] = (float)(ap_in_l + ap_gain * y_l);
+            ap_r[ap_pos] = (float)(ap_in_r + ap_gain * y_r);
+            ap_in_l = y_l; ap_in_r = y_r;
+            ap_pos = (ap_pos + 1) % d;
+        }
+        // normalize by number of combs to prevent overload
+        double norm = 1.0 / (double)n_combs;
+        double wet_l = ap_in_l * norm;
+        double wet_r = ap_in_r * norm;
+        out[f * 2] = (float)(dry_l * (1.0 - mix) + wet_l * mix);
+        out[f * 2 + 1] = (float)(dry_r * (1.0 - mix) + wet_r * mix);
+    }
+    for (uint32_t c = 0; c < n_combs; c++) { free(comb_l[c]); free(comb_r[c]); }
+    free(ap_l); free(ap_r); free(pd_l); free(pd_r);
+    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
+    uint8_t* audio_data = malloc(buf_size);
+    if (audio_data) {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 1; p += 4;
+        *(uint32_t*)p = idx; p += 4;
+        *(uint64_t*)p = slot->count; p += 8;
+        *(uint64_t*)p = slot->capacity; p += 8;
+        memcpy(p, slot->samples, slot->count * sizeof(float));
+    }
+    war_undo_save(env);
+    if (audio_data) {
+        uint32_t audio_idx = env->undo_pos - 1;
+        free(env->undo_audio_data[audio_idx]);
+        env->undo_audio_data[audio_idx] = audio_data;
+        env->undo_audio_size[audio_idx] = buf_size;
+    }
+    free(slot->samples);
+    slot->samples = out;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "reverb: decay=%.2f mix=%.2f predelay=%.0fms", decay, mix, predelay_ms);
+}
+
+static inline void war_delay(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    if (!slot->samples || slot->count < 4) return;
+    double time_ms = 200.0, feedback = 0.3, mix = 0.5;
+    if (env->cmd_active && env->cmd_len > 7) {
+        int n = sscanf(env->cmd_buf + 7, " %lf %lf %lf", &time_ms, &feedback, &mix);
+        if (n < 1) time_ms = 200.0;
+        if (n < 2) feedback = 0.3;
+        if (n < 3) mix = 0.5;
+    }
+    if (time_ms < 1.0 || feedback < 0.0 || feedback >= 1.0 || mix < 0.0 || mix > 1.0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "delay: usage :delay [time_ms(>=1) feedback(0-0.99) mix(0-1)]");
+        return;
+    }
+    uint64_t frames = slot->count / 2;
+    uint64_t delay_samp = (uint64_t)(time_ms * 0.001 * 48000.0);
+    if (delay_samp < 1) delay_samp = 1;
+    // stereo interleaved delay line
+    float* delay_line = calloc(delay_samp * 2, sizeof(float));
+    if (!delay_line) return;
+    float* out = malloc(slot->count * sizeof(float));
+    if (!out) { free(delay_line); return; }
+    uint64_t wp = 0;
+    for (uint64_t f = 0; f < frames; f++) {
+        float in_l = slot->samples[f * 2];
+        float in_r = slot->samples[f * 2 + 1];
+        float dl = delay_line[wp * 2];
+        float dr = delay_line[wp * 2 + 1];
+        delay_line[wp * 2] = in_l + (float)feedback * dl;
+        delay_line[wp * 2 + 1] = in_r + (float)feedback * dr;
+        out[f * 2] = in_l * (1.0f - (float)mix) + dl * (float)mix;
+        out[f * 2 + 1] = in_r * (1.0f - (float)mix) + dr * (float)mix;
+        wp = (wp + 1) % delay_samp;
+    }
+    free(delay_line);
+    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
+    uint8_t* audio_data = malloc(buf_size);
+    if (audio_data) {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 1; p += 4;
+        *(uint32_t*)p = idx; p += 4;
+        *(uint64_t*)p = slot->count; p += 8;
+        *(uint64_t*)p = slot->capacity; p += 8;
+        memcpy(p, slot->samples, slot->count * sizeof(float));
+    }
+    war_undo_save(env);
+    if (audio_data) {
+        uint32_t audio_idx = env->undo_pos - 1;
+        free(env->undo_audio_data[audio_idx]);
+        env->undo_audio_data[audio_idx] = audio_data;
+        env->undo_audio_size[audio_idx] = buf_size;
+    }
+    free(slot->samples);
+    slot->samples = out;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "delay: time=%.0fms feedback=%.2f mix=%.2f", time_ms, feedback, mix);
+}
+
+static inline void war_gate(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    if (!slot->samples || slot->count < 4) return;
+    double threshold_db = -40.0, attack_ms = 2.0, release_ms = 50.0, floor_db = -80.0;
+    if (env->cmd_active && env->cmd_len > 6) {
+        int n = sscanf(env->cmd_buf + 6, " %lf %lf %lf %lf",
+                       &threshold_db, &attack_ms, &release_ms, &floor_db);
+        if (n < 1) threshold_db = -40.0;
+        if (n < 2) attack_ms = 2.0;
+        if (n < 3) release_ms = 50.0;
+        if (n < 4) floor_db = -80.0;
+    }
+    if (threshold_db >= 0.0 || attack_ms < 0.0 || release_ms < 0.0 || floor_db >= 0.0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "gate: usage :gate [thresh(dB) attack(ms) release(ms) floor(dB)]");
+        return;
+    }
+    uint64_t frames = slot->count / 2;
+    double threshold_lin = pow(10.0, threshold_db / 20.0);
+    double floor_lin = pow(10.0, floor_db / 20.0);
+    double attack_coef = attack_ms > 0.0 ? exp(-1.0 / (attack_ms * 0.001 * 48000.0)) : 0.0;
+    double release_coef = release_ms > 0.0 ? exp(-1.0 / (release_ms * 0.001 * 48000.0)) : 0.0;
+    float* out = malloc(slot->count * sizeof(float));
+    if (!out) return;
+    double env_l = 0.0, env_r = 0.0;
+    double gate_gain = 1.0;
+    for (uint64_t f = 0; f < frames; f++) {
+        double in_l = (double)slot->samples[f * 2];
+        double in_r = (double)slot->samples[f * 2 + 1];
+        double abs_l = fabs(in_l);
+        double abs_r = fabs(in_r);
+        if (attack_ms > 0.0) {
+            env_l = attack_coef * env_l + (1.0 - attack_coef) * abs_l;
+            env_r = attack_coef * env_r + (1.0 - attack_coef) * abs_r;
+        } else {
+            env_l = abs_l;
+            env_r = abs_r;
+        }
+        double env = env_l > env_r ? env_l : env_r;
+        double target = 1.0;
+        if (env <= threshold_lin) {
+            target = floor_lin / (threshold_lin > 0.0 ? threshold_lin : 1.0) * env;
+            if (target > 1.0) target = 1.0;
+            // smooth transition to floor
+            double db_above = 20.0 * log10((env > 0.0 ? env : 1e-10) / (threshold_lin > 0.0 ? threshold_lin : 1e-10));
+            if (db_above <= 0.0) {
+                double ratio = 10.0; // downward expansion ratio
+                double out_db = threshold_db + db_above * ratio;
+                double out_lin = pow(10.0, out_db / 20.0);
+                double fl = floor_lin;
+                target = out_lin > fl ? out_lin : fl;
+                if (in_l == 0.0 && in_r == 0.0) target = 0.0;
+                target /= (env > 0.0 ? env : 1.0);
+            }
+        }
+        // apply gate gain with release smoothing
+        if (target < gate_gain)
+            gate_gain = target;
+        else
+            gate_gain = release_coef * gate_gain + (1.0 - release_coef) * target;
+        if (gate_gain < 0.0) gate_gain = 0.0;
+        if (gate_gain > 1.0) gate_gain = 1.0;
+        out[f * 2] = (float)(in_l * gate_gain);
+        out[f * 2 + 1] = (float)(in_r * gate_gain);
+    }
+    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
+    uint8_t* audio_data = malloc(buf_size);
+    if (audio_data) {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 1; p += 4;
+        *(uint32_t*)p = idx; p += 4;
+        *(uint64_t*)p = slot->count; p += 8;
+        *(uint64_t*)p = slot->capacity; p += 8;
+        memcpy(p, slot->samples, slot->count * sizeof(float));
+    }
+    war_undo_save(env);
+    if (audio_data) {
+        uint32_t audio_idx = env->undo_pos - 1;
+        free(env->undo_audio_data[audio_idx]);
+        env->undo_audio_data[audio_idx] = audio_data;
+        env->undo_audio_size[audio_idx] = buf_size;
+    }
+    free(slot->samples);
+    slot->samples = out;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "gate: thresh=%.0fdB attack=%.0fms release=%.0fms floor=%.0fdB",
+             threshold_db, attack_ms, release_ms, floor_db);
+}
+
 static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint32_t layer, int32_t radius) {
     if (!env || src_note > 127 || layer < 1 || layer > 9) return;
     uint32_t li = layer - 1;

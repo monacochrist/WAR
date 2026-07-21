@@ -373,7 +373,7 @@ static void war_export_wav(war_env* env, const char* filename) {
         if (!env->capture_slots[idx].samples || env->capture_slots[idx].count < 2) continue;
         float* _s = env->capture_slots[idx].samples;
         uint64_t _sc = env->capture_slots[idx].count;
-        float _sg = (env->capture_slots[idx].gain + 5000.0f) / 5000.0f;
+        float _sg = (env->capture_slots[idx].gain + 10000.0f) / 10000.0f;
         int _sp = env->capture_slots[idx].pan;
         float _pe = (float)(_sp + 1000) / 2000.0f;
         float _ple = sinf((1.0f - _pe) * (float)(M_PI / 2.0));
@@ -410,7 +410,7 @@ static void war_export_wav(war_env* env, const char* filename) {
 
     // apply master gain
     if (env->master_gain != 0.0f) {
-        float _mgm = (env->master_gain + 5000.0f) / 5000.0f;
+        float _mgm = (env->master_gain + 10000.0f) / 10000.0f;
         for (uint64_t i = 0; i < total_floats; i++)
             mix[i] *= _mgm;
     }
@@ -648,7 +648,7 @@ static void war_load_project(war_env* env, const char* filename) {
         }
     }
     fclose(f);
-    if (env->master_gain < -5000.0f) env->master_gain = 0.0f;
+    if (env->master_gain < -10000.0f) env->master_gain = 0.0f;
     snprintf(env->status_msg, sizeof(env->status_msg), "%s loaded (%u notes, %u slots)",
              strlen(path) > 75 ? path + strlen(path) - 75 : path, note_count, slot_count);
     fprintf(stderr, "LOAD: loaded %s (%u notes, %u slots, bpm=%.1f)\n",
@@ -1267,7 +1267,7 @@ static void war_keyboard_key(void* data,
                 }
              } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 'n') {
                 double _gv = 0;
-                if (sscanf(env->cmd_buf + 5, " %lf", &_gv) == 1 && _gv >= -5000 && _gv <= 5000) {
+                if (sscanf(env->cmd_buf + 5, " %lf", &_gv) == 1 && _gv >= -10000 && _gv <= 10000) {
                     double _gr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
                     uint32_t _gp = _gr > 0 ? (uint32_t)(_gr + 0.5) : 0;
                     if (_gp > 127) _gp = 127;
@@ -1277,7 +1277,7 @@ static void war_keyboard_key(void* data,
                     env->capture_slots[_gi].gain = (float)_gv;
                     snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", (float)_gv);
                 } else {
-                    fprintf(stderr, "GAIN: usage :gain <-5000..5000>\n");
+                    fprintf(stderr, "GAIN: usage :gain <-10000..10000>\n");
                 }
              } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'p' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'n') {
                 int _pv = 0;
@@ -1354,6 +1354,16 @@ static void war_keyboard_key(void* data,
                     name = env->cmd_buf + 6;
                 if (!name || !name[0]) name = "output.mp3";
                 war_export_mp3(env, name);
+            } else if (env->cmd_len >= 9 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'o' && env->cmd_buf[3] == 'm' && env->cmd_buf[4] == 'p' && env->cmd_buf[5] == 'r' && env->cmd_buf[6] == 'e' && env->cmd_buf[7] == 's' && env->cmd_buf[8] == 's') {
+                war_compress(env);
+            } else if (env->cmd_len >= 9 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 's' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 't' && env->cmd_buf[4] == 'u' && env->cmd_buf[5] == 'r' && env->cmd_buf[6] == 'a' && env->cmd_buf[7] == 't' && env->cmd_buf[8] == 'e') {
+                war_saturate(env);
+            } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'r' && env->cmd_buf[2] == 'e' && env->cmd_buf[3] == 'v' && env->cmd_buf[4] == 'e' && env->cmd_buf[5] == 'r' && env->cmd_buf[6] == 'b') {
+                war_reverb(env);
+            } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'd' && env->cmd_buf[2] == 'e' && env->cmd_buf[3] == 'l' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'y') {
+                war_delay(env);
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 't' && env->cmd_buf[4] == 'e') {
+                war_gate(env);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
             } else if (env->cmd_len == 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'p') {
@@ -1685,14 +1695,14 @@ static void war_keyboard_key(void* data,
     if (mode == WAR_MODE_ID_MASTER) {
         if (raw_sym == XKB_KEY_Up && !(mod & (MOD_SHIFT | MOD_CTRL | MOD_ALT))) {
             env->master_gain += 10.0f;
-            if (env->master_gain > 5000.0f) env->master_gain = 5000.0f;
+            if (env->master_gain > 10000.0f) env->master_gain = 10000.0f;
             snprintf(env->status_msg, sizeof(env->status_msg), "MASTER %+.0f", env->master_gain);
             cur->prefix = 0;
             return;
         }
         if (raw_sym == XKB_KEY_Down && !(mod & (MOD_SHIFT | MOD_CTRL | MOD_ALT))) {
             env->master_gain -= 10.0f;
-            if (env->master_gain < -5000.0f) env->master_gain = -5000.0f;
+            if (env->master_gain < -10000.0f) env->master_gain = -10000.0f;
             snprintf(env->status_msg, sizeof(env->status_msg), "MASTER %+.0f", env->master_gain);
             cur->prefix = 0;
             return;
@@ -1756,14 +1766,14 @@ static void war_keyboard_key(void* data,
         if (_gs->samples && _gs->count > 0) {
             if (raw_sym == XKB_KEY_Up && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
                 _gs->gain += 10.0f;
-                if (_gs->gain > 5000.0f) _gs->gain = 5000.0f;
+                if (_gs->gain > 10000.0f) _gs->gain = 10000.0f;
                 snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", _gs->gain);
                 cur->prefix = 0;
                 return;
             }
             if (raw_sym == XKB_KEY_Down && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
                 _gs->gain -= 10.0f;
-                if (_gs->gain < -5000.0f) _gs->gain = -5000.0f;
+                if (_gs->gain < -10000.0f) _gs->gain = -10000.0f;
                 snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", _gs->gain);
                 cur->prefix = 0;
                 return;
@@ -2846,12 +2856,12 @@ int main(int argc, char** argv) {
                         // fallback: master gain
                         if (_mrsym == XKB_KEY_Up) {
                             env->master_gain += 10.0f;
-            if (env->master_gain > 5000.0f) env->master_gain = 5000.0f;
+            if (env->master_gain > 10000.0f) env->master_gain = 10000.0f;
                             continue;
                         }
                         if (_mrsym == XKB_KEY_Down) {
                             env->master_gain -= 10.0f;
-                            if (env->master_gain < -5000.0f) env->master_gain = -5000.0f;
+                            if (env->master_gain < -10000.0f) env->master_gain = -10000.0f;
                             continue;
                         }
                     }
@@ -2874,10 +2884,10 @@ int main(int argc, char** argv) {
                             if (_rgs->samples && _rgs->count > 0) {
                                 if (_rsym == XKB_KEY_Up && !(_rmod & MOD_SHIFT)) {
                                     _rgs->gain += 10.0f;
-                                     if (_rgs->gain > 5000.0f) _rgs->gain = 5000.0f;
+                                     if (_rgs->gain > 10000.0f) _rgs->gain = 10000.0f;
                                  } else if (_rsym == XKB_KEY_Down && !(_rmod & MOD_SHIFT)) {
                                      _rgs->gain -= 10.0f;
-                                     if (_rgs->gain < -5000.0f) _rgs->gain = -5000.0f;
+                                     if (_rgs->gain < -10000.0f) _rgs->gain = -10000.0f;
                                 } else if (_rsym == XKB_KEY_Left && !(_rmod & MOD_SHIFT)) {
                                     _rgs->pan -= 10;
                                     if (_rgs->pan < -1000) _rgs->pan = -1000;
@@ -3039,6 +3049,8 @@ int main(int argc, char** argv) {
                                     env->play_bar_voice_read_limit[_v] = _sl->count;
                                 env->play_bar_voice_filter_lp[_v][0] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][1] = 0.0f;
+                                env->play_bar_voice_filter_lp[_v][2] = 0.0f;
+                                env->play_bar_voice_filter_lp[_v][3] = 0.0f;
                                 env->play_bar_voice_env_samples[_v] = 0;
                                 env->play_bar_voice_active[_v] = 1;
                                 break;
@@ -3109,7 +3121,7 @@ int main(int argc, char** argv) {
                                          (avail & ~1ULL) :
                                          PW_CHUNK_FLOATS;
                     voice_batch[v] = batch;
-                    float _gm = (slot->gain + 5000.0f) / 5000.0f;
+                    float _gm = (slot->gain + 10000.0f) / 10000.0f;
                     float _pp = (float)(slot->pan + 1000) / 2000.0f;
                     float _pl = sinf((1.0f - _pp) * (float)(M_PI / 2.0));
                     float _pr = sinf(_pp * (float)(M_PI / 2.0));
@@ -3117,23 +3129,35 @@ int main(int argc, char** argv) {
                         float _s_l = slot->samples[read_pos + f];
                         float _s_r = slot->samples[read_pos + f + 1];
                         if (f == 0 && env->preview_voice_env_samples[v] == 0) {
-                            env->preview_voice_filter_lp[v][0] = _s_l;
-                            env->preview_voice_filter_lp[v][1] = _s_r;
+                            env->preview_voice_filter_lp[v][0] = 0.0f;
+                            env->preview_voice_filter_lp[v][1] = 0.0f;
+                            env->preview_voice_filter_lp[v][2] = _s_l;
+                            env->preview_voice_filter_lp[v][3] = _s_r;
                         }
-                        float _a_lp = 0.1f;
-                        float _lp0 = env->preview_voice_filter_lp[v][0] + _a_lp * (_s_l - env->preview_voice_filter_lp[v][0]);
-                        float _lp1 = env->preview_voice_filter_lp[v][1] + _a_lp * (_s_r - env->preview_voice_filter_lp[v][1]);
-                        env->preview_voice_filter_lp[v][0] = _lp0;
-                        env->preview_voice_filter_lp[v][1] = _lp1;
+                        float _ae = (float)fabsf((float)slot->eq);
+                        float _fc = 20000.0f * expf(logf(40.0f / 20000.0f) * _ae / 1000.0f);
+                        float _ff = 2.0f * sinf((float)M_PI * _fc / 48000.0f);
+                        if (_ff > 1.0f) _ff = 1.0f;
+                        float _rq = 1.414f;
+                        float _hp0 = _s_l - _rq * env->preview_voice_filter_lp[v][0] - env->preview_voice_filter_lp[v][2];
+                        float _hp1 = _s_r - _rq * env->preview_voice_filter_lp[v][1] - env->preview_voice_filter_lp[v][3];
+                        float _bp0 = env->preview_voice_filter_lp[v][0] + _ff * _hp0;
+                        float _bp1 = env->preview_voice_filter_lp[v][1] + _ff * _hp1;
+                        float _lp0 = env->preview_voice_filter_lp[v][2] + _ff * _bp0;
+                        float _lp1 = env->preview_voice_filter_lp[v][3] + _ff * _bp1;
+                        env->preview_voice_filter_lp[v][0] = _bp0;
+                        env->preview_voice_filter_lp[v][1] = _bp1;
+                        env->preview_voice_filter_lp[v][2] = _lp0;
+                        env->preview_voice_filter_lp[v][3] = _lp1;
                         float _mix_l, _mix_r;
                         if (slot->eq <= 0) {
                             float _t = (float)(-slot->eq) / 1000.0f;
-                            _mix_l = _s_l + _t * (_lp0 - _s_l);
-                            _mix_r = _s_r + _t * (_lp1 - _s_r);
+                            _mix_l = _s_l * (1.0f - _t) + _lp0 * _t;
+                            _mix_r = _s_r * (1.0f - _t) + _lp1 * _t;
                         } else {
                             float _t = (float)slot->eq / 1000.0f;
-                            _mix_l = _s_l - _t * _lp0;
-                            _mix_r = _s_r - _t * _lp1;
+                            _mix_l = _s_l * (1.0f - _t) + _hp0 * _t;
+                            _mix_r = _s_r * (1.0f - _t) + _hp1 * _t;
                         }
                     float _a_g = _gm;
                     float _atk_samples = slot->attack / 1000.0f * 48000.0f;
@@ -3207,7 +3231,7 @@ int main(int argc, char** argv) {
                         if (batch > to_slot_end) batch = to_slot_end & ~1ULL;
                         voice_batch[vi] = batch;
                         if (batch == 0) { env->play_bar_voice_active[v] = 0; continue; }
-                        float _gm = (slot->gain + 5000.0f) / 5000.0f;
+                        float _gm = (slot->gain + 10000.0f) / 10000.0f;
                         float _pp2 = (float)(slot->pan + 1000) / 2000.0f;
                         float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
                         float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
@@ -3215,23 +3239,35 @@ int main(int argc, char** argv) {
                             float _s_l = slot->samples[slot_offset + f];
                             float _s_r = slot->samples[slot_offset + f + 1];
                             if (f == 0 && env->play_bar_voice_env_samples[v] == 0) {
-                                env->play_bar_voice_filter_lp[v][0] = _s_l;
-                                env->play_bar_voice_filter_lp[v][1] = _s_r;
+                                env->play_bar_voice_filter_lp[v][0] = 0.0f;
+                                env->play_bar_voice_filter_lp[v][1] = 0.0f;
+                                env->play_bar_voice_filter_lp[v][2] = _s_l;
+                                env->play_bar_voice_filter_lp[v][3] = _s_r;
                             }
-                            float _a_lp = 0.1f;
-                            float _lp0 = env->play_bar_voice_filter_lp[v][0] + _a_lp * (_s_l - env->play_bar_voice_filter_lp[v][0]);
-                            float _lp1 = env->play_bar_voice_filter_lp[v][1] + _a_lp * (_s_r - env->play_bar_voice_filter_lp[v][1]);
-                            env->play_bar_voice_filter_lp[v][0] = _lp0;
-                            env->play_bar_voice_filter_lp[v][1] = _lp1;
+                            float _ae = (float)fabsf((float)slot->eq);
+                            float _fc = 20000.0f * expf(logf(40.0f / 20000.0f) * _ae / 1000.0f);
+                            float _ff = 2.0f * sinf((float)M_PI * _fc / 48000.0f);
+                            if (_ff > 1.0f) _ff = 1.0f;
+                            float _rq = 1.414f;
+                            float _hp0 = _s_l - _rq * env->play_bar_voice_filter_lp[v][0] - env->play_bar_voice_filter_lp[v][2];
+                            float _hp1 = _s_r - _rq * env->play_bar_voice_filter_lp[v][1] - env->play_bar_voice_filter_lp[v][3];
+                            float _bp0 = env->play_bar_voice_filter_lp[v][0] + _ff * _hp0;
+                            float _bp1 = env->play_bar_voice_filter_lp[v][1] + _ff * _hp1;
+                            float _lp0 = env->play_bar_voice_filter_lp[v][2] + _ff * _bp0;
+                            float _lp1 = env->play_bar_voice_filter_lp[v][3] + _ff * _bp1;
+                            env->play_bar_voice_filter_lp[v][0] = _bp0;
+                            env->play_bar_voice_filter_lp[v][1] = _bp1;
+                            env->play_bar_voice_filter_lp[v][2] = _lp0;
+                            env->play_bar_voice_filter_lp[v][3] = _lp1;
                             float _mix_l, _mix_r;
                             if (slot->eq <= 0) {
                                 float _t = (float)(-slot->eq) / 1000.0f;
-                                _mix_l = _s_l + _t * (_lp0 - _s_l);
-                                _mix_r = _s_r + _t * (_lp1 - _s_r);
+                                _mix_l = _s_l * (1.0f - _t) + _lp0 * _t;
+                                _mix_r = _s_r * (1.0f - _t) + _lp1 * _t;
                             } else {
                                 float _t = (float)slot->eq / 1000.0f;
-                                _mix_l = _s_l - _t * _lp0;
-                                _mix_r = _s_r - _t * _lp1;
+                                _mix_l = _s_l * (1.0f - _t) + _hp0 * _t;
+                                _mix_r = _s_r * (1.0f - _t) + _hp1 * _t;
                             }
                             float _a_g2 = _gm;
                             float _atk_s = slot->attack / 1000.0f * 48000.0f;
@@ -3257,7 +3293,7 @@ int main(int argc, char** argv) {
                 }
                 if (!any_active && !env->play_bar_playing) break;
                 if (env->master_gain != 0.0f) {
-                    float _mg_live = (env->master_gain + 5000.0f) / 5000.0f;
+                    float _mg_live = (env->master_gain + 10000.0f) / 10000.0f;
                     for (int _mf = 0; _mf < PW_CHUNK_FLOATS; _mf++)
                         mix[_mf] *= _mg_live;
                 }
