@@ -3052,6 +3052,7 @@ int main(int argc, char** argv) {
                                 env->play_bar_voice_filter_lp[_v][0] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][1] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][2] = 0.0f;
+                                env->play_bar_voice_filter_lp[_v][3] = 0.0f;
                                 env->play_bar_voice_env_samples[_v] = 0;
                                 env->play_bar_voice_active[_v] = 1;
                                 break;
@@ -3137,14 +3138,21 @@ int main(int argc, char** argv) {
                             _fc = 20.0f * expf(logf(20000.0f / 20.0f) * _ae / 1000.0f);
                         float _alpha_target = 1.0f - expf(-2.0f * (float)M_PI * _fc / 48000.0f);
                         if (_alpha_target > 1.0f) _alpha_target = 1.0f;
+                        float _t_target = (float)slot->eq / 1000.0f;
+                        if (_t_target < 0.0f) _t_target = -_t_target;
+                        if (_t_target > 1.0f) _t_target = 1.0f;
                         if (f == 0 && env->preview_voice_env_samples[v] == 0) {
                             env->preview_voice_filter_lp[v][0] = _s_l;
                             env->preview_voice_filter_lp[v][1] = _s_r;
                             env->preview_voice_filter_lp[v][2] = _alpha_target;
+                            env->preview_voice_filter_lp[v][3] = _t_target;
                         }
                         float _alpha = env->preview_voice_filter_lp[v][2];
                         _alpha += 0.2f * (_alpha_target - _alpha);
                         env->preview_voice_filter_lp[v][2] = _alpha;
+                        float _t_smooth = env->preview_voice_filter_lp[v][3];
+                        _t_smooth += 0.2f * (_t_target - _t_smooth);
+                        env->preview_voice_filter_lp[v][3] = _t_smooth;
                         float _lp0 = env->preview_voice_filter_lp[v][0] + _alpha * (_s_l - env->preview_voice_filter_lp[v][0]);
                         float _lp1 = env->preview_voice_filter_lp[v][1] + _alpha * (_s_r - env->preview_voice_filter_lp[v][1]);
                         env->preview_voice_filter_lp[v][0] = _lp0;
@@ -3153,13 +3161,11 @@ int main(int argc, char** argv) {
                         float _hp1 = _s_r - _lp1;
                         float _mix_l, _mix_r;
                         if (slot->eq <= 0) {
-                            float _t = (float)(-slot->eq) / 1000.0f;
-                            _mix_l = _s_l * (1.0f - _t) + _lp0 * _t;
-                            _mix_r = _s_r * (1.0f - _t) + _lp1 * _t;
+                            _mix_l = _s_l * (1.0f - _t_smooth) + _lp0 * _t_smooth;
+                            _mix_r = _s_r * (1.0f - _t_smooth) + _lp1 * _t_smooth;
                         } else {
-                            float _t = (float)slot->eq / 1000.0f;
-                            _mix_l = _s_l * (1.0f - _t) + _hp0 * _t;
-                            _mix_r = _s_r * (1.0f - _t) + _hp1 * _t;
+                            _mix_l = _s_l * (1.0f - _t_smooth) + _hp0 * _t_smooth;
+                            _mix_r = _s_r * (1.0f - _t_smooth) + _hp1 * _t_smooth;
                         }
                     float _a_g = _gm;
                     float _atk_samples = slot->attack / 1000.0f * 48000.0f;
@@ -3248,14 +3254,21 @@ int main(int argc, char** argv) {
                                 _fc = 20.0f * expf(logf(20000.0f / 20.0f) * _ae / 1000.0f);
                             float _alpha_target = 1.0f - expf(-2.0f * (float)M_PI * _fc / 48000.0f);
                             if (_alpha_target > 1.0f) _alpha_target = 1.0f;
+                            float _t_target = (float)slot->eq / 1000.0f;
+                            if (_t_target < 0.0f) _t_target = -_t_target;
+                            if (_t_target > 1.0f) _t_target = 1.0f;
                             if (f == 0 && env->play_bar_voice_env_samples[v] == 0) {
                                 env->play_bar_voice_filter_lp[v][0] = _s_l;
                                 env->play_bar_voice_filter_lp[v][1] = _s_r;
                                 env->play_bar_voice_filter_lp[v][2] = _alpha_target;
+                                env->play_bar_voice_filter_lp[v][3] = _t_target;
                             }
                             float _alpha = env->play_bar_voice_filter_lp[v][2];
                             _alpha += 0.2f * (_alpha_target - _alpha);
                             env->play_bar_voice_filter_lp[v][2] = _alpha;
+                            float _t_smooth = env->play_bar_voice_filter_lp[v][3];
+                            _t_smooth += 0.2f * (_t_target - _t_smooth);
+                            env->play_bar_voice_filter_lp[v][3] = _t_smooth;
                             float _lp0 = env->play_bar_voice_filter_lp[v][0] + _alpha * (_s_l - env->play_bar_voice_filter_lp[v][0]);
                             float _lp1 = env->play_bar_voice_filter_lp[v][1] + _alpha * (_s_r - env->play_bar_voice_filter_lp[v][1]);
                             env->play_bar_voice_filter_lp[v][0] = _lp0;
@@ -3264,13 +3277,11 @@ int main(int argc, char** argv) {
                             float _hp1 = _s_r - _lp1;
                             float _mix_l, _mix_r;
                             if (slot->eq <= 0) {
-                                float _t = (float)(-slot->eq) / 1000.0f;
-                                _mix_l = _s_l * (1.0f - _t) + _lp0 * _t;
-                                _mix_r = _s_r * (1.0f - _t) + _lp1 * _t;
+                                _mix_l = _s_l * (1.0f - _t_smooth) + _lp0 * _t_smooth;
+                                _mix_r = _s_r * (1.0f - _t_smooth) + _lp1 * _t_smooth;
                             } else {
-                                float _t = (float)slot->eq / 1000.0f;
-                                _mix_l = _s_l * (1.0f - _t) + _hp0 * _t;
-                                _mix_r = _s_r * (1.0f - _t) + _hp1 * _t;
+                                _mix_l = _s_l * (1.0f - _t_smooth) + _hp0 * _t_smooth;
+                                _mix_r = _s_r * (1.0f - _t_smooth) + _hp1 * _t_smooth;
                             }
                             float _a_g2 = _gm;
                             float _atk_s = slot->attack / 1000.0f * 48000.0f;
