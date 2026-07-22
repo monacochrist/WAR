@@ -1535,6 +1535,30 @@ static inline void war_compress(war_env* env) {
     }
 }
 
+static inline void war_clear(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    free(slot->samples);
+    slot->samples = NULL;
+    slot->count = 0;
+    slot->capacity = 0;
+    slot->gain = 0.0f;
+    slot->pan = 0;
+    slot->eq = 0;
+    slot->attack = 0.0f;
+    slot->sustain = 0.0f;
+    slot->release = 0.0f;
+    slot->effect_flags = 0;
+    memset(slot->effect_params, 0, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
+    snprintf(env->status_msg, sizeof(env->status_msg), "cleared slot pitch=%u layer=%u", pitch, layer);
+}
+
 static inline void war_whatson(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
@@ -2138,6 +2162,8 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
             env->capture_slots[tidx].attack = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].attack;
             env->capture_slots[tidx].sustain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].sustain;
             env->capture_slots[tidx].release = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].release;
+            env->capture_slots[tidx].effect_flags = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].effect_flags;
+            memcpy(env->capture_slots[tidx].effect_params, env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].effect_params, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
         } else {
             // non-resample: changes pitch, preserves duration
             uint64_t dst_frames = src_frames;
@@ -2167,6 +2193,8 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
             env->capture_slots[tidx].attack = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].attack;
             env->capture_slots[tidx].sustain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].sustain;
             env->capture_slots[tidx].release = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].release;
+            env->capture_slots[tidx].effect_flags = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].effect_flags;
+            memcpy(env->capture_slots[tidx].effect_params, env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].effect_params, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
         }
     }
     call_king_terry("ACROSS: pitch-shifted note=%u radius=%d resample=%d", src_note, rad, env->across_resample);

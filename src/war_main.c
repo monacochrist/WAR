@@ -664,8 +664,11 @@ static void war_load_project(war_env* env, const char* filename) {
         }
         if (idx < 128 * WAR_CAPTURE_SLOT_LAYERS && cnt > 0) {
             uint64_t _ef = 0;
+            double _ep[WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS];
+            memset(_ep, 0, sizeof(_ep));
             if (version >= 4) {
                 fread(&_ef, sizeof(uint64_t), 1, f);
+                fread(_ep, sizeof(double), WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS, f);
             }
             float* samples = malloc(cnt * sizeof(float));
             if (samples) {
@@ -680,12 +683,9 @@ static void war_load_project(war_env* env, const char* filename) {
                 env->capture_slots[idx].gain = (_gain == 100.0f) ? 0.0f : _gain;
                 env->capture_slots[idx].pan = _pan;
                 env->capture_slots[idx].effect_flags = _ef;
-                if (version >= 4)
-                    fread(env->capture_slots[idx].effect_params, sizeof(double), WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS, f);
+                memcpy(env->capture_slots[idx].effect_params, _ep, sizeof(_ep));
             } else {
                 fseek(f, cnt * sizeof(float), SEEK_CUR);
-                if (version >= 4)
-                    fseek(f, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS, SEEK_CUR);
             }
         } else {
             fseek(f, cnt * sizeof(float), SEEK_CUR);
@@ -1163,6 +1163,8 @@ static void war_keyboard_key(void* data,
                                 env->capture_slots[dst].attack = env->capture_slots[src].attack;
                                 env->capture_slots[dst].sustain = env->capture_slots[src].sustain;
                                 env->capture_slots[dst].release = env->capture_slots[src].release;
+                                env->capture_slots[dst].effect_flags = env->capture_slots[src].effect_flags;
+                                memcpy(env->capture_slots[dst].effect_params, env->capture_slots[src].effect_params, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
                                 snprintf(env->status_msg, sizeof(env->status_msg), "cpu: pitch %d -> %u", pitch, pitch + n);
                             }
                         } else {
@@ -1198,6 +1200,8 @@ static void war_keyboard_key(void* data,
                                 env->capture_slots[dst].attack = env->capture_slots[src].attack;
                                 env->capture_slots[dst].sustain = env->capture_slots[src].sustain;
                                 env->capture_slots[dst].release = env->capture_slots[src].release;
+                                env->capture_slots[dst].effect_flags = env->capture_slots[src].effect_flags;
+                                memcpy(env->capture_slots[dst].effect_params, env->capture_slots[src].effect_params, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
                                 snprintf(env->status_msg, sizeof(env->status_msg), "cpd: pitch %d -> %u", pitch, pitch - n);
                             }
                         } else {
@@ -1259,7 +1263,12 @@ static void war_keyboard_key(void* data,
                             env->capture_slots[_dst_idx].capacity = _cnt;
                             env->capture_slots[_dst_idx].gain = env->capture_slots[_src_idx].gain;
                             env->capture_slots[_dst_idx].pan = env->capture_slots[_src_idx].pan;
-                            env->capture_slots[_dst_idx].eq = env->capture_slots[_src_idx].eq;
+                             env->capture_slots[_dst_idx].eq = env->capture_slots[_src_idx].eq;
+                             env->capture_slots[_dst_idx].attack = env->capture_slots[_src_idx].attack;
+                             env->capture_slots[_dst_idx].sustain = env->capture_slots[_src_idx].sustain;
+                             env->capture_slots[_dst_idx].release = env->capture_slots[_src_idx].release;
+                             env->capture_slots[_dst_idx].effect_flags = env->capture_slots[_src_idx].effect_flags;
+                             memcpy(env->capture_slots[_dst_idx].effect_params, env->capture_slots[_src_idx].effect_params, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
                             snprintf(env->status_msg, sizeof(env->status_msg), "cp: pitch %u layer %d -> %d", _pitch, _cur_layer, _to_layer);
                             fprintf(stderr, "CP: copied pitch=%u from layer %d to layer %d\n", _pitch, _cur_layer, _to_layer);
                         }
@@ -1420,6 +1429,8 @@ static void war_keyboard_key(void* data,
                 war_whatson(env);
             } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'o' && env->cmd_buf[2] == 'f' && env->cmd_buf[3] == 'f' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'l' && env->cmd_buf[6] == 'l') {
                 war_offall(env);
+            } else if (env->cmd_len >= 6 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'l' && env->cmd_buf[3] == 'e' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'r') {
+                war_clear(env);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
             } else if (env->cmd_len == 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'p') {
