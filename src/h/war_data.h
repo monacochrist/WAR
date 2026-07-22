@@ -359,16 +359,31 @@ typedef struct war_atomics {
 
 #define WAR_CAPTURE_SLOT_LAYERS 9
 
+// effect system — persistent real-time effect objects
+#define WAR_EFFECT_NONE      0
+#define WAR_EFFECT_COMPRESS  1
+#define WAR_EFFECT_SATURATE  2
+#define WAR_EFFECT_REVERB    3
+#define WAR_EFFECT_DELAY     4
+#define WAR_EFFECT_CHORUS    5
+#define WAR_EFFECT_GATE      6
+#define WAR_EFFECT_DEESSER   7
+#define WAR_EFFECT_AUTOTUNE  8
+#define WAR_EFFECT_COUNT     9
+#define WAR_EFFECT_PARAMS    6 // max params per effect
+
 typedef struct war_capture_slot {
     float* samples;
     uint64_t count;
     uint64_t capacity;
-    float gain; // -10000..10000, default 0 (100%)
-    int pan;    // -1000..1000, default 0 (center)
-    int eq;     // -1000..1000, default 0 (flat)
-    float attack;   // -1000..1000, default 0
-    float sustain;  // -1000..1000, default 0
-    float release;  // -1000..1000, default 0
+    float gain;
+    int pan;
+    int eq;
+    float attack;
+    float sustain;
+    float release;
+    uint64_t effect_flags; // bitmask: bit N = 1 if effect N+1 is active
+    double effect_params[WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS];
 } war_capture_slot;
 
 typedef struct war_glyph_info {
@@ -2735,6 +2750,9 @@ struct war_env {
     uint64_t play_bar_voice_read_limit[WAR_PLAY_BAR_VOICES];
     float play_bar_voice_filter_lp[WAR_PLAY_BAR_VOICES][5]; // [v][0]=lp_l, [1]=lp_r, [2]=smoothed_alpha, [3]=smoothed_t, [4]=last_eq
     uint64_t play_bar_voice_env_samples[WAR_PLAY_BAR_VOICES];
+    float play_bar_voice_effect_state[WAR_PLAY_BAR_VOICES][32]; // per-voice state for real-time effects
+    float* play_bar_voice_delay_line[WAR_PLAY_BAR_VOICES]; // per-voice delay buffer (allocated on demand)
+    uint64_t play_bar_voice_delay_len[WAR_PLAY_BAR_VOICES]; // delay line length
     float play_bar_direct_filter_lp[128 * WAR_CAPTURE_SLOT_LAYERS][4];
     uint32_t play_bar_mute_mask;
     float master_gain;
@@ -2745,6 +2763,9 @@ struct war_env {
     uint64_t preview_voice_read_limit[WAR_PREVIEW_VOICES];
     float preview_voice_filter_lp[WAR_PREVIEW_VOICES][5]; // [v][0]=lp_l, [1]=lp_r, [2]=smoothed_alpha, [3]=smoothed_t, [4]=last_eq
     uint64_t preview_voice_env_samples[WAR_PREVIEW_VOICES];
+    float preview_voice_effect_state[WAR_PREVIEW_VOICES][32]; // per-voice state for real-time effects
+    float* preview_voice_delay_line[WAR_PREVIEW_VOICES]; // per-voice delay buffer
+    uint64_t preview_voice_delay_len[WAR_PREVIEW_VOICES];
     // recording state
     uint8_t recording_active;
     uint8_t loop_mode;

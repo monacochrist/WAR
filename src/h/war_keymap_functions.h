@@ -1304,6 +1304,137 @@ static inline void war_toggle_crop(war_env* env) {
     }
 }
 
+// effect system helpers
+#define WAR_EFFECT_BIT(e)   (1ULL << ((e) - 1))
+#define WAR_EFFECT_PARAM_IDX(e, p)  (((e) - 1) * WAR_EFFECT_PARAMS + (p))
+
+static inline uint8_t _war_effect_active(war_capture_slot* slot, uint8_t type) {
+    return (slot->effect_flags & WAR_EFFECT_BIT(type)) != 0;
+}
+static inline void _war_effect_set_active(war_capture_slot* slot, uint8_t type, uint8_t active) {
+    if (active) slot->effect_flags |= WAR_EFFECT_BIT(type);
+    else slot->effect_flags &= ~WAR_EFFECT_BIT(type);
+}
+static inline double _war_effect_get_param(war_capture_slot* slot, uint8_t type, uint8_t p) {
+    return slot->effect_params[WAR_EFFECT_PARAM_IDX(type, p)];
+}
+static inline void _war_effect_set_param(war_capture_slot* slot, uint8_t type, uint8_t p, double v) {
+    slot->effect_params[WAR_EFFECT_PARAM_IDX(type, p)] = v;
+}
+
+// real-time effect processing: modifies *l and *r in-place for a single sample pair
+// state: per-voice 32-float array
+static inline void _war_process_effects(war_capture_slot* slot, float* state, float* l, float* r) {
+    // Compressor (state[0]=rms_l, [1]=rms_r, [2]=gr_state)
+    if (_war_effect_active(slot, WAR_EFFECT_COMPRESS)) {
+        double th = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 0);
+        double rt = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 1);
+        double at = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 2);
+        double rt2 = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 3);
+        double mk = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 4);
+        if (rt < 1.0) rt = 4.0; if (at < 0.1) at = 1.0; if (rt2 < 0.1) rt2 = 40.0;
+        double ac = exp(-1.0/(at*0.001*48000.0)), rc = exp(-1.0/(rt2*0.001*48000.0));
+        double ml = pow(10.0, mk/20.0), knee = 6.0, sl = 1.0 - 1.0/rt;
+        double il = *l, ir = *r;
+        state[0] = (float)(ac * state[0] + (1.0-ac) * il*il);
+        state[1] = (float)(ac * state[1] + (1.0-ac) * ir*ir);
+        double env = sqrt(state[0] > state[1] ? state[0] : state[1]);
+        double tg = 1.0;
+        if (env > 1e-10) {
+            double db = 20.0 * log10(env), x = db - th, gd = 0;
+            if (x > knee*0.5) gd = -x*sl;
+            else if (x > -knee*0.5) { double xk = x+knee*0.5; gd = -sl*xk*xk/(2.0*knee); }
+            tg = pow(10.0, gd/20.0);
+        }
+        if (tg < state[2]) state[2] = (float)(ac * state[2] + (1.0-ac) * tg);
+        else state[2] = (float)(rc * state[2] + (1.0-rc) * tg);
+        *l = (float)(*l * state[2] * ml);
+        *r = (float)(*r * state[2] * ml);
+    }
+    // Saturate (no state needed)
+    if (_war_effect_active(slot, WAR_EFFECT_SATURATE)) {
+        double dr = _war_effect_get_param(slot, WAR_EFFECT_SATURATE, 0);
+        double mx = _war_effect_get_param(slot, WAR_EFFECT_SATURATE, 1);
+        double mk = _war_effect_get_param(slot, WAR_EFFECT_SATURATE, 2);
+        if (dr < 0.01) dr = 3.0;
+        double ml = pow(10.0, mk/20.0);
+        double sl = tanh((double)*l * dr) * ml, sr = tanh((double)*r * dr) * ml;
+        *l = (float)(*l * (1.0-mx) + sl * mx);
+        *r = (float)(*r * (1.0-mx) + sr * mx);
+    }
+    // Gate (state[3]=env_l, [4]=env_r, [5]=hold_counter)
+    if (_war_effect_active(slot, WAR_EFFECT_GATE)) {
+        double th = _war_effect_get_param(slot, WAR_EFFECT_GATE, 0);
+        double at = _war_effect_get_param(slot, WAR_EFFECT_GATE, 1);
+        double hd = _war_effect_get_param(slot, WAR_EFFECT_GATE, 2);
+        double rt = _war_effect_get_param(slot, WAR_EFFECT_GATE, 3);
+        double fl = _war_effect_get_param(slot, WAR_EFFECT_GATE, 4);
+        if (at < 0.1) at = 2.0;
+        double ac = exp(-1.0/(at*0.001*48000.0));
+        double tl = pow(10.0, th/20.0), fl2 = pow(10.0, fl/20.0);
+        double al = fabs(*l), ar = fabs(*r);
+        state[3] = (float)(ac * state[3] + (1.0-ac) * al);
+        state[4] = (float)(ac * state[4] + (1.0-ac) * ar);
+        double env = state[3] > state[4] ? state[3] : state[4];
+        double gg = 1.0;
+        if (env > 1e-10) {
+            double db = 20.0 * log10(env), x = db - th, gd = 0;
+            double rr = 10.0, sl = 1.0 - 1.0/rr, knee = 3.0;
+            if (x > knee*0.5) {}
+            else if (x > -knee*0.5) { double xk = x+knee*0.5; gd = -sl*xk*xk/(2.0*knee); }
+            else gd = -x*sl;
+            gg = pow(10.0, gd/20.0);
+            double fg = fl2 / env; if (gg < fg) gg = fg;
+        }
+        uint64_t hf = (uint64_t)(hd * 0.001 * 48000.0);
+        uint32_t hc = (uint32_t)state[5];
+        if (env >= tl) hc = (uint32_t)hf;
+        else if (hc > 0) { hc--; gg = 1.0; }
+        state[5] = (float)hc;
+        *l *= (float)gg; *r *= (float)gg;
+    }
+    // De-esser (state[6]=s1_l, [7]=s1_r, [8]=s2_l, [9]=s2_r, [10]=rms, [11]=gr)
+    if (_war_effect_active(slot, WAR_EFFECT_DEESSER)) {
+        double th = _war_effect_get_param(slot, WAR_EFFECT_DEESSER, 0);
+        double fq = _war_effect_get_param(slot, WAR_EFFECT_DEESSER, 1);
+        double at = _war_effect_get_param(slot, WAR_EFFECT_DEESSER, 2);
+        double rt = _war_effect_get_param(slot, WAR_EFFECT_DEESSER, 3);
+        if (at < 0.1) at = 1.0; if (rt < 0.1) rt = 30.0;
+        double ac = exp(-1.0/(at*0.001*48000.0)), rc = exp(-1.0/(rt*0.001*48000.0));
+        float g = tanf((float)M_PI * (float)fq / 48000.0f);
+        float R = 4.0f;
+        float v0_l = ((float)*l - state[8]*R - state[6]) / (1.0f + g*(g+R));
+        float v0_r = ((float)*r - state[9]*R - state[7]) / (1.0f + g*(g+R));
+        state[6] = state[6] + g * v0_l;
+        state[7] = state[7] + g * v0_r;
+        state[8] = state[8] + g * state[6];
+        state[9] = state[9] + g * state[7];
+        float bp = fabs(state[8]) > fabs(state[9]) ? fabs(state[8]) : fabs(state[9]);
+        state[10] = (float)(ac * state[10] + (1.0-ac) * (double)(bp*bp));
+        double env = sqrt(state[10]);
+        double tg = 1.0;
+        if (env > 1e-10) {
+            double db = 20.0 * log10(env), excess = db - th;
+            if (excess > 0) { double gd = -excess * (1.0 - 1.0/10.0); tg = pow(10.0, gd/20.0); }
+        }
+        if (tg < state[11]) state[11] = (float)(ac * state[11] + (1.0-ac) * tg);
+        else state[11] = (float)(rc * state[11] + (1.0-rc) * tg);
+        *l *= state[11]; *r *= state[11];
+    }
+}
+
+static inline void war_offall(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    env->capture_slots[idx].effect_flags = 0;
+    snprintf(env->status_msg, sizeof(env->status_msg), "all effects OFF");
+}
+
 static inline void war_compress(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
@@ -1313,87 +1444,119 @@ static inline void war_compress(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    if (!slot->samples || slot->count < 4) return;
+    int cmdlen = (int)env->cmd_len;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double threshold_db = -20.0, ratio = 4.0, attack_ms = 1.0, release_ms = 40.0, makeup_db = 4.0;
-    if (env->cmd_active && env->cmd_len > 9) {
-        int n = sscanf(env->cmd_buf + 9, " %lf %lf %lf %lf %lf",
-                       &threshold_db, &ratio, &attack_ms, &release_ms, &makeup_db);
-        if (n < 1) threshold_db = -20.0;
-        if (n < 2) ratio = 4.0;
-        if (n < 3) attack_ms = 1.0;
-        if (n < 4) release_ms = 40.0;
-        if (n < 5) makeup_db = 4.0;
-    }
-    if (threshold_db >= 0.0 || ratio < 1.0 || attack_ms < 0.0 || release_ms < 0.0) {
+    if (!env->cmd_active || cmdlen < 9) {
+        // show state
+        int a = _war_effect_active(slot, WAR_EFFECT_COMPRESS);
+        if (a) {
+            threshold_db = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 0);
+            ratio = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 1);
+            attack_ms = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 2);
+            release_ms = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 3);
+            makeup_db = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 4);
+        }
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "compress: usage :compress [thresh(dB) ratio attack(ms) release(ms) makeup(dB)]");
+                 a ? "compress ON: thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f"
+                   : "compress OFF",
+                 threshold_db, ratio, attack_ms, release_ms, makeup_db);
         return;
     }
-    uint64_t frames = slot->count / 2;
-    double threshold_lin = pow(10.0, threshold_db / 20.0);
-    double attack_coef = attack_ms > 0.0 ? exp(-1.0 / (attack_ms * 0.001 * 48000.0)) : 0.0;
-    double release_coef = release_ms > 0.0 ? exp(-1.0 / (release_ms * 0.001 * 48000.0)) : 0.0;
-    double makeup_lin = pow(10.0, makeup_db / 20.0);
-    float* new_data = malloc(slot->count * sizeof(float));
-    if (!new_data) return;
-    double rms_l = 0.0, rms_r = 0.0;
-    double gr_state = 1.0; // smoothed gain reduction (stereo linked)
-    double knee = 6.0;
-    double slope = 1.0 - 1.0 / ratio;
-    for (uint64_t f = 0; f < frames; f++) {
-        double in_l = (double)slot->samples[f * 2];
-        double in_r = (double)slot->samples[f * 2 + 1];
-        // RMS envelope (one-pole on squared signal)
-        rms_l = attack_coef * rms_l + (1.0 - attack_coef) * in_l * in_l;
-        rms_r = attack_coef * rms_r + (1.0 - attack_coef) * in_r * in_r;
-        double env_l = sqrt(rms_l);
-        double env_r = sqrt(rms_r);
-        double env = env_l > env_r ? env_l : env_r; // stereo link
-        // soft knee gain reduction
-        double target_gr = 1.0;
-        if (env > 0.0) {
-            double level_db = 20.0 * log10(env);
-            double x = level_db - threshold_db;
-            double gain_db = 0.0;
-            if (x > knee * 0.5) {
-                gain_db = -x * slope;
-            } else if (x > -knee * 0.5) {
-                double xk = x + knee * 0.5;
-                gain_db = -slope * xk * xk / (2.0 * knee);
-            }
-            target_gr = pow(10.0, gain_db / 20.0);
+    const char* rest = env->cmd_buf + 9;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "on") == 0) turn_on = 1;
+    else if (strcmp(rest, "off") == 0) turn_off = 1;
+    else if (strcmp(rest, "usage") == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "usage: :compress [thresh(dB) ratio attack(ms) release(ms) makeup(dB)] | on | off | status"); return;
+    }
+    else if (strcmp(rest, "status") == 0) {
+        int a = _war_effect_active(slot, WAR_EFFECT_COMPRESS);
+        double t = a ? _war_effect_get_param(slot,WAR_EFFECT_COMPRESS,0) : threshold_db;
+        double r = a ? _war_effect_get_param(slot,WAR_EFFECT_COMPRESS,1) : ratio;
+        double at = a ? _war_effect_get_param(slot,WAR_EFFECT_COMPRESS,2) : attack_ms;
+        double rt = a ? _war_effect_get_param(slot,WAR_EFFECT_COMPRESS,3) : release_ms;
+        double m = a ? _war_effect_get_param(slot,WAR_EFFECT_COMPRESS,4) : makeup_db;
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 a ? "compress ON: thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f"
+                   : "compress OFF", t, r, at, rt, m); return;
+    }
+    else if (strcmp(rest, "default") == 0) {
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 0, -20.0);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 1, 4.0);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 2, 1.0);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 3, 40.0);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 4, 4.0);
+        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "compress ON (defaults)"); return;
+    }
+    else if (*rest) {
+        set_params = 1;
+        sscanf(rest, " %lf %lf %lf %lf %lf", &threshold_db, &ratio, &attack_ms, &release_ms, &makeup_db);
+        if (threshold_db >= 0.0 || ratio < 1.0 || attack_ms < 0.0 || release_ms < 0.0) {
+            snprintf(env->status_msg, sizeof(env->status_msg), "compress: bad args"); return;
         }
-        // smooth gain reduction (attack = down, release = up)
-        if (target_gr < gr_state)
-            gr_state = attack_coef * gr_state + (1.0 - attack_coef) * target_gr;
-        else
-            gr_state = release_coef * gr_state + (1.0 - release_coef) * target_gr;
-        new_data[f * 2] = (float)(in_l * gr_state * makeup_lin);
-        new_data[f * 2 + 1] = (float)(in_r * gr_state * makeup_lin);
     }
-    // save pre-compress audio state for undo
-    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
-    uint8_t* audio_data = malloc(buf_size);
-    if (audio_data) {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 1; p += 4;
-        *(uint32_t*)p = idx; p += 4;
-        *(uint64_t*)p = slot->count; p += 8;
-        *(uint64_t*)p = slot->capacity; p += 8;
-        memcpy(p, slot->samples, slot->count * sizeof(float));
+    // handle on/off toggle
+    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_COMPRESS);
+    if (turn_off && was_active) {
+        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 0);
+        snprintf(env->status_msg, sizeof(env->status_msg), "compress OFF"); return;
     }
-    war_undo_save(env);
-    if (audio_data) {
-        uint32_t audio_idx = env->undo_pos - 1;
-        free(env->undo_audio_data[audio_idx]);
-        env->undo_audio_data[audio_idx] = audio_data;
-        env->undo_audio_size[audio_idx] = buf_size;
+    if (turn_on && !was_active) {
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 0, -20.0);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 1, 4.0);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 2, 1.0);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 3, 40.0);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 4, 4.0);
+        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "compress ON (defaults)"); return;
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 0, threshold_db);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 1, ratio);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 2, attack_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 3, release_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 4, makeup_db);
+        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "compress ON: thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f",
+                 threshold_db, ratio, attack_ms, release_ms, makeup_db);
+        return; // dead code but harmless
     }
-    free(slot->samples);
-    slot->samples = new_data;
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "compress: thresh=%.0f ratio=%.1f attack=%.0fms release=%.0fms makeup=%.0fdB",
-             threshold_db, ratio, attack_ms, release_ms, makeup_db);
+    if (set_params) {
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 0, threshold_db);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 1, ratio);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 2, attack_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 3, release_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 4, makeup_db);
+        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "compress ON: thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f", threshold_db, ratio, attack_ms, release_ms, makeup_db);
+    }
+}
+
+static inline void war_whatson(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    war_capture_slot* slot = &env->capture_slots[idx];
+    static const char* names[] = {NULL,"CMP","SAT","REV","DEL","CHO","GAT","DEE","AUT"};
+    char buf[128]; buf[0] = '\0'; int pos = 0;
+    for (int i = 1; i < WAR_EFFECT_COUNT; i++) {
+        if (_war_effect_active(slot, i)) {
+            if (pos > 0 && pos < (int)sizeof(buf)-4) { buf[pos++] = ','; buf[pos++] = ' '; }
+            if (pos < (int)sizeof(buf)-4) {
+                int n = snprintf(buf+pos, sizeof(buf)-pos, "%s", names[i]);
+                if (n > 0) pos += n;
+            }
+        }
+    }
+    if (pos == 0) snprintf(buf, sizeof(buf), "none");
+    snprintf(env->status_msg, sizeof(env->status_msg), "active: %s", buf);
 }
 
 static inline void war_saturate(war_env* env) {
@@ -1405,74 +1568,68 @@ static inline void war_saturate(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    if (!slot->samples || slot->count < 4) return;
+    int cmdlen = (int)env->cmd_len;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double drive = 3.0, mix = 0.4, makeup_db = 2.0;
-    if (env->cmd_active && env->cmd_len > 10) {
-        int n = sscanf(env->cmd_buf + 10, " %lf %lf %lf", &drive, &mix, &makeup_db);
-        if (n < 1) drive = 3.0;
-        if (n < 2) mix = 0.4;
-        if (n < 3) makeup_db = 2.0;
-    }
-    if (drive < 0.0 || mix < 0.0 || mix > 1.0) {
+    if (!env->cmd_active || cmdlen < 9) {
+        int a = _war_effect_active(slot, WAR_EFFECT_SATURATE);
+        if (a) {
+            drive = _war_effect_get_param(slot, WAR_EFFECT_SATURATE, 0);
+            mix = _war_effect_get_param(slot, WAR_EFFECT_SATURATE, 1);
+            makeup_db = _war_effect_get_param(slot, WAR_EFFECT_SATURATE, 2);
+        }
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "saturate: usage :saturate [drive(>=0) mix(0-1) makeup(dB)]");
+                 a ? "saturate ON: drive=%.1f mix=%.2f makeup=%.0f" : "saturate OFF",
+                 drive, mix, makeup_db);
         return;
     }
-    uint64_t frames = slot->count / 2;
-    double makeup_lin = pow(10.0, makeup_db / 20.0);
-    // 2x oversampled processing to reduce aliasing
-    uint64_t os_frames = frames * 2;
-    float* os_buf = malloc(os_frames * 2 * sizeof(float));
-    if (!os_buf) return;
-    // upsample: even = original, odd = linear interpolation
-    for (uint64_t f = 0; f < frames; f++) {
-        os_buf[f * 4] = slot->samples[f * 2];
-        os_buf[f * 4 + 1] = slot->samples[f * 2 + 1];
-        if (f + 1 < frames) {
-            os_buf[f * 4 + 2] = (slot->samples[f * 2] + slot->samples[(f + 1) * 2]) * 0.5f;
-            os_buf[f * 4 + 3] = (slot->samples[f * 2 + 1] + slot->samples[(f + 1) * 2 + 1]) * 0.5f;
-        } else {
-            os_buf[f * 4 + 2] = slot->samples[f * 2];
-            os_buf[f * 4 + 3] = slot->samples[f * 2 + 1];
+    const char* rest = env->cmd_buf + 9;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "on") == 0) turn_on = 1;
+    else if (strcmp(rest, "off") == 0) turn_off = 1;
+    else if (strcmp(rest, "usage") == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "usage: :saturate [drive mix makeup] | on | off | status"); return;
+    }
+    else if (strcmp(rest, "status") == 0) {
+        int a = _war_effect_active(slot, WAR_EFFECT_SATURATE);
+        double d = a ? _war_effect_get_param(slot,WAR_EFFECT_SATURATE,0) : drive;
+        double m = a ? _war_effect_get_param(slot,WAR_EFFECT_SATURATE,1) : mix;
+        double mk = a ? _war_effect_get_param(slot,WAR_EFFECT_SATURATE,2) : makeup_db;
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 a ? "saturate ON: drive=%.1f mix=%.2f makeup=%.0f"
+                   : "saturate OFF", d, m, mk); return;
+    }
+    else if (strcmp(rest, "default") == 0) {
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 0, 3.0);
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 1, 0.4);
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 2, 2.0);
+        _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "saturate ON (defaults)"); return;
+    }
+    else if (*rest) {
+        set_params = 1;
+        sscanf(rest, "%lf %lf %lf", &drive, &mix, &makeup_db);
+        if (drive < 0 || mix < 0 || mix > 1) {
+            snprintf(env->status_msg, sizeof(env->status_msg), "saturate: bad args"); return;
         }
     }
-    for (uint64_t f = 0; f < os_frames; f++) {
-        double in_l = (double)os_buf[f * 2];
-        double in_r = (double)os_buf[f * 2 + 1];
-        double sat_l = tanh(in_l * drive) * makeup_lin;
-        double sat_r = tanh(in_r * drive) * makeup_lin;
-        os_buf[f * 2] = (float)(sat_l * mix + in_l * (1.0 - mix));
-        os_buf[f * 2 + 1] = (float)(sat_r * mix + in_r * (1.0 - mix));
+    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_SATURATE);
+    if (turn_on && !was_active) {
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 0, 3.0);
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 1, 0.4);
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 2, 2.0);
+        _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "saturate ON (defaults)"); return;
     }
-    // downsample: keep every other sample
-    float* new_data = malloc(slot->count * sizeof(float));
-    if (!new_data) { free(os_buf); return; }
-    for (uint64_t f = 0; f < frames; f++) {
-        new_data[f * 2] = os_buf[f * 4];
-        new_data[f * 2 + 1] = os_buf[f * 4 + 1];
+    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 0); snprintf(env->status_msg, sizeof(env->status_msg), "saturate OFF"); return; }
+    if (set_params) {
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 0, drive);
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 1, mix);
+        _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 2, makeup_db);
+        _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "saturate ON: drive=%.1f mix=%.2f makeup=%.0f", drive, mix, makeup_db);
     }
-    free(os_buf);
-    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
-    uint8_t* audio_data = malloc(buf_size);
-    if (audio_data) {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 1; p += 4;
-        *(uint32_t*)p = idx; p += 4;
-        *(uint64_t*)p = slot->count; p += 8;
-        *(uint64_t*)p = slot->capacity; p += 8;
-        memcpy(p, slot->samples, slot->count * sizeof(float));
-    }
-    war_undo_save(env);
-    if (audio_data) {
-        uint32_t audio_idx = env->undo_pos - 1;
-        free(env->undo_audio_data[audio_idx]);
-        env->undo_audio_data[audio_idx] = audio_data;
-        env->undo_audio_size[audio_idx] = buf_size;
-    }
-    free(slot->samples);
-    slot->samples = new_data;
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "saturate: drive=%.1f mix=%.2f makeup=%.0fdB", drive, mix, makeup_db);
 }
 
 static inline void war_reverb(war_env* env) {
@@ -1484,127 +1641,73 @@ static inline void war_reverb(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    if (!slot->samples || slot->count < 4) return;
+    int cmdlen = (int)env->cmd_len;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double decay = 0.4, mix = 0.15, predelay_ms = 0.0, damping = 0.3;
-    if (env->cmd_active && env->cmd_len > 7) {
-        int n = sscanf(env->cmd_buf + 7, " %lf %lf %lf %lf", &decay, &mix, &predelay_ms, &damping);
-        if (n < 1) decay = 0.4;
-        if (n < 2) mix = 0.15;
-        if (n < 3) predelay_ms = 0.0;
-        if (n < 4) damping = 0.3;
-    }
-    if (decay < 0.0 || decay >= 1.0 || mix < 0.0 || mix > 1.0 || predelay_ms < 0.0 || damping < 0.0 || damping > 1.0) {
+    if (!env->cmd_active || cmdlen < 7) {
+        int a = _war_effect_active(slot, WAR_EFFECT_REVERB);
+        if (a) {
+            decay = _war_effect_get_param(slot, WAR_EFFECT_REVERB, 0);
+            mix = _war_effect_get_param(slot, WAR_EFFECT_REVERB, 1);
+            predelay_ms = _war_effect_get_param(slot, WAR_EFFECT_REVERB, 2);
+            damping = _war_effect_get_param(slot, WAR_EFFECT_REVERB, 3);
+        }
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "reverb: usage :reverb [decay(0-0.99) mix(0-1) predelay(ms) damping(0-1)]");
+                 a ? "reverb ON: decay=%.2f mix=%.2f predelay=%.0fms damping=%.2f" : "reverb OFF",
+                 decay, mix, predelay_ms, damping);
         return;
     }
-    uint64_t frames = slot->count / 2;
-    static const uint32_t comb_delays[] = {1427, 1783, 1979, 2341};
-    uint32_t n_combs = 4;
-    double comb_fb = decay * 0.7;
-    double damp_coef = damping * damping * 0.95; // map 0-1 to 0-0.95 LP coefficient
-    static const uint32_t ap_delays[] = {241, 83};
-    double ap_gain = 0.5;
-    uint64_t pd_samp = (uint64_t)(predelay_ms * 0.001 * 48000.0);
-    float* comb_l[4]; float* comb_r[4];
-    float* comb_dl[4]; float* comb_dr[4]; // damping state (one-pole LP per comb)
-    uint32_t comb_pos[4] = {0, 0, 0, 0};
-    for (uint32_t c = 0; c < n_combs; c++) {
-        comb_l[c] = calloc(comb_delays[c], sizeof(float));
-        comb_r[c] = calloc(comb_delays[c], sizeof(float));
-        comb_dl[c] = calloc(1, sizeof(float));
-        comb_dr[c] = calloc(1, sizeof(float));
-        if (!comb_l[c] || !comb_r[c] || !comb_dl[c] || !comb_dr[c]) {
-            for (uint32_t j = 0; j <= c; j++) { free(comb_l[j]); free(comb_r[j]); free(comb_dl[j]); free(comb_dr[j]); }
-            return;
+    const char* rest = env->cmd_buf + 7;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "on") == 0) turn_on = 1;
+    else if (strcmp(rest, "off") == 0) turn_off = 1;
+    else if (strcmp(rest, "usage") == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "usage: :reverb [decay mix predelay damping] | on | off | status"); return;
+    }
+    else if (strcmp(rest, "status") == 0) {
+        int a = _war_effect_active(slot, WAR_EFFECT_REVERB);
+        double d = a ? _war_effect_get_param(slot,WAR_EFFECT_REVERB,0) : decay;
+        double m = a ? _war_effect_get_param(slot,WAR_EFFECT_REVERB,1) : mix;
+        double p = a ? _war_effect_get_param(slot,WAR_EFFECT_REVERB,2) : predelay_ms;
+        double dm = a ? _war_effect_get_param(slot,WAR_EFFECT_REVERB,3) : damping;
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 a ? "reverb ON: decay=%.2f mix=%.2f predelay=%.0fms damping=%.2f"
+                   : "reverb OFF", d, m, p, dm); return;
+    }
+    else if (strcmp(rest, "default") == 0) {
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 0, 0.4);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 1, 0.15);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 2, 0.0);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 3, 0.3);
+        _war_effect_set_active(slot, WAR_EFFECT_REVERB, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "reverb ON (defaults)"); return;
+    }
+    else if (*rest) {
+        set_params = 1;
+        sscanf(rest, "%lf %lf %lf %lf", &decay, &mix, &predelay_ms, &damping);
+        if (decay < 0.0 || decay >= 1.0 || mix < 0.0 || mix > 1.0 || predelay_ms < 0.0 || damping < 0.0 || damping > 1.0) {
+            snprintf(env->status_msg, sizeof(env->status_msg), "reverb: bad args"); return;
         }
     }
-    // all-pass delay buffer (large enough for both stages, reused in series)
-    uint32_t ap_max = ap_delays[0] > ap_delays[1] ? ap_delays[0] : ap_delays[1];
-    float* ap_l = calloc(ap_max, sizeof(float));
-    float* ap_r = calloc(ap_max, sizeof(float));
-    uint32_t ap_pos = 0;
-    // pre-delay buffer
-    float* pd_l = calloc(pd_samp + 1, sizeof(float));
-    float* pd_r = calloc(pd_samp + 1, sizeof(float));
-    uint32_t pd_pos = 0;
-    float* out = malloc(slot->count * sizeof(float));
-    if (!out || !ap_l || !ap_r || !pd_l || !pd_r) {
-        for (uint32_t c = 0; c < n_combs; c++) { free(comb_l[c]); free(comb_r[c]); }
-        free(ap_l); free(ap_r); free(pd_l); free(pd_r); free(out);
-        return;
+    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_REVERB);
+    if (turn_on && !was_active) {
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 0, 0.4);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 1, 0.15);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 2, 0.0);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 3, 0.3);
+        _war_effect_set_active(slot, WAR_EFFECT_REVERB, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "reverb ON (defaults)"); return;
     }
-    for (uint64_t f = 0; f < frames; f++) {
-        double in_l = (double)slot->samples[f * 2];
-        double in_r = (double)slot->samples[f * 2 + 1];
-        // pre-delay
-        pd_l[pd_pos] = (float)in_l;
-        pd_r[pd_pos] = (float)in_r;
-        uint32_t pd_rp = (uint32_t)((pd_pos + pd_samp + 1 - pd_samp) % (pd_samp + 1));
-        double dry_l = (double)pd_l[pd_rp];
-        double dry_r = (double)pd_r[pd_rp];
-        pd_pos = (pd_pos + 1) % (uint32_t)(pd_samp + 1);
-        // comb filters (parallel) with damping
-        double sum_l = 0.0, sum_r = 0.0;
-        for (uint32_t c = 0; c < n_combs; c++) {
-            uint32_t d = comb_delays[c];
-            double dl = (double)comb_l[c][comb_pos[c]];
-            double dr = (double)comb_r[c][comb_pos[c]];
-            // damping: one-pole LP on feedback signal
-            *comb_dl[c] += (float)(damp_coef * ((float)dl - *comb_dl[c]));
-            *comb_dr[c] += (float)(damp_coef * ((float)dr - *comb_dr[c]));
-            comb_l[c][comb_pos[c]] = (float)(dry_l + comb_fb * (double)*comb_dl[c]);
-            comb_r[c][comb_pos[c]] = (float)(dry_r + comb_fb * (double)*comb_dr[c]);
-            sum_l += dl;
-            sum_r += dr;
-            comb_pos[c] = (comb_pos[c] + 1) % d;
-        }
-        // all-pass filters (series, 2 stages in same buffer)
-        double ap_in_l = sum_l, ap_in_r = sum_r;
-        for (uint32_t a = 0; a < 2; a++) {
-            uint32_t d = ap_delays[a];
-            double dl = (double)ap_l[ap_pos];
-            double dr = (double)ap_r[ap_pos];
-            // y[n] = -g*x[n] + s[n-D], where s[n] = x[n] + g*y[n] stored in buffer
-            double y_l = -ap_gain * ap_in_l + dl;
-            double y_r = -ap_gain * ap_in_r + dr;
-            ap_l[ap_pos] = (float)(ap_in_l + ap_gain * y_l);
-            ap_r[ap_pos] = (float)(ap_in_r + ap_gain * y_r);
-            ap_in_l = y_l; ap_in_r = y_r;
-            ap_pos = (ap_pos + 1) % d;
-        }
-        // normalize by number of combs to prevent overload
-        double norm = 1.0 / (double)n_combs;
-        double wet_l = ap_in_l * norm;
-        double wet_r = ap_in_r * norm;
-        uint64_t reverb_fade = 4800; // 100ms
-        double wet_gain = f < reverb_fade ? (double)(f + 1) / (double)reverb_fade : 1.0;
-        out[f * 2] = (float)(dry_l * (1.0 - mix * wet_gain) + wet_l * mix * wet_gain);
-        out[f * 2 + 1] = (float)(dry_r * (1.0 - mix * wet_gain) + wet_r * mix * wet_gain);
+    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_REVERB, 0); snprintf(env->status_msg, sizeof(env->status_msg), "reverb OFF"); return; }
+    if (set_params) {
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 0, decay);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 1, mix);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 2, predelay_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_REVERB, 3, damping);
+        _war_effect_set_active(slot, WAR_EFFECT_REVERB, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "reverb ON: decay=%.2f mix=%.2f predelay=%.0f damping=%.2f", decay, mix, predelay_ms, damping);
     }
-    for (uint32_t c = 0; c < n_combs; c++) { free(comb_l[c]); free(comb_r[c]); free(comb_dl[c]); free(comb_dr[c]); }
-    free(ap_l); free(ap_r); free(pd_l); free(pd_r);
-    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
-    uint8_t* audio_data = malloc(buf_size);
-    if (audio_data) {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 1; p += 4;
-        *(uint32_t*)p = idx; p += 4;
-        *(uint64_t*)p = slot->count; p += 8;
-        *(uint64_t*)p = slot->capacity; p += 8;
-        memcpy(p, slot->samples, slot->count * sizeof(float));
-    }
-    war_undo_save(env);
-    if (audio_data) {
-        uint32_t audio_idx = env->undo_pos - 1;
-        free(env->undo_audio_data[audio_idx]);
-        env->undo_audio_data[audio_idx] = audio_data;
-        env->undo_audio_size[audio_idx] = buf_size;
-    }
-    free(slot->samples);
-    slot->samples = out;
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "reverb: decay=%.2f mix=%.2f predelay=%.0fms damping=%.2f", decay, mix, predelay_ms, damping);
 }
 
 static inline void war_delay(war_env* env) {
@@ -1616,67 +1719,73 @@ static inline void war_delay(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    if (!slot->samples || slot->count < 4) return;
+    int cmdlen = (int)env->cmd_len;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double time_ms = 60.0, feedback = 0.2, mix = 0.4, fb_damping = 0.3;
-    if (env->cmd_active && env->cmd_len > 7) {
-        int n = sscanf(env->cmd_buf + 7, " %lf %lf %lf %lf", &time_ms, &feedback, &mix, &fb_damping);
-        if (n < 1) time_ms = 60.0;
-        if (n < 2) feedback = 0.2;
-        if (n < 3) mix = 0.4;
-        if (n < 4) fb_damping = 0.3;
-    }
-    if (time_ms < 1.0 || feedback < 0.0 || feedback >= 1.0 || mix < 0.0 || mix > 1.0 || fb_damping < 0.0 || fb_damping > 1.0) {
+    if (!env->cmd_active || cmdlen < 6) {
+        int a = _war_effect_active(slot, WAR_EFFECT_DELAY);
+        if (a) {
+            time_ms = _war_effect_get_param(slot, WAR_EFFECT_DELAY, 0);
+            feedback = _war_effect_get_param(slot, WAR_EFFECT_DELAY, 1);
+            mix = _war_effect_get_param(slot, WAR_EFFECT_DELAY, 2);
+            fb_damping = _war_effect_get_param(slot, WAR_EFFECT_DELAY, 3);
+        }
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "delay: usage :delay [time_ms(>=1) feedback(0-0.99) mix(0-1) fb_damping(0-1)]");
+                 a ? "delay ON: time=%.0fms feedback=%.2f mix=%.2f fb_damping=%.2f" : "delay OFF",
+                 time_ms, feedback, mix, fb_damping);
         return;
     }
-    uint64_t frames = slot->count / 2;
-    uint64_t delay_samp = (uint64_t)(time_ms * 0.001 * 48000.0);
-    if (delay_samp < 1) delay_samp = 1;
-    float* delay_line = calloc(delay_samp * 2, sizeof(float));
-    if (!delay_line) return;
-    float* out = malloc(slot->count * sizeof(float));
-    if (!out) { free(delay_line); return; }
-    float damp_l = 0.0f, damp_r = 0.0f;
-    float damp_coef = (float)(fb_damping * fb_damping * 0.95);
-    uint64_t wp = 0;
-    for (uint64_t f = 0; f < frames; f++) {
-        float in_l = slot->samples[f * 2];
-        float in_r = slot->samples[f * 2 + 1];
-        float dl = delay_line[wp * 2];
-        float dr = delay_line[wp * 2 + 1];
-        // damping: low-pass filtered feedback
-    damp_l += damp_coef * (dl - damp_l);
-    damp_r += damp_coef * (dr - damp_r);
-    delay_line[wp * 2] = in_l + (float)feedback * damp_l;
-    delay_line[wp * 2 + 1] = in_r + (float)feedback * damp_r;
-    float wet_gain = f < delay_samp ? (float)(f + 1) / (float)delay_samp : 1.0f;
-    out[f * 2] = in_l * (1.0f - (float)mix * wet_gain) + dl * (float)mix * wet_gain;
-    out[f * 2 + 1] = in_r * (1.0f - (float)mix * wet_gain) + dr * (float)mix * wet_gain;
-        wp = (wp + 1) % delay_samp;
+    const char* rest = env->cmd_buf + 6;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "on") == 0) turn_on = 1;
+    else if (strcmp(rest, "off") == 0) turn_off = 1;
+    else if (strcmp(rest, "usage") == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "usage: :delay [time feedback mix fb_damping] | on | off | status"); return;
     }
-    free(delay_line);
-    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
-    uint8_t* audio_data = malloc(buf_size);
-    if (audio_data) {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 1; p += 4;
-        *(uint32_t*)p = idx; p += 4;
-        *(uint64_t*)p = slot->count; p += 8;
-        *(uint64_t*)p = slot->capacity; p += 8;
-        memcpy(p, slot->samples, slot->count * sizeof(float));
+    else if (strcmp(rest, "status") == 0) {
+        int a = _war_effect_active(slot, WAR_EFFECT_DELAY);
+        double t = a ? _war_effect_get_param(slot,WAR_EFFECT_DELAY,0) : time_ms;
+        double f = a ? _war_effect_get_param(slot,WAR_EFFECT_DELAY,1) : feedback;
+        double m = a ? _war_effect_get_param(slot,WAR_EFFECT_DELAY,2) : mix;
+        double fd = a ? _war_effect_get_param(slot,WAR_EFFECT_DELAY,3) : fb_damping;
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 a ? "delay ON: time=%.0fms feedback=%.2f mix=%.2f fb_damping=%.2f"
+                   : "delay OFF", t, f, m, fd); return;
     }
-    war_undo_save(env);
-    if (audio_data) {
-        uint32_t audio_idx = env->undo_pos - 1;
-        free(env->undo_audio_data[audio_idx]);
-        env->undo_audio_data[audio_idx] = audio_data;
-        env->undo_audio_size[audio_idx] = buf_size;
+    else if (strcmp(rest, "default") == 0) {
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 0, 60.0);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 1, 0.2);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 2, 0.4);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 3, 0.3);
+        _war_effect_set_active(slot, WAR_EFFECT_DELAY, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "delay ON (defaults)"); return;
     }
-    free(slot->samples);
-    slot->samples = out;
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "delay: time=%.0fms feedback=%.2f mix=%.2f fb_damping=%.2f", time_ms, feedback, mix, fb_damping);
+    else if (*rest) {
+        set_params = 1;
+        sscanf(rest, "%lf %lf %lf %lf", &time_ms, &feedback, &mix, &fb_damping);
+        if (time_ms < 1.0 || feedback < 0.0 || feedback >= 1.0 || mix < 0.0 || mix > 1.0 || fb_damping < 0.0 || fb_damping > 1.0) {
+            snprintf(env->status_msg, sizeof(env->status_msg), "delay: bad args"); return;
+        }
+    }
+    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_DELAY);
+    if (turn_on && !was_active) {
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 0, 60.0);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 1, 0.2);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 2, 0.4);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 3, 0.3);
+        _war_effect_set_active(slot, WAR_EFFECT_DELAY, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "delay ON (defaults)"); return;
+    }
+    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_DELAY, 0); snprintf(env->status_msg, sizeof(env->status_msg), "delay OFF"); return; }
+    if (set_params) {
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 0, time_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 1, feedback);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 2, mix);
+        _war_effect_set_param(slot, WAR_EFFECT_DELAY, 3, fb_damping);
+        _war_effect_set_active(slot, WAR_EFFECT_DELAY, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "delay ON: time=%.0f feedback=%.2f mix=%.2f damp=%.2f", time_ms, feedback, mix, fb_damping);
+    }
 }
 
 static inline void war_gate(war_env* env) {
@@ -1688,100 +1797,78 @@ static inline void war_gate(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    if (!slot->samples || slot->count < 4) return;
+    int cmdlen = (int)env->cmd_len;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double threshold_db = -40.0, attack_ms = 2.0, hold_ms = 10.0, release_ms = 50.0, floor_db = -80.0;
-    if (env->cmd_active && env->cmd_len > 6) {
-        int n = sscanf(env->cmd_buf + 6, " %lf %lf %lf %lf %lf",
-                       &threshold_db, &attack_ms, &hold_ms, &release_ms, &floor_db);
-        if (n < 1) threshold_db = -40.0;
-        if (n < 2) attack_ms = 2.0;
-        if (n < 3) hold_ms = 10.0;
-        if (n < 4) release_ms = 50.0;
-        if (n < 5) floor_db = -80.0;
-    }
-    if (threshold_db >= 0.0 || attack_ms < 0.0 || hold_ms < 0.0 || release_ms < 0.0 || floor_db >= 0.0) {
+    if (!env->cmd_active || cmdlen < 5) {
+        int a = _war_effect_active(slot, WAR_EFFECT_GATE);
+        if (a) {
+            threshold_db = _war_effect_get_param(slot, WAR_EFFECT_GATE, 0);
+            attack_ms = _war_effect_get_param(slot, WAR_EFFECT_GATE, 1);
+            hold_ms = _war_effect_get_param(slot, WAR_EFFECT_GATE, 2);
+            release_ms = _war_effect_get_param(slot, WAR_EFFECT_GATE, 3);
+            floor_db = _war_effect_get_param(slot, WAR_EFFECT_GATE, 4);
+        }
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "gate: usage :gate [thresh(dB) attack(ms) hold(ms) release(ms) floor(dB)]");
+                 a ? "gate ON: thresh=%.0fdB attack=%.0fms hold=%.0fms release=%.0fms floor=%.0fdB" : "gate OFF",
+                 threshold_db, attack_ms, hold_ms, release_ms, floor_db);
         return;
     }
-    uint64_t frames = slot->count / 2;
-    double threshold_lin = pow(10.0, threshold_db / 20.0);
-    double floor_lin = pow(10.0, floor_db / 20.0);
-    double attack_coef = attack_ms > 0.0 ? exp(-1.0 / (attack_ms * 0.001 * 48000.0)) : 0.0;
-    double release_coef = release_ms > 0.0 ? exp(-1.0 / (release_ms * 0.001 * 48000.0)) : 0.0;
-    uint64_t hold_frames = (uint64_t)(hold_ms * 0.001 * 48000.0);
-    float* out = malloc(slot->count * sizeof(float));
-    if (!out) return;
-    double env_l = 0.0, env_r = 0.0;
-    double gate_gain = 1.0;
-    uint64_t hold_counter = 0;
-    double knee = 3.0;
-    for (uint64_t f = 0; f < frames; f++) {
-        double in_l = (double)slot->samples[f * 2];
-        double in_r = (double)slot->samples[f * 2 + 1];
-        // peak envelope
-        double abs_l = fabs(in_l);
-        double abs_r = fabs(in_r);
-        env_l = attack_coef * env_l + (1.0 - attack_coef) * abs_l;
-        env_r = attack_coef * env_r + (1.0 - attack_coef) * abs_r;
-        double env = env_l > env_r ? env_l : env_r;
-        // downward expander with soft knee
-        double target = 1.0;
-        double env_db = 20.0 * log10(env > 0.0 ? env : 1e-10);
-        double x = env_db - threshold_db;
-        double gain_db = 0.0;
-        double ratio = 10.0;
-        double slope = 1.0 - 1.0 / ratio;
-        if (x > knee * 0.5) {
-            // above threshold: no reduction
-        } else if (x > -knee * 0.5) {
-            double xk = x + knee * 0.5;
-            gain_db = -slope * xk * xk / (2.0 * knee);
-        } else {
-            gain_db = -x * slope;
+    const char* rest = env->cmd_buf + 5;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "on") == 0) turn_on = 1;
+    else if (strcmp(rest, "off") == 0) turn_off = 1;
+    else if (strcmp(rest, "usage") == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "usage: :gate [thresh attack hold release floor] | on | off | status"); return;
+    }
+    else if (strcmp(rest, "status") == 0) {
+        int a = _war_effect_active(slot, WAR_EFFECT_GATE);
+        double t = a ? _war_effect_get_param(slot,WAR_EFFECT_GATE,0) : threshold_db;
+        double at = a ? _war_effect_get_param(slot,WAR_EFFECT_GATE,1) : attack_ms;
+        double h = a ? _war_effect_get_param(slot,WAR_EFFECT_GATE,2) : hold_ms;
+        double r = a ? _war_effect_get_param(slot,WAR_EFFECT_GATE,3) : release_ms;
+        double f = a ? _war_effect_get_param(slot,WAR_EFFECT_GATE,4) : floor_db;
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 a ? "gate ON: thresh=%.0fdB attack=%.0fms hold=%.0fms release=%.0fms floor=%.0fdB"
+                   : "gate OFF", t, at, h, r, f); return;
+    }
+    else if (strcmp(rest, "default") == 0) {
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 0, -40.0);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 1, 2.0);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 2, 10.0);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 3, 50.0);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 4, -80.0);
+        _war_effect_set_active(slot, WAR_EFFECT_GATE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "gate ON (defaults)"); return;
+    }
+    else if (*rest) {
+        set_params = 1;
+        sscanf(rest, "%lf %lf %lf %lf %lf", &threshold_db, &attack_ms, &hold_ms, &release_ms, &floor_db);
+        if (threshold_db >= 0.0 || attack_ms < 0.0 || hold_ms < 0.0 || release_ms < 0.0 || floor_db >= 0.0) {
+            snprintf(env->status_msg, sizeof(env->status_msg), "gate: bad args"); return;
         }
-        target = pow(10.0, gain_db / 20.0);
-        double floor_gain = floor_lin / (env > 0.0 ? env : 1.0);
-        if (target < floor_gain) target = floor_gain;
-        // hold: keep gate open briefly after signal dips
-        if (env >= threshold_lin) {
-            hold_counter = hold_frames;
-        } else if (hold_counter > 0) {
-            hold_counter--;
-            target = 1.0; // keep open during hold
-        }
-        // smooth gain (attack=close, release=open)
-        if (target < gate_gain)
-            gate_gain = attack_coef * gate_gain + (1.0 - attack_coef) * target;
-        else
-            gate_gain = release_coef * gate_gain + (1.0 - release_coef) * target;
-        if (gate_gain < 0.0) gate_gain = 0.0;
-        if (gate_gain > 1.0) gate_gain = 1.0;
-        out[f * 2] = (float)(in_l * gate_gain);
-        out[f * 2 + 1] = (float)(in_r * gate_gain);
     }
-    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
-    uint8_t* audio_data = malloc(buf_size);
-    if (audio_data) {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 1; p += 4;
-        *(uint32_t*)p = idx; p += 4;
-        *(uint64_t*)p = slot->count; p += 8;
-        *(uint64_t*)p = slot->capacity; p += 8;
-        memcpy(p, slot->samples, slot->count * sizeof(float));
+    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_GATE);
+    if (turn_on && !was_active) {
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 0, -40.0);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 1, 2.0);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 2, 10.0);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 3, 50.0);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 4, -80.0);
+        _war_effect_set_active(slot, WAR_EFFECT_GATE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "gate ON (defaults)"); return;
     }
-    war_undo_save(env);
-    if (audio_data) {
-        uint32_t audio_idx = env->undo_pos - 1;
-        free(env->undo_audio_data[audio_idx]);
-        env->undo_audio_data[audio_idx] = audio_data;
-        env->undo_audio_size[audio_idx] = buf_size;
+    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_GATE, 0); snprintf(env->status_msg, sizeof(env->status_msg), "gate OFF"); return; }
+    if (set_params) {
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 0, threshold_db);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 1, attack_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 2, hold_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 3, release_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_GATE, 4, floor_db);
+        _war_effect_set_active(slot, WAR_EFFECT_GATE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "gate ON: thresh=%.0f attack=%.0f hold=%.0f release=%.0f floor=%.0f", threshold_db, attack_ms, hold_ms, release_ms, floor_db);
     }
-    free(slot->samples);
-    slot->samples = out;
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "gate: thresh=%.0fdB attack=%.0fms hold=%.0fms release=%.0fms floor=%.0fdB",
-             threshold_db, attack_ms, hold_ms, release_ms, floor_db);
 }
 
 static inline void war_deesser(war_env* env) {
@@ -1793,89 +1880,73 @@ static inline void war_deesser(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    if (!slot->samples || slot->count < 4) return;
+    int cmdlen = (int)env->cmd_len;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double threshold_db = -30.0, freq_hz = 6000.0, attack_ms = 1.0, release_ms = 30.0;
-    if (env->cmd_active && env->cmd_len > 9) {
-        int n = sscanf(env->cmd_buf + 9, " %lf %lf %lf %lf",
-                       &threshold_db, &freq_hz, &attack_ms, &release_ms);
-        if (n < 1) threshold_db = -30.0;
-        if (n < 2) freq_hz = 6000.0;
-        if (n < 3) attack_ms = 1.0;
-        if (n < 4) release_ms = 30.0;
-    }
-    if (threshold_db >= 0.0 || freq_hz < 100.0 || freq_hz > 20000.0 || attack_ms < 0.0 || release_ms < 0.0) {
+    if (!env->cmd_active || cmdlen < 8) {
+        int a = _war_effect_active(slot, WAR_EFFECT_DEESSER);
+        if (a) {
+            threshold_db = _war_effect_get_param(slot, WAR_EFFECT_DEESSER, 0);
+            freq_hz = _war_effect_get_param(slot, WAR_EFFECT_DEESSER, 1);
+            attack_ms = _war_effect_get_param(slot, WAR_EFFECT_DEESSER, 2);
+            release_ms = _war_effect_get_param(slot, WAR_EFFECT_DEESSER, 3);
+        }
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "deesser: usage :deesser [thresh(dB) freq(100-20000Hz) attack(ms) release(ms)]");
+                 a ? "deesser ON: thresh=%.0fdB freq=%.0fHz attack=%.0fms release=%.0fms" : "deesser OFF",
+                 threshold_db, freq_hz, attack_ms, release_ms);
         return;
     }
-    uint64_t frames = slot->count / 2;
-    double attack_coef = attack_ms > 0.0 ? exp(-1.0 / (attack_ms * 0.001 * 48000.0)) : 0.0;
-    double release_coef = release_ms > 0.0 ? exp(-1.0 / (release_ms * 0.001 * 48000.0)) : 0.0;
-    float* out = malloc(slot->count * sizeof(float));
-    if (!out) return;
-    // TPT SVF for sidechain band-pass at sibilance frequency
-    float g = tanf((float)M_PI * (float)freq_hz / 48000.0f);
-    float R = 4.0f; // high Q for narrow band
-    float s1_l = 0.0f, s1_r = 0.0f; // lp state
-    float s2_l = 0.0f, s2_r = 0.0f; // bp state
-    double rms = 0.0;
-    double gr_state = 1.0;
-    for (uint64_t f = 0; f < frames; f++) {
-        float in_l = slot->samples[f * 2];
-        float in_r = slot->samples[f * 2 + 1];
-        // TPT SVF → bandpass output
-        float v0_l = (in_l - s2_l * R - s1_l) / (1.0f + g * (g + R));
-        float v0_r = (in_r - s2_r * R - s1_r) / (1.0f + g * (g + R));
-        float ns1_l = s1_l + g * v0_l;
-        float ns1_r = s1_r + g * v0_r;
-        float ns2_l = s2_l + g * ns1_l; // bandpass = s2
-        float ns2_r = s2_r + g * ns1_r;
-        s1_l = ns1_l; s1_r = ns1_r;
-        s2_l = ns2_l; s2_r = ns2_r;
-        // RMS envelope of bandpass signal (stereo link)
-        float bp = fabs(ns2_l) > fabs(ns2_r) ? fabs(ns2_l) : fabs(ns2_r);
-        rms = attack_coef * rms + (1.0 - attack_coef) * (double)(bp * bp);
-        double env = sqrt(rms);
-        // gain reduction
-        double target_gr = 1.0;
-        if (env > 1e-10) {
-            double env_db = 20.0 * log10(env);
-            double excess = env_db - threshold_db;
-            if (excess > 0.0) {
-                double ratio = 10.0;
-                double gain_db = -excess * (1.0 - 1.0 / ratio);
-                target_gr = pow(10.0, gain_db / 20.0);
-            }
+    const char* rest = env->cmd_buf + 8;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "on") == 0) turn_on = 1;
+    else if (strcmp(rest, "off") == 0) turn_off = 1;
+    else if (strcmp(rest, "usage") == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "usage: :deesser [thresh freq attack release] | on | off | status"); return;
+    }
+    else if (strcmp(rest, "status") == 0) {
+        int a = _war_effect_active(slot, WAR_EFFECT_DEESSER);
+        double t = a ? _war_effect_get_param(slot,WAR_EFFECT_DEESSER,0) : threshold_db;
+        double f = a ? _war_effect_get_param(slot,WAR_EFFECT_DEESSER,1) : freq_hz;
+        double at = a ? _war_effect_get_param(slot,WAR_EFFECT_DEESSER,2) : attack_ms;
+        double r = a ? _war_effect_get_param(slot,WAR_EFFECT_DEESSER,3) : release_ms;
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 a ? "deesser ON: thresh=%.0fdB freq=%.0fHz attack=%.0fms release=%.0fms"
+                   : "deesser OFF", t, f, at, r); return;
+    }
+    else if (strcmp(rest, "default") == 0) {
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 0, -30.0);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 1, 6000.0);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 2, 1.0);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 3, 30.0);
+        _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "deesser ON (defaults)"); return;
+    }
+    else if (*rest) {
+        set_params = 1;
+        sscanf(rest, "%lf %lf %lf %lf", &threshold_db, &freq_hz, &attack_ms, &release_ms);
+        if (threshold_db >= 0.0 || freq_hz < 100.0 || freq_hz > 20000.0 || attack_ms < 0.0 || release_ms < 0.0) {
+            snprintf(env->status_msg, sizeof(env->status_msg), "deesser: bad args"); return;
         }
-        if (target_gr < gr_state)
-            gr_state = attack_coef * gr_state + (1.0 - attack_coef) * target_gr;
-        else
-            gr_state = release_coef * gr_state + (1.0 - release_coef) * target_gr;
-        out[f * 2] = (float)((double)in_l * gr_state);
-        out[f * 2 + 1] = (float)((double)in_r * gr_state);
     }
-    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
-    uint8_t* audio_data = malloc(buf_size);
-    if (audio_data) {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 1; p += 4;
-        *(uint32_t*)p = idx; p += 4;
-        *(uint64_t*)p = slot->count; p += 8;
-        *(uint64_t*)p = slot->capacity; p += 8;
-        memcpy(p, slot->samples, slot->count * sizeof(float));
+    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_DEESSER);
+    if (turn_on && !was_active) {
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 0, -30.0);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 1, 6000.0);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 2, 1.0);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 3, 30.0);
+        _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "deesser ON (defaults)"); return;
     }
-    war_undo_save(env);
-    if (audio_data) {
-        uint32_t audio_idx = env->undo_pos - 1;
-        free(env->undo_audio_data[audio_idx]);
-        env->undo_audio_data[audio_idx] = audio_data;
-        env->undo_audio_size[audio_idx] = buf_size;
+    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 0); snprintf(env->status_msg, sizeof(env->status_msg), "deesser OFF"); return; }
+    if (set_params) {
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 0, threshold_db);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 1, freq_hz);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 2, attack_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 3, release_ms);
+        _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "deesser ON: thresh=%.0f freq=%.0f attack=%.0f release=%.0f", threshold_db, freq_hz, attack_ms, release_ms);
     }
-    free(slot->samples);
-    slot->samples = out;
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "deesser: thresh=%.0fdB freq=%.0fHz attack=%.0fms release=%.0fms",
-             threshold_db, freq_hz, attack_ms, release_ms);
 }
 
 static inline void war_chorus(war_env* env) {
@@ -1887,83 +1958,73 @@ static inline void war_chorus(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    if (!slot->samples || slot->count < 4) return;
+    int cmdlen = (int)env->cmd_len;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double rate_hz = 0.3, depth_ms = 8.0, mix = 0.3, base_ms = 25.0;
-    if (env->cmd_active && env->cmd_len > 8) {
-        int n = sscanf(env->cmd_buf + 8, " %lf %lf %lf %lf",
-                       &rate_hz, &depth_ms, &mix, &base_ms);
-        if (n < 1) rate_hz = 0.3;
-        if (n < 2) depth_ms = 8.0;
-        if (n < 3) mix = 0.3;
-        if (n < 4) base_ms = 25.0;
-    }
-    if (rate_hz <= 0.0 || depth_ms <= 0.0 || mix < 0.0 || mix > 1.0 || base_ms < 1.0) {
+    if (!env->cmd_active || cmdlen < 7) {
+        int a = _war_effect_active(slot, WAR_EFFECT_CHORUS);
+        if (a) {
+            rate_hz = _war_effect_get_param(slot, WAR_EFFECT_CHORUS, 0);
+            depth_ms = _war_effect_get_param(slot, WAR_EFFECT_CHORUS, 1);
+            mix = _war_effect_get_param(slot, WAR_EFFECT_CHORUS, 2);
+            base_ms = _war_effect_get_param(slot, WAR_EFFECT_CHORUS, 3);
+        }
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "chorus: usage :chorus [rate(Hz) depth(ms) mix(0-1) base(ms)]");
+                 a ? "chorus ON: rate=%.1fHz depth=%.1fms mix=%.2f base=%.0fms" : "chorus OFF",
+                 rate_hz, depth_ms, mix, base_ms);
         return;
     }
-    uint64_t frames = slot->count / 2;
-    uint64_t base_samp = (uint64_t)(base_ms * 0.001 * 48000.0);
-    uint64_t depth_samp = (uint64_t)(depth_ms * 0.001 * 48000.0);
-    if (depth_samp < 1) depth_samp = 1;
-    uint64_t delay_len = base_samp + depth_samp + 1;
-    float* delay_l = calloc(delay_len, sizeof(float));
-    float* delay_r = calloc(delay_len, sizeof(float));
-    float* out = malloc(slot->count * sizeof(float));
-    if (!delay_l || !delay_r || !out) { free(delay_l); free(delay_r); free(out); return; }
-    uint64_t wp = 0;
-    double phase = 0.0;
-    double phase_inc = rate_hz / 48000.0;
-    uint64_t fade_len = base_samp < 480 ? base_samp : 480; // 10ms max fade
-    for (uint64_t f = 0; f < frames; f++) {
-        float in_l = slot->samples[f * 2];
-        float in_r = slot->samples[f * 2 + 1];
-        delay_l[wp] = in_l;
-        delay_r[wp] = in_r;
-        float lfo_l = sinf((float)(2.0 * M_PI * phase));
-        float lfo_r = sinf((float)(2.0 * M_PI * phase + M_PI_2));
-        float mod_l = (float)base_samp + (float)depth_samp * (0.5f + 0.5f * lfo_l);
-        float mod_r = (float)base_samp + (float)depth_samp * (0.5f + 0.5f * lfo_r);
-        float rp_l = fmodf((float)wp + (float)delay_len - mod_l, (float)delay_len);
-        float rp_r = fmodf((float)wp + (float)delay_len - mod_r, (float)delay_len);
-        uint64_t ri_l = (uint64_t)rp_l;
-        uint64_t ri_r = (uint64_t)rp_r;
-        float frac_l = rp_l - (float)ri_l;
-        float frac_r = rp_r - (float)ri_r;
-        uint64_t ri_l2 = (ri_l + 1) % delay_len;
-        uint64_t ri_r2 = (ri_r + 1) % delay_len;
-        float dl = delay_l[ri_l] + frac_l * (delay_l[ri_l2] - delay_l[ri_l]);
-        float dr = delay_r[ri_r] + frac_r * (delay_r[ri_r2] - delay_r[ri_r]);
-        float wet_gain = f < fade_len ? (float)(f + 1) / (float)fade_len : 1.0f;
-        out[f * 2] = in_l * (1.0f - (float)mix * wet_gain) + dl * (float)mix * wet_gain;
-        out[f * 2 + 1] = in_r * (1.0f - (float)mix * wet_gain) + dr * (float)mix * wet_gain;
-        wp = (wp + 1) % delay_len;
-        phase += phase_inc;
-        if (phase >= 1.0) phase -= 1.0;
+    const char* rest = env->cmd_buf + 7;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "on") == 0) turn_on = 1;
+    else if (strcmp(rest, "off") == 0) turn_off = 1;
+    else if (strcmp(rest, "usage") == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "usage: :chorus [rate depth mix base] | on | off | status"); return;
     }
-    free(delay_l); free(delay_r);
-    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
-    uint8_t* audio_data = malloc(buf_size);
-    if (audio_data) {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 1; p += 4;
-        *(uint32_t*)p = idx; p += 4;
-        *(uint64_t*)p = slot->count; p += 8;
-        *(uint64_t*)p = slot->capacity; p += 8;
-        memcpy(p, slot->samples, slot->count * sizeof(float));
+    else if (strcmp(rest, "status") == 0) {
+        int a = _war_effect_active(slot, WAR_EFFECT_CHORUS);
+        double r = a ? _war_effect_get_param(slot,WAR_EFFECT_CHORUS,0) : rate_hz;
+        double d = a ? _war_effect_get_param(slot,WAR_EFFECT_CHORUS,1) : depth_ms;
+        double m = a ? _war_effect_get_param(slot,WAR_EFFECT_CHORUS,2) : mix;
+        double b = a ? _war_effect_get_param(slot,WAR_EFFECT_CHORUS,3) : base_ms;
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 a ? "chorus ON: rate=%.1fHz depth=%.1fms mix=%.2f base=%.0fms"
+                   : "chorus OFF", r, d, m, b); return;
     }
-    war_undo_save(env);
-    if (audio_data) {
-        uint32_t audio_idx = env->undo_pos - 1;
-        free(env->undo_audio_data[audio_idx]);
-        env->undo_audio_data[audio_idx] = audio_data;
-        env->undo_audio_size[audio_idx] = buf_size;
+    else if (strcmp(rest, "default") == 0) {
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 0, 0.3);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 1, 8.0);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 2, 0.3);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 3, 25.0);
+        _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "chorus ON (defaults)"); return;
     }
-    free(slot->samples);
-    slot->samples = out;
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "chorus: rate=%.1fHz depth=%.1fms mix=%.2f base=%.0fms",
-             rate_hz, depth_ms, mix, base_ms);
+    else if (*rest) {
+        set_params = 1;
+        sscanf(rest, "%lf %lf %lf %lf", &rate_hz, &depth_ms, &mix, &base_ms);
+        if (rate_hz <= 0.0 || depth_ms <= 0.0 || mix < 0.0 || mix > 1.0 || base_ms < 1.0) {
+            snprintf(env->status_msg, sizeof(env->status_msg), "chorus: bad args"); return;
+        }
+    }
+    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_CHORUS);
+    if (turn_on && !was_active) {
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 0, 0.3);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 1, 8.0);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 2, 0.3);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 3, 25.0);
+        _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "chorus ON (defaults)"); return;
+    }
+    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 0); snprintf(env->status_msg, sizeof(env->status_msg), "chorus OFF"); return; }
+    if (set_params) {
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 0, rate_hz);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 1, depth_ms);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 2, mix);
+        _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 3, base_ms);
+        _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "chorus ON: rate=%.1f depth=%.1f mix=%.2f base=%.0f", rate_hz, depth_ms, mix, base_ms);
+    }
 }
 
 static inline void war_autotune(war_env* env) {
@@ -1975,114 +2036,58 @@ static inline void war_autotune(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    if (!slot->samples || slot->count < 4) return;
+    int cmdlen = (int)env->cmd_len;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double retune_ms = 3.0;
-    if (env->cmd_active && env->cmd_len > 10) {
-        sscanf(env->cmd_buf + 10, " %lf", &retune_ms);
-    }
-    if (retune_ms < 0.0) {
+    if (!env->cmd_active || cmdlen < 9) {
+        int a = _war_effect_active(slot, WAR_EFFECT_AUTOTUNE);
+        if (a) {
+            retune_ms = _war_effect_get_param(slot, WAR_EFFECT_AUTOTUNE, 0);
+        }
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "autotune: usage :autotune [retune(ms)]");
+                 a ? "autotune ON: retune=%.0fms" : "autotune OFF",
+                 retune_ms);
         return;
     }
-    uint64_t total_frames = slot->count / 2;
-    // analyze in overlapping frames, detect pitch, shift to nearest semitone
-    uint64_t win_size = 2048;
-    uint64_t hop = win_size / 4; // 75% overlap
-    uint64_t n_frames = total_frames / hop;
-    if (n_frames < 2) return;
-    float* out = calloc(total_frames * 2, sizeof(float));
-    if (!out) return;
-    // fill output with original signal
-    memcpy(out, slot->samples, total_frames * 2 * sizeof(float));
-    double smooth_ratio = 1.0;
-    double smooth_coef = retune_ms > 0.0 ? exp(-1.0 / (retune_ms * 0.001 * 48000.0 * 0.25)) : 0.0;
-    float* window = malloc(win_size * sizeof(float));
-    if (!window) { free(out); return; }
-    for (uint64_t i = 0; i < win_size; i++)
-        window[i] = 0.5f * (1.0f - cosf(2.0f * (float)M_PI * (float)i / (float)(win_size - 1)));
-    float* frame_buf = malloc(win_size * sizeof(float));
-    if (!frame_buf) { free(window); free(out); return; }
-    for (uint64_t fr = 0; fr < n_frames; fr++) {
-        uint64_t start = fr * hop;
-        if (start + win_size > total_frames) break;
-        // copy frame from original source for clean pitch detection
-        for (uint64_t i = 0; i < win_size; i++)
-            frame_buf[i] = (slot->samples[(start + i) * 2] + slot->samples[(start + i) * 2 + 1]) * 0.5f;
-        // ACF-based pitch detection
-        uint64_t min_lag = 48000 / 2000;
-        uint64_t max_lag = 48000 / 50;
-        if (max_lag > win_size / 2) max_lag = win_size / 2;
-        if (min_lag < 1) min_lag = 1;
-        double best_norm = 0.0;
-        uint64_t best_lag = 0;
-        double energy = 0.0;
-        for (uint64_t i = 0; i < win_size; i++) energy += (double)(frame_buf[i] * frame_buf[i]);
-        if (energy < 1e-10) continue;
-        for (uint64_t lag = min_lag; lag <= max_lag; lag++) {
-            double acf = 0.0;
-            for (uint64_t i = 0; i < win_size - lag; i++)
-                acf += (double)(frame_buf[i] * frame_buf[i + lag]);
-            double norm = acf / energy;
-            if (norm > best_norm) { best_norm = norm; best_lag = lag; }
-        }
-        if (best_lag == 0 || best_norm < 0.1) continue;
-        double detected_hz = 48000.0 / (double)best_lag;
-        double semitone = 12.0 * log2(detected_hz / 440.0);
-        double nearest = round(semitone);
-        double target_hz = 440.0 * pow(2.0, nearest / 12.0);
-        double ratio = target_hz / detected_hz;
-        if (ratio < 0.5 || ratio > 2.0) continue;
-        if (smooth_coef > 0.0)
-            smooth_ratio = smooth_coef * smooth_ratio + (1.0 - smooth_coef) * ratio;
-        else
-            smooth_ratio = ratio;
-        uint64_t dst_frames = (uint64_t)((double)win_size / smooth_ratio);
-        if (dst_frames < 1) dst_frames = 1;
-        if (dst_frames > win_size * 2) dst_frames = win_size * 2;
-        float* resampled = malloc(dst_frames * sizeof(float));
-        if (!resampled) continue;
-        for (uint64_t i = 0; i < dst_frames; i++) {
-            double sp = (double)i * smooth_ratio;
-            uint64_t si = (uint64_t)sp;
-            double fr = sp - (double)si;
-            if (si >= win_size - 1)
-                resampled[i] = frame_buf[win_size - 1];
-            else
-                resampled[i] = (float)((double)frame_buf[si] * (1.0 - fr) + (double)frame_buf[si + 1] * fr);
-        }
-        // overlap-add into output (clear original first, then add)
-        for (uint64_t i = 0; i < win_size && i < dst_frames; i++) {
-            double w = (double)window[i];
-            double val = (double)resampled[i] * w;
-            out[(start + i) * 2] += (float)(val * 0.25);
-            out[(start + i) * 2 + 1] += (float)(val * 0.25);
-        }
-        free(resampled);
+    const char* rest = env->cmd_buf + 9;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "on") == 0) turn_on = 1;
+    else if (strcmp(rest, "off") == 0) turn_off = 1;
+    else if (strcmp(rest, "usage") == 0) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "usage: :autotune [retune] | on | off | status"); return;
     }
-    free(frame_buf);
-    free(window);
-    uint64_t buf_size = 4 + 4 + 8 + 8 + slot->count * sizeof(float);
-    uint8_t* audio_data = malloc(buf_size);
-    if (audio_data) {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 1; p += 4;
-        *(uint32_t*)p = idx; p += 4;
-        *(uint64_t*)p = slot->count; p += 8;
-        *(uint64_t*)p = slot->capacity; p += 8;
-        memcpy(p, slot->samples, slot->count * sizeof(float));
+    else if (strcmp(rest, "status") == 0) {
+        int a = _war_effect_active(slot, WAR_EFFECT_AUTOTUNE);
+        double r = a ? _war_effect_get_param(slot,WAR_EFFECT_AUTOTUNE,0) : retune_ms;
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 a ? "autotune ON: retune=%.0fms"
+                   : "autotune OFF", r); return;
     }
-    war_undo_save(env);
-    if (audio_data) {
-        uint32_t audio_idx = env->undo_pos - 1;
-        free(env->undo_audio_data[audio_idx]);
-        env->undo_audio_data[audio_idx] = audio_data;
-        env->undo_audio_size[audio_idx] = buf_size;
+    else if (strcmp(rest, "default") == 0) {
+        _war_effect_set_param(slot, WAR_EFFECT_AUTOTUNE, 0, 3.0);
+        _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "autotune ON (defaults)"); return;
     }
-    free(slot->samples);
-    slot->samples = out;
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "autotune: retune=%.0fms", retune_ms);
+    else if (*rest) {
+        set_params = 1;
+        sscanf(rest, "%lf", &retune_ms);
+        if (retune_ms < 0.0) {
+            snprintf(env->status_msg, sizeof(env->status_msg), "autotune: bad args"); return;
+        }
+    }
+    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_AUTOTUNE);
+    if (turn_on && !was_active) {
+        _war_effect_set_param(slot, WAR_EFFECT_AUTOTUNE, 0, 3.0);
+        _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "autotune ON (defaults)"); return;
+    }
+    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 0); snprintf(env->status_msg, sizeof(env->status_msg), "autotune OFF"); return; }
+    if (set_params) {
+        _war_effect_set_param(slot, WAR_EFFECT_AUTOTUNE, 0, retune_ms);
+        _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 1);
+        snprintf(env->status_msg, sizeof(env->status_msg), "autotune ON: retune=%.0fms", retune_ms);
+    }
 }
 
 static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint32_t layer, int32_t radius) {
@@ -2883,6 +2888,9 @@ static inline void war_split_note(war_env* env) {
         }
     }
     if (dest_pitch == UINT32_MAX) return;
+    if (mi >= 128 * WAR_CAPTURE_SLOT_LAYERS) return;
+    // verify dest slot is actually empty before using it
+    if (env->capture_slots[mi].samples && env->capture_slots[mi].count >= 2) return;
     // save pre-split audio state for both slots
     uint64_t src_size = src_slot->count * sizeof(float);
     uint64_t dst_cnt = env->capture_slots[mi].count;
@@ -2925,7 +2933,8 @@ static inline void war_split_note(war_env* env) {
         // copy only RIGHT portion audio to new slot (from split_samples onward)
         float* copy = malloc(right_samples * sizeof(float));
         if (copy) {
-            memcpy(copy, src_slot->samples + split_samples, right_samples * sizeof(float));
+            if (split_samples + right_samples <= src_slot->count)
+                memcpy(copy, src_slot->samples + split_samples, right_samples * sizeof(float));
             free(env->capture_slots[mi].samples);
             env->capture_slots[mi] = *src_slot;
             env->capture_slots[mi].samples = copy;
@@ -2963,7 +2972,8 @@ static inline void war_split_note(war_env* env) {
         // copy only LEFT portion audio to new slot (first split_samples)
         float* copy = malloc(split_samples * sizeof(float));
         if (copy) {
-            memcpy(copy, src_slot->samples, split_samples * sizeof(float));
+            if (split_samples <= src_slot->count)
+                memcpy(copy, src_slot->samples, split_samples * sizeof(float));
             free(env->capture_slots[mi].samples);
             env->capture_slots[mi] = *src_slot;
             env->capture_slots[mi].samples = copy;

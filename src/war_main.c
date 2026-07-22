@@ -387,24 +387,56 @@ static void war_export_wav(war_env* env, const char* filename) {
         // add PASS filter state
         float _exp_lp0 = 0.0f, _exp_lp1 = 0.0f;
         int _eq_val = env->capture_slots[idx].eq;
+        // ADSR envelope (with minimum 1ms fade to prevent pops at note boundaries)
+        uint64_t _min_fade = 48; // 1ms at 48kHz
+        uint64_t _atk_f = env->capture_slots[idx].attack > 0 ? (uint64_t)(env->capture_slots[idx].attack / 1000.0f * 48000.0f) : _min_fade;
+        float _sus_lvl = (env->capture_slots[idx].sustain + 1000.0f) / 1000.0f;
+        uint64_t _rel_f = env->capture_slots[idx].release > 0 ? (uint64_t)(env->capture_slots[idx].release / 1000.0f * 48000.0f) : _min_fade;
+        if (_sus_lvl < 0.0f) _sus_lvl = 0.0f;
+        if (_sus_lvl > 2.0f) _sus_lvl = 2.0f;
+        if (_atk_f > _src_frames / 2) _atk_f = _src_frames / 2;
+        if (_rel_f > _src_frames / 2) _rel_f = _src_frames / 2;
+        // per-note effect state
+        float _exp_eff[32] = {0};
+        // updated one-pole filter (matches playback)
+        float _exp_alpha = 0.0f;
         for (uint64_t f = 0; f < _src_frames && _start_frame + f < total_frames; f++) {
             float _sl = _s[f * 2 + 0];
             float _sr = _s[f * 2 + 1];
             if (f == 0) { _exp_lp0 = _sl; _exp_lp1 = _sr; }
-            float _a_lp = 0.1f;
-            _exp_lp0 = _exp_lp0 + _a_lp * (_sl - _exp_lp0);
-            _exp_lp1 = _exp_lp1 + _a_lp * (_sr - _exp_lp1);
+            // PASS filter (one-pole, same as playback)
+            float _ae = (float)fabsf((float)_eq_val);
+            float _fc;
+            if (_eq_val <= 0)
+                _fc = 20000.0f * expf(logf(20.0f / 20000.0f) * _ae / 1000.0f);
+            else
+                _fc = 20.0f * expf(logf(20000.0f / 20.0f) * _ae / 1000.0f);
+            float _alpha_target = 1.0f - expf(-2.0f * (float)M_PI * _fc / 48000.0f);
+            if (_alpha_target > 1.0f) _alpha_target = 1.0f;
+            _exp_alpha += 0.2f * (_alpha_target - _exp_alpha);
+            float _lpt = _exp_lp0 + _exp_alpha * (_sl - _exp_lp0);
+            float _lpt2 = _exp_lp1 + _exp_alpha * (_sr - _exp_lp1);
+            float _hp0 = _sl - _lpt, _hp1 = _sr - _lpt2;
+            _exp_lp0 = _lpt; _exp_lp1 = _lpt2;
             if (_eq_val <= 0) {
                 float _t = (float)(-_eq_val) / 1000.0f;
-                _sl = _sl + _t * (_exp_lp0 - _sl);
-                _sr = _sr + _t * (_exp_lp1 - _sr);
+                _sl = _sl * (1.0f - _t) + _lpt * _t;
+                _sr = _sr * (1.0f - _t) + _lpt2 * _t;
             } else {
                 float _t = (float)_eq_val / 1000.0f;
-                _sl = _sl - _t * _exp_lp0;
-                _sr = _sr - _t * _exp_lp1;
+                _sl = _sl * (1.0f - _t) + _hp0 * _t;
+                _sr = _sr * (1.0f - _t) + _hp1 * _t;
             }
-            mix[(_start_frame + f) * 2 + 0] += _sl * _sg * _ple;
-            mix[(_start_frame + f) * 2 + 1] += _sr * _sg * _pre;
+            // apply real-time effects
+            _war_process_effects(&env->capture_slots[idx], _exp_eff, &_sl, &_sr);
+            // apply ADSR envelope
+            float _env = _sus_lvl;
+            uint64_t _rel_start = _src_frames > _rel_f ? _src_frames - _rel_f : 0;
+            if (f < _atk_f && _atk_f > 0) _env = (float)(f + 1) / (float)_atk_f * _sus_lvl;
+            if (f >= _rel_start && _rel_f > 0) _env = _sus_lvl * (float)(_src_frames - f) / (float)_rel_f;
+            if (_env < 0.0f) _env = 0.0f;
+            mix[(_start_frame + f) * 2 + 0] += _sl * _sg * _ple * _env;
+            mix[(_start_frame + f) * 2 + 1] += _sr * _sg * _pre * _env;
         }
     }
 
@@ -490,7 +522,7 @@ static void war_save_project(war_env* env, const char* filename) {
         return;
     }
     fwrite("WARP", 1, 4, f);
-    uint32_t version = 3;
+    uint32_t version = 4;
     fwrite(&version, 4, 1, f);
     float bpm = env->atomics->bpm;
     if (bpm <= 0.0f) bpm = 100.0f;
@@ -522,6 +554,8 @@ static void war_save_project(war_env* env, const char* filename) {
             fwrite(&env->capture_slots[i].eq, sizeof(int), 1, f);
             fwrite(&env->capture_slots[i].gain, sizeof(float), 1, f);
             fwrite(&env->capture_slots[i].pan, sizeof(int), 1, f);
+            fwrite(&env->capture_slots[i].effect_flags, sizeof(uint64_t), 1, f);
+            fwrite(env->capture_slots[i].effect_params, sizeof(double), WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS, f);
             fwrite(env->capture_slots[i].samples, sizeof(float),
                    env->capture_slots[i].count, f);
         }
@@ -587,6 +621,7 @@ static void war_load_project(war_env* env, const char* filename) {
             env->capture_slots[i].count = 0;
             env->capture_slots[i].capacity = 0;
         }
+        env->capture_slots[i].effect_flags = 0;
     }
     uint32_t note_count;
     fread(&note_count, 4, 1, f);
@@ -628,6 +663,10 @@ static void war_load_project(war_env* env, const char* filename) {
             fread(&_pan, sizeof(int), 1, f);
         }
         if (idx < 128 * WAR_CAPTURE_SLOT_LAYERS && cnt > 0) {
+            uint64_t _ef = 0;
+            if (version >= 4) {
+                fread(&_ef, sizeof(uint64_t), 1, f);
+            }
             float* samples = malloc(cnt * sizeof(float));
             if (samples) {
                 fread(samples, sizeof(float), cnt, f);
@@ -640,11 +679,18 @@ static void war_load_project(war_env* env, const char* filename) {
                 env->capture_slots[idx].eq = (_eq == 500 || _eq == 100) ? 0 : _eq;
                 env->capture_slots[idx].gain = (_gain == 100.0f) ? 0.0f : _gain;
                 env->capture_slots[idx].pan = _pan;
+                env->capture_slots[idx].effect_flags = _ef;
+                if (version >= 4)
+                    fread(env->capture_slots[idx].effect_params, sizeof(double), WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS, f);
             } else {
                 fseek(f, cnt * sizeof(float), SEEK_CUR);
+                if (version >= 4)
+                    fseek(f, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS, SEEK_CUR);
             }
         } else {
             fseek(f, cnt * sizeof(float), SEEK_CUR);
+            if (version >= 4)
+                fseek(f, sizeof(uint64_t) + sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS, SEEK_CUR);
         }
     }
     fclose(f);
@@ -1360,16 +1406,20 @@ static void war_keyboard_key(void* data,
                 war_saturate(env);
             } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'r' && env->cmd_buf[2] == 'e' && env->cmd_buf[3] == 'v' && env->cmd_buf[4] == 'e' && env->cmd_buf[5] == 'r' && env->cmd_buf[6] == 'b') {
                 war_reverb(env);
-            } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'd' && env->cmd_buf[2] == 'e' && env->cmd_buf[3] == 'l' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'y') {
+            } else if (env->cmd_len >= 6 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'd' && env->cmd_buf[2] == 'e' && env->cmd_buf[3] == 'l' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'y') {
                 war_delay(env);
             } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 't' && env->cmd_buf[4] == 'e') {
                 war_gate(env);
             } else if (env->cmd_len >= 8 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'd' && env->cmd_buf[2] == 'e' && env->cmd_buf[3] == 'e' && env->cmd_buf[4] == 's' && env->cmd_buf[5] == 's' && env->cmd_buf[6] == 'e' && env->cmd_buf[7] == 'r') {
                 war_deesser(env);
-            } else if (env->cmd_len >= 8 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'h' && env->cmd_buf[3] == 'o' && env->cmd_buf[4] == 'r' && env->cmd_buf[5] == 'u' && env->cmd_buf[6] == 's') {
+            } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'h' && env->cmd_buf[3] == 'o' && env->cmd_buf[4] == 'r' && env->cmd_buf[5] == 'u' && env->cmd_buf[6] == 's') {
                 war_chorus(env);
-            } else if (env->cmd_len >= 10 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'a' && env->cmd_buf[2] == 'u' && env->cmd_buf[3] == 't' && env->cmd_buf[4] == 'o' && env->cmd_buf[5] == 't' && env->cmd_buf[6] == 'u' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 'e') {
+            } else if (env->cmd_len >= 9 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'a' && env->cmd_buf[2] == 'u' && env->cmd_buf[3] == 't' && env->cmd_buf[4] == 'o' && env->cmd_buf[5] == 't' && env->cmd_buf[6] == 'u' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 'e') {
                 war_autotune(env);
+            } else if (env->cmd_len >= 8 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'h' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 't' && env->cmd_buf[5] == 's' && env->cmd_buf[6] == 'o' && env->cmd_buf[7] == 'n') {
+                war_whatson(env);
+            } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'o' && env->cmd_buf[2] == 'f' && env->cmd_buf[3] == 'f' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'l' && env->cmd_buf[6] == 'l') {
+                war_offall(env);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
                 ctx_wayland->running = 0;
             } else if (env->cmd_len == 3 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'p') {
@@ -2408,6 +2458,9 @@ int main(int argc, char** argv) {
         env->capture_slots[i].sustain = 0.0f;
         env->capture_slots[i].release = 0.0f;
         env->capture_slots[i].eq = 0;
+        env->capture_slots[i].effect_flags = 0;
+        for (int j = 0; j < WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS; j++)
+            env->capture_slots[i].effect_params[j] = 0.0;
     }
     call_king_terry("INIT: eq[0]=%d", env->capture_slots[0].eq);
     war_wayland_context* ctx_wayland =
@@ -3058,6 +3111,9 @@ int main(int argc, char** argv) {
                                 env->play_bar_voice_filter_lp[_v][2] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][3] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][4] = 0.0f;
+                                memset(env->play_bar_voice_effect_state[_v], 0, sizeof(env->play_bar_voice_effect_state[_v]));
+                                if (env->play_bar_voice_delay_line[_v]) { free(env->play_bar_voice_delay_line[_v]); env->play_bar_voice_delay_line[_v] = NULL; }
+                                env->play_bar_voice_delay_len[_v] = 0;
                                 env->play_bar_voice_env_samples[_v] = 0;
                                 env->play_bar_voice_active[_v] = 1;
                                 break;
@@ -3135,6 +3191,7 @@ int main(int argc, char** argv) {
                     for (uint64_t f = 0; f < batch; f += 2) {
                         float _s_l = slot->samples[read_pos + f];
                         float _s_r = slot->samples[read_pos + f + 1];
+                        _war_process_effects(slot, env->preview_voice_effect_state[v], &_s_l, &_s_r);
                         float _ae = (float)fabsf((float)slot->eq);
                         float _fc;
                         if (slot->eq <= 0)
@@ -3254,6 +3311,7 @@ int main(int argc, char** argv) {
                         for (uint64_t f = 0; f < batch; f += 2) {
                             float _s_l = slot->samples[slot_offset + f];
                             float _s_r = slot->samples[slot_offset + f + 1];
+                            _war_process_effects(slot, env->play_bar_voice_effect_state[v], &_s_l, &_s_r);
                             float _ae = (float)fabsf((float)slot->eq);
                             float _fc;
                             if (slot->eq <= 0)
