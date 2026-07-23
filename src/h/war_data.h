@@ -2829,6 +2829,7 @@ struct war_env {
     struct war_vulkan_note_instance** undo_notes; // instance copies
     uint8_t** undo_audio_data; // flat per-entry: [n_slots(uint32), slot_idx(uint32), count(uint64), cap(uint64), samples(count*float), ...]
     uint64_t* undo_audio_size; // byte size of each undo_audio_data entry
+    char current_project_path[1024];
 };
 
 typedef struct war_wayland_context {

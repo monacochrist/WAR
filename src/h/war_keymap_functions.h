@@ -472,6 +472,26 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             return (int)v;
         }
     }
+    // if same note is already playing, kill ALL instances of it immediately
+    uint8_t had_note = 0;
+    for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+        if (env->preview_voice_active[v] && env->preview_voice_note[v] == note) {
+            env->preview_voice_active[v] = 0;
+            had_note = 1;
+        }
+    }
+    if (had_note && env->recording_active && env->ctx_note) {
+        // place the new note for the retrigger
+        uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+        war_capture_slot* slot = &env->capture_slots[idx];
+        if (slot->samples && slot->count >= 2) {
+            int free_v = -1;
+            for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+                if (!env->preview_voice_active[v]) { free_v = (int)v; break; }
+            }
+            if (free_v >= 0) _war_record_place_note(env, note, free_v);
+        }
+    }
     // find a completely free slot
     for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
         if (!env->preview_voice_active[v]) {
@@ -1594,7 +1614,7 @@ static inline void war_saturate(war_env* env) {
     war_capture_slot* slot = &env->capture_slots[idx];
     int cmdlen = (int)env->cmd_len;
     uint8_t turn_on = 0, turn_off = 0, set_params = 0;
-    double drive = 3.0, mix = 0.4, makeup_db = 2.0;
+    double drive = 2.0, mix = 0.3, makeup_db = 0.0;
     if (!env->cmd_active || cmdlen < 9) {
         int a = _war_effect_active(slot, WAR_EFFECT_SATURATE);
         if (a) {
