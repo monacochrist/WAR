@@ -1570,13 +1570,67 @@ static inline void war_clear(war_env* env) {
     slot->capacity = 0;
     slot->gain = 0.0f;
     slot->pan = 0;
-    slot->eq = 0;
+    slot->eq1 = 0;
+    slot->eq2 = 0;
     slot->attack = 0.0f;
     slot->sustain = 0.0f;
     slot->release = 0.0f;
     slot->effect_flags = 0;
     memset(slot->effect_params, 0, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
     snprintf(env->status_msg, sizeof(env->status_msg), "cleared slot pitch=%u layer=%u", pitch, layer);
+}
+
+static inline void war_eq1(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    int val = 0;
+    if (!env->cmd_active || env->cmd_len < 4) {
+        int v = env->capture_slots[idx].eq1;
+        snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ1: %+d" : "EQ1 OFF", v);
+        return;
+    }
+    const char* rest = env->cmd_buf + 4;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "off") == 0) { env->capture_slots[idx].eq1 = 0; snprintf(env->status_msg, sizeof(env->status_msg), "EQ1 OFF"); return; }
+    if (strcmp(rest, "status") == 0) {
+        int v = env->capture_slots[idx].eq1;
+        snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ1 ON: %+d" : "EQ1 OFF", v); return;
+    }
+    if (*rest && sscanf(rest, "%d", &val) == 1 && val >= -1000 && val <= 1000) {
+        env->capture_slots[idx].eq1 = val;
+        snprintf(env->status_msg, sizeof(env->status_msg), "EQ1: %+d", val);
+    } else snprintf(env->status_msg, sizeof(env->status_msg), "EQ1: usage [-1000..1000] | off | status");
+}
+static inline void war_eq2(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (pitch > 127) return;
+    uint32_t layer = cur->layer;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    int val = 0;
+    if (!env->cmd_active || env->cmd_len < 4) {
+        int v = env->capture_slots[idx].eq2;
+        snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ2: %+d" : "EQ2 OFF", v);
+        return;
+    }
+    const char* rest = env->cmd_buf + 4;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (strcmp(rest, "off") == 0) { env->capture_slots[idx].eq2 = 0; snprintf(env->status_msg, sizeof(env->status_msg), "EQ2 OFF"); return; }
+    if (strcmp(rest, "status") == 0) {
+        int v = env->capture_slots[idx].eq2;
+        snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ2 ON: %+d" : "EQ2 OFF", v); return;
+    }
+    if (*rest && sscanf(rest, "%d", &val) == 1 && val >= -1000 && val <= 1000) {
+        env->capture_slots[idx].eq2 = val;
+        snprintf(env->status_msg, sizeof(env->status_msg), "EQ2: %+d", val);
+    } else snprintf(env->status_msg, sizeof(env->status_msg), "EQ2: usage [-1000..1000] | off | status");
 }
 
 static inline void war_whatson(war_env* env) {
@@ -1588,7 +1642,7 @@ static inline void war_whatson(war_env* env) {
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
     war_capture_slot* slot = &env->capture_slots[idx];
-    static const char* names[] = {NULL,"CMP","SAT","REV","DEL","CHO","GAT","DEE","AUT"};
+    static const char* names[] = {NULL,"CMP","SAT","REV","DEL","CHO","GAT","DEE","AUT","CM2"};
     char buf[128]; buf[0] = '\0'; int pos = 0;
     for (int i = 1; i < WAR_EFFECT_COUNT; i++) {
         if (_war_effect_active(slot, i)) {
@@ -1598,6 +1652,14 @@ static inline void war_whatson(war_env* env) {
                 if (n > 0) pos += n;
             }
         }
+    }
+    if (slot->eq1) {
+        if (pos > 0 && pos < (int)sizeof(buf)-8) { buf[pos++] = ','; buf[pos++] = ' '; }
+        if (pos < (int)sizeof(buf)-8) pos += snprintf(buf+pos, sizeof(buf)-pos, "E1(%+d)", slot->eq1);
+    }
+    if (slot->eq2) {
+        if (pos > 0 && pos < (int)sizeof(buf)-8) { buf[pos++] = ','; buf[pos++] = ' '; }
+        if (pos < (int)sizeof(buf)-8) pos += snprintf(buf+pos, sizeof(buf)-pos, "E2(%+d)", slot->eq2);
     }
     if (pos == 0) snprintf(buf, sizeof(buf), "none");
     snprintf(env->status_msg, sizeof(env->status_msg), "active: %s", buf);
@@ -2178,7 +2240,8 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
             env->capture_slots[tidx].capacity = dst_cnt;
             env->capture_slots[tidx].gain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].gain;
             env->capture_slots[tidx].pan = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].pan;
-            env->capture_slots[tidx].eq = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].eq;
+            env->capture_slots[tidx].eq1 = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].eq1;
+            env->capture_slots[tidx].eq2 = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].eq2;
             env->capture_slots[tidx].attack = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].attack;
             env->capture_slots[tidx].sustain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].sustain;
             env->capture_slots[tidx].release = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].release;
@@ -2209,7 +2272,8 @@ static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint
             env->capture_slots[tidx].capacity = dst_cnt;
             env->capture_slots[tidx].gain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].gain;
             env->capture_slots[tidx].pan = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].pan;
-            env->capture_slots[tidx].eq = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].eq;
+            env->capture_slots[tidx].eq1 = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].eq1;
+            env->capture_slots[tidx].eq2 = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].eq2;
             env->capture_slots[tidx].attack = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].attack;
             env->capture_slots[tidx].sustain = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].sustain;
             env->capture_slots[tidx].release = env->capture_slots[src_note * WAR_CAPTURE_SLOT_LAYERS + li].release;

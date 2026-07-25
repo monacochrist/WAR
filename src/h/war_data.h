@@ -369,6 +369,7 @@ typedef struct war_atomics {
 #define WAR_EFFECT_GATE      6
 #define WAR_EFFECT_DEESSER   7
 #define WAR_EFFECT_AUTOTUNE  8
+#define WAR_EFFECT_COMPRESS2 9
 #define WAR_EFFECT_COUNT     9
 #define WAR_EFFECT_PARAMS    6 // max params per effect
 
@@ -378,7 +379,8 @@ typedef struct war_capture_slot {
     uint64_t capacity;
     float gain;
     int pan;
-    int eq;
+    int eq1; // EQ1 (-1000..1000)
+    int eq2; // EQ2 (-1000..1000)
     float attack;
     float sustain;
     float release;

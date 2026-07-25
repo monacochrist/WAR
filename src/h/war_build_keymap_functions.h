@@ -121,6 +121,8 @@ else if (strcmp(name, "war_toggle_crop") == 0) { return war_toggle_crop; }
 else if (strcmp(name, "war_offall") == 0) { return war_offall; }
 else if (strcmp(name, "war_compress") == 0) { return war_compress; }
 else if (strcmp(name, "war_clear") == 0) { return war_clear; }
+else if (strcmp(name, "war_eq1") == 0) { return war_eq1; }
+else if (strcmp(name, "war_eq2") == 0) { return war_eq2; }
 else if (strcmp(name, "war_whatson") == 0) { return war_whatson; }
 else if (strcmp(name, "war_saturate") == 0) { return war_saturate; }
 else if (strcmp(name, "war_reverb") == 0) { return war_reverb; }
