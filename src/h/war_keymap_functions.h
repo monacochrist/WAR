@@ -465,6 +465,8 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_layer[v] = layer;
             env->preview_voice_read_pos[v] = 0;
             env->preview_voice_read_limit[v] = slot->count;
+            memset(env->preview_voice_effect_state[v], 0, sizeof(env->preview_voice_effect_state[v]));
+            env->preview_voice_effect_state[v][14] = 1.0f;
             env->preview_voice_filter_lp[v][0] = 0.0f;
             env->preview_voice_filter_lp[v][1] = 0.0f;
             env->preview_voice_env_samples[v] = 0;
@@ -503,6 +505,8 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_layer[voice] = layer;
             env->preview_voice_read_pos[voice] = 0;
             env->preview_voice_read_limit[voice] = slot->count;
+            memset(env->preview_voice_effect_state[voice], 0, sizeof(env->preview_voice_effect_state[voice]));
+            env->preview_voice_effect_state[voice][14] = 1.0f;
             env->preview_voice_filter_lp[voice][0] = 0.0f;
             env->preview_voice_filter_lp[voice][1] = 0.0f;
             env->preview_voice_env_samples[voice] = 0;

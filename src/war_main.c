@@ -961,7 +961,6 @@ static void war_keyboard_key(void* data,
                         uint32_t _rlidx = rel_note * WAR_CAPTURE_SLOT_LAYERS + (ctx_wayland->env->preview_voice_layer[v] - 1);
                         float _rel_target = ctx_wayland->env->capture_slots[_rlidx].release / 1000.0f * 48000.0f;
                         uint64_t _rel_min = (uint64_t)_rel_target;
-                        if (!ctx_wayland->env->recording_active && _rel_min < 2400) _rel_min = 2400;
                         ctx_wayland->env->preview_voice_read_limit[v] = ctx_wayland->env->preview_voice_read_pos[v] + _rel_min;
                     }
                 }
