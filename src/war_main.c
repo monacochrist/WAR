@@ -61,6 +61,7 @@
 #include <sys/stat.h>
 #include <sys/timerfd.h>
 #include <time.h>
+#include <alsa/asoundlib.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <xkbcommon/xkbcommon.h>
@@ -914,6 +915,108 @@ void war_reconnect_loopback(war_env* env, const char* target) {
                       PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS,
                       params, 1);
 }
+static void _war_midi_disconnect(war_env* env) {
+    if (env->midi_seq) {
+        snd_seq_close((snd_seq_t*)env->midi_seq);
+        env->midi_seq = NULL;
+    }
+    env->midi_seq_port = -1;
+    env->midi_seq_client = -1;
+}
+static void _war_midi_connect(war_env* env, const char* dev_name) {
+    _war_midi_disconnect(env);
+    if (!dev_name || !dev_name[0]) return;
+    int client_id = -1;
+    FILE* fp = popen("aconnect -i 2>/dev/null", "r");
+    if (fp) {
+        char buf[256];
+        while (fgets(buf, sizeof(buf), fp)) {
+            if (strstr(buf, dev_name) && strstr(buf, "client")) {
+                if (sscanf(buf, "client %d", &client_id) == 1) break;
+            }
+        }
+        pclose(fp);
+    }
+    // fallback: try aconnect -o too
+    if (client_id < 0) {
+        fp = popen("aconnect -o 2>/dev/null", "r");
+        if (fp) {
+            char buf[256];
+            while (fgets(buf, sizeof(buf), fp)) {
+                if (strstr(buf, dev_name) && strstr(buf, "client")) {
+                    if (sscanf(buf, "client %d", &client_id) == 1) break;
+                }
+            }
+            pclose(fp);
+        }
+    }
+    if (client_id < 0) { fprintf(stderr, "MIDI: '%s' not found in aconnect\n", dev_name); return; }
+    call_king_terry("MIDI: found client %d for '%s'", client_id, dev_name);
+    snd_seq_t* _seq = NULL;
+    if (snd_seq_open(&_seq, "default", SND_SEQ_OPEN_INPUT, 0) < 0) {
+        fprintf(stderr, "MIDI: failed to open sequencer\n"); return;
+    }
+    env->midi_seq = (void*)_seq;
+    snd_seq_set_client_name(_seq, "WAR");
+    int port = snd_seq_create_simple_port(_seq, "input",
+                                          SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_READ,
+                                          SND_SEQ_PORT_TYPE_APPLICATION);
+    if (port < 0) { fprintf(stderr, "MIDI: failed to create port (err=%d)\n", port); snd_seq_close(_seq); env->midi_seq = NULL; return; }
+    call_king_terry("MIDI: created port %d", port);
+    env->midi_seq_port = port;
+    env->midi_seq_client = client_id;
+    int connected = 0;
+    for (int _mp = 0; _mp < 16; _mp++) {
+        int _ret = snd_seq_connect_from(_seq, port, client_id, _mp);
+        if (_ret == 0) {
+            connected++;
+            call_king_terry("MIDI: connected port %d", _mp);
+        }
+    }
+    if (!connected) fprintf(stderr, "MIDI: failed to connect to %s\n", dev_name);
+    else {
+        call_king_terry("MIDI: connected to %d ports", connected);
+        snd_seq_nonblock(_seq, 1);
+    }
+}
+static void _war_process_midi(war_env* env) {
+    if (!env->midi_seq) return;
+    snd_seq_t* seq = (snd_seq_t*)env->midi_seq;
+    int limit = 64;
+    snd_seq_event_t ev_buf;
+    snd_seq_event_t* ev = &ev_buf;
+    while (limit--) {
+        int ret = snd_seq_event_input(seq, &ev);
+        if (ret < 0) break;
+        if (ret == 0 || !ev) break;
+        if (ev->type == SND_SEQ_EVENT_NOTEON && ev->data.note.velocity > 0) {
+            uint32_t note = ev->data.note.note;
+            uint32_t velocity = ev->data.note.velocity;
+            uint32_t layer = 1;
+            if (env->ctx_cursor && env->ctx_cursor->layer >= 1 && env->ctx_cursor->layer <= 9)
+                layer = env->ctx_cursor->layer;
+            if (note > 127) note = 127;
+            int _midi_voice = _war_preview_start_voice(env, note, layer);
+            if (_midi_voice >= 0) {
+                float _vel = env->midi_velocity_sense ? (float)velocity : 64.0f;
+                env->preview_voice_gain[_midi_voice] = _vel / 64.0f;
+            }
+        } else if (ev->type == SND_SEQ_EVENT_NOTEOFF || 
+                  (ev->type == SND_SEQ_EVENT_NOTEON && ev->data.note.velocity == 0)) {
+            uint32_t note = ev->data.note.note;
+            for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
+                if (env->preview_voice_active[v] && env->preview_voice_note[v] == note) {
+                    uint32_t _rlidx = note * WAR_CAPTURE_SLOT_LAYERS + (env->preview_voice_layer[v] - 1);
+                    if (_rlidx < 128 * WAR_CAPTURE_SLOT_LAYERS) {
+                        float _rel_target = env->capture_slots[_rlidx].release / 1000.0f * 48000.0f;
+                        uint64_t _rel_min = (uint64_t)_rel_target;
+                        env->preview_voice_read_limit[v] = env->preview_voice_read_pos[v] + _rel_min;
+                    }
+                }
+            }
+            }
+        }
+    }
 
 static void war_keyboard_key(void* data,
                              struct wl_keyboard* keyboard,
@@ -1419,6 +1522,8 @@ static void war_keyboard_key(void* data,
                 war_whatson(env);
             } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'o' && env->cmd_buf[2] == 'f' && env->cmd_buf[3] == 'f' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'l' && env->cmd_buf[6] == 'l') {
                 war_offall(env);
+            } else if (env->cmd_len >= 9 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'l' && env->cmd_buf[3] == 'e' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'r' && env->cmd_buf[6] == 'a' && env->cmd_buf[7] == 'l' && env->cmd_buf[8] == 'l') {
+                war_clear_all(env);
             } else if (env->cmd_len >= 6 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'c' && env->cmd_buf[2] == 'l' && env->cmd_buf[3] == 'e' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'r') {
                 war_clear(env);
             } else if (env->cmd_len >= 2 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'q') {
@@ -1607,6 +1712,7 @@ static void war_keyboard_key(void* data,
                             fprintf(_gs, "%s\n", env->dev_nodes[_gsi]);
                         else
                             fprintf(_gs, "\n");
+                    fprintf(_gs, "%s\n", env->midi_dev_node ? env->midi_dev_node : "");
                     fclose(_gs);
                 }
             }
@@ -1615,8 +1721,48 @@ static void war_keyboard_key(void* data,
         cur->prefix = 0;
         return;
     }
+    // MIDI device selector HUD
+    if (env->midi_sel_active) {
+        if (raw_sym == XKB_KEY_Escape) {
+            env->midi_sel_active = 0;
+        } else if (raw_sym == XKB_KEY_Up || raw_sym == XKB_KEY_j) {
+            if (env->midi_sel_cursor > 0) {
+                env->midi_sel_cursor--;
+                if ((uint32_t)env->midi_sel_cursor < env->midi_sel_offset)
+                    env->midi_sel_offset = (uint32_t)env->midi_sel_cursor;
+            }
+        } else if (raw_sym == XKB_KEY_Down || raw_sym == XKB_KEY_k) {
+            if ((uint32_t)(env->midi_sel_cursor + 1) < env->midi_dev_count) {
+                env->midi_sel_cursor++;
+                if ((uint32_t)(env->midi_sel_cursor) >= env->midi_sel_offset + 15)
+                    env->midi_sel_offset = (uint32_t)(env->midi_sel_cursor) - 14;
+            }
+        } else if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
+            if (env->midi_dev_count > 0 && env->midi_dev_names && (uint32_t)env->midi_sel_cursor < env->midi_dev_count) {
+                free(env->midi_dev_node);
+                env->midi_dev_node = strdup(env->midi_dev_names[env->midi_sel_cursor]);
+                snprintf(env->status_msg, sizeof(env->status_msg), "MIDI: %s", env->midi_dev_node);
+                call_king_terry("MIDI: selecting device '%s'", env->midi_dev_node);
+                _war_midi_connect(env, env->midi_dev_node);
+                // persist MIDI device selection
+                FILE* _gs = fopen("global_war.config", "w");
+                if (_gs) {
+                    for (int _gsi = 0; _gsi < 4; _gsi++)
+                        if (env->dev_nodes[_gsi])
+                            fprintf(_gs, "%s\n", env->dev_nodes[_gsi]);
+                        else
+                            fprintf(_gs, "\n");
+                    fprintf(_gs, "%s\n", env->midi_dev_node ? env->midi_dev_node : "");
+                    fclose(_gs);
+                }
+            }
+            env->midi_sel_active = 0;
+        }
+        cur->prefix = 0;
+        return;
+    }
     
-    // open device selector (Alt+O) — only during active capture
+    // open device selector (Alt+O) — during active capture
     if (raw_sym == XKB_KEY_o && (mod & MOD_ALT) && !env->cmd_active && env->atomics->capture) {
         if (env->dev_count > 0 && env->dev_names) {
             env->dev_sel_active = 1;
@@ -1625,6 +1771,27 @@ static void war_keyboard_key(void* data,
         } else {
             snprintf(env->status_msg, sizeof(env->status_msg), "no devices found");
         }
+        cur->prefix = 0;
+        return;
+    }
+    // open MIDI device selector (Alt+O) — in MIDI mode without capture
+    if (raw_sym == XKB_KEY_o && (mod & MOD_ALT) && !env->cmd_active && mode == WAR_MODE_ID_MIDI && !env->atomics->capture) {
+        if (env->midi_dev_count > 0 && env->midi_dev_names) {
+            env->midi_sel_active = 1;
+            env->midi_sel_cursor = 0;
+            env->midi_sel_offset = 0;
+            snprintf(env->status_msg, sizeof(env->status_msg), "%u MIDI devices", env->midi_dev_count);
+        } else {
+            snprintf(env->status_msg, sizeof(env->status_msg), "no MIDI devices found");
+        }
+        cur->prefix = 0;
+        return;
+    }
+
+    // toggle velocity sensitivity (Alt+S)
+    if (raw_sym == XKB_KEY_s && (mod & MOD_ALT) && !env->cmd_active) {
+        env->midi_velocity_sense = !env->midi_velocity_sense;
+        snprintf(env->status_msg, sizeof(env->status_msg), "SENSE %s", env->midi_velocity_sense ? "on" : "off");
         cur->prefix = 0;
         return;
     }
@@ -2674,21 +2841,56 @@ int main(int argc, char** argv) {
         }
     }
 
+    // MIDI device init
+    env->midi_dev_count = 0;
+    env->midi_dev_names = calloc(128, sizeof(char*));
+    env->midi_dev_node = NULL;
+    env->midi_seq = NULL;
+    env->midi_seq_port = -1;
+    env->midi_seq_client = -1;
+    env->midi_velocity_sense = 1;
+
     // load global device config
     {
         FILE* _gf = fopen("global_war.config", "r");
         if (_gf) {
             char _gbuf[256];
-            for (int _gi = 0; _gi < 4 && fgets(_gbuf, sizeof(_gbuf), _gf); _gi++) {
+            for (int _gi = 0; _gi < 5 && fgets(_gbuf, sizeof(_gbuf), _gf); _gi++) {
                 size_t _gl = strlen(_gbuf);
                 if (_gl > 0 && _gbuf[_gl-1] == '\n') _gbuf[_gl-1] = '\0';
-                if (_gbuf[0]) {
-                    free(env->dev_nodes[_gi]);
-                    env->dev_nodes[_gi] = strdup(_gbuf);
+                if (_gi < 4) {
+                    if (_gbuf[0]) {
+                        free(env->dev_nodes[_gi]);
+                        env->dev_nodes[_gi] = strdup(_gbuf);
+                    }
+                } else if (_gbuf[0]) {
+                    free(env->midi_dev_node);
+                    env->midi_dev_node = strdup(_gbuf);
                 }
             }
             fclose(_gf);
         }
+    }
+
+    // enumerate MIDI devices for Alt+O selector
+    {
+        char _mbuf[256];
+        FILE* _mf = popen("aconnect -i 2>/dev/null | grep '^client' | cut -d: -f2 | cut '-d[' -f1 | tr -d \"'\" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'", "r");
+        if (_mf) {
+            while (fgets(_mbuf, sizeof(_mbuf), _mf) && env->midi_dev_count < 128) {
+                size_t _ml = strlen(_mbuf);
+                if (_ml > 0 && _mbuf[_ml-1] == '\n') _mbuf[_ml-1] = '\0';
+                if (_ml > 1 && env->midi_dev_count < 128)
+                    env->midi_dev_names[env->midi_dev_count++] = strdup(_mbuf);
+            }
+            pclose(_mf);
+        }
+    }
+
+    // auto-connect to persisted MIDI device
+    if (env->midi_dev_node) {
+        call_king_terry("MIDI: auto-connecting to '%s'", env->midi_dev_node);
+        _war_midi_connect(env, env->midi_dev_node);
     }
 
     // init capture slots and accumulator
@@ -2815,15 +3017,24 @@ int main(int argc, char** argv) {
     // MAIN LOOP
     //-------------------------------------------------------------------------
     int wayland_fd = wl_display_get_fd(ctx_wayland->display);
-    struct pollfd pfds[3] = {
+    struct pollfd pfds[4] = {
         {.fd = wayland_fd, .events = POLLIN},
         {.fd = ctx_wayland->repeat_timer_fd, .events = POLLIN},
         {.fd = ctx_wayland->audio_timer_fd, .events = POLLIN},
+        {.fd = -1, .events = POLLIN},
     };
     while (ctx_wayland->running) {
+        // update MIDI sequencer FD
+        int midi_fd = -1;
+        if (env->midi_seq) {
+            struct pollfd mfds;
+            int mc = snd_seq_poll_descriptors((snd_seq_t*)env->midi_seq, &mfds, 1, POLLIN);
+            if (mc > 0) midi_fd = mfds.fd;
+        }
+        pfds[3].fd = midi_fd;
         wl_display_flush(ctx_wayland->display);
         if (wl_display_prepare_read(ctx_wayland->display) == 0) {
-            poll(pfds, 3, 100);
+            poll(pfds, 4, 100);
             if (pfds[0].revents & POLLIN)
                 wl_display_read_events(ctx_wayland->display);
             else
@@ -3017,12 +3228,16 @@ int main(int argc, char** argv) {
                 env->play_bar_last_us = _now_us - 1000;
             _delta_us = _now_us - env->play_bar_last_us;
             env->play_bar_last_us = _now_us;
+        }
+        if (env->play_bar_playing) {
             env->play_bar_position_seconds += (double)_delta_us / 1000000.0;
             double _bpm = env->atomics->bpm;
             if (_bpm <= 0.0) _bpm = 100.0;
             _pb_spc = 15.0 / _bpm;
             _pb_ccp = (double)ctx_wayland->gutter_cols + env->play_bar_position_seconds / _pb_spc;
         }
+        // process MIDI events before audio mixing so new notes start in current frame
+        _war_process_midi(env);
         // unified audio mixing: preview (MIDI) voices + playbar voices
         // NOTE: playhead advancement is NOW ABOVE, so voices activated here
         // are picked up by the mixing loop in the SAME iteration
@@ -3230,7 +3445,7 @@ int main(int argc, char** argv) {
                         if (_rem_preview <= 0) _env = 0.0f;
                         else _env = ((float)_rem_preview / _rel_samples) * _sus_level;
                     }
-                    _a_g *= _env;
+                    _a_g *= _env * env->preview_voice_gain[v];
                     mix[f]   += _mix_l * _a_g * _pl;
                     mix[f+1] += _mix_r * _a_g * _pr;
                     mix[f]   += _mix_l * _a_g * _pl;
@@ -3457,6 +3672,7 @@ int main(int argc, char** argv) {
         free(env->pc_play->to_wr);
         free(env->pc_play);
     }
+    _war_midi_disconnect(env);
     free(env->atomics);
     // free capture slots and accumulator
     for (uint32_t i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++)

@@ -337,6 +337,11 @@ static inline void war_keymap_default(war_keymap_context* keymap,
                     (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
                     1, (char*[]){"<S-s>"}, WAR_FUNCTION_ID_NONE,
                     war_split_note, 0);
+    // split note at playback bar (C = shift+c)
+    war_keymap_set(keymap, config, 2,
+                    (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_VISUAL},
+                    1, (char*[]){"<S-c>"}, WAR_FUNCTION_ID_NONE,
+                    war_split_at_playback, 0);
     // zoom ('=' zoom in, '-' zoom out)
     war_keymap_set(keymap, config, 4,
                     (war_mode_id[]){WAR_MODE_ID_ROLL, WAR_MODE_ID_MIDI,

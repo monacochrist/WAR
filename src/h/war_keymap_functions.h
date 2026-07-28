@@ -470,6 +470,7 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_filter_lp[v][0] = 0.0f;
             env->preview_voice_filter_lp[v][1] = 0.0f;
             env->preview_voice_env_samples[v] = 0;
+            env->preview_voice_gain[v] = 1.0f;
             if (env->recording_active) _war_record_place_note(env, note, (int)v);
             return (int)v;
         }
@@ -510,6 +511,7 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
             env->preview_voice_filter_lp[voice][0] = 0.0f;
             env->preview_voice_filter_lp[voice][1] = 0.0f;
             env->preview_voice_env_samples[voice] = 0;
+            env->preview_voice_gain[voice] = 1.0f;
             env->preview_voice_active[voice] = 1;
             if (env->recording_active) _war_record_place_note(env, note, (int)voice);
             return (int)voice;
@@ -1582,6 +1584,37 @@ static inline void war_clear(war_env* env) {
     slot->effect_flags = 0;
     memset(slot->effect_params, 0, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
     snprintf(env->status_msg, sizeof(env->status_msg), "cleared slot pitch=%u layer=%u", pitch, layer);
+}
+
+static inline void war_clear_all(war_env* env) {
+    int cleared = 0;
+    for (int p = 0; p < 128; p++) {
+        for (int l = 0; l < WAR_CAPTURE_SLOT_LAYERS; l++) {
+            uint32_t idx = p * WAR_CAPTURE_SLOT_LAYERS + l;
+            war_capture_slot* slot = &env->capture_slots[idx];
+            if (slot->samples) {
+                free(slot->samples);
+                slot->samples = NULL;
+                cleared++;
+            }
+            slot->count = 0;
+            slot->capacity = 0;
+            slot->gain = 0.0f;
+            slot->pan = 0;
+            slot->eq1 = 0;
+            slot->eq2 = 0;
+            slot->attack = 0.0f;
+            slot->sustain = 0.0f;
+            slot->release = 0.0f;
+            slot->effect_flags = 0;
+            memset(slot->effect_params, 0, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
+        }
+    }
+    // clear note instances
+    if (env->ctx_note) {
+        env->ctx_note->instance_count = 0;
+    }
+    snprintf(env->status_msg, sizeof(env->status_msg), "clear all: %d slots freed", cleared);
 }
 
 static inline void war_eq1(war_env* env) {
@@ -3121,6 +3154,167 @@ static inline void war_split_note(war_env* env) {
         }
     }
     snprintf(env->status_msg, sizeof(env->status_msg), "split: left=%.1f right=%.1f", left_w, right_w);
+}
+
+static inline void war_split_at_playback(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    war_note_context* note = env->ctx_note;
+    if (!cur->instance_count || !note || !note->instance_count) return;
+    double _pb_bpm = env->atomics->bpm;
+    if (_pb_bpm <= 0.0) _pb_bpm = 100.0;
+    double _pb_spc = 15.0 / _pb_bpm;
+    float cx = (float)((double)env->ctx_wayland->gutter_cols + env->play_bar_position_seconds / _pb_spc);
+    float cy = cur->instance[0].pos[1];
+    uint32_t best = UINT32_MAX;
+    uint64_t best_tick = 0;
+    for (uint32_t i = 0; i < note->instance_count; i++) {
+        float nx0 = note->instance[i].pos[0];
+        float nx1 = nx0 + note->instance[i].size[0];
+        float ny = note->instance[i].pos[1];
+        if (cx >= nx0 && cx < nx1 && ny == cy) {
+            uint32_t _nl = (note->instance[i].flags >> 4) & 0xF;
+            if (_nl >= 1 && _nl <= 9 && !(env->layer_visible & (1 << (_nl - 1)))) continue;
+            if (best == UINT32_MAX || note->instance[i].tick > best_tick) {
+                best = i; best_tick = note->instance[i].tick;
+            }
+        }
+    }
+    if (best == UINT32_MAX) return;
+    float note_start = note->instance[best].pos[0];
+    float note_end = note_start + note->instance[best].size[0];
+    float left_w = cx - note_start;
+    float right_w = note_end - cx;
+    if (left_w < 0.02f || right_w < 0.02f) return;
+    uint32_t src_pitch = (uint32_t)(cy - (double)env->ctx_wayland->gutter_rows);
+    if (src_pitch > 127) return;
+    uint32_t layer = (note->instance[best].flags >> 4) & 0xF;
+    if (layer < 1 || layer > 9) layer = 1;
+    uint32_t src_idx = src_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    double bpm = env->atomics->bpm;
+    if (bpm <= 0.0) bpm = 100.0;
+    double sec_per_cell = 15.0 / bpm;
+    uint64_t split_frames = (uint64_t)((double)left_w * sec_per_cell * 48000.0);
+    if (split_frames < 1) return;
+    uint64_t split_samples = split_frames * 2;
+    war_capture_slot* src_slot = &env->capture_slots[src_idx];
+    if (!src_slot->samples || split_samples >= src_slot->count) return;
+    uint64_t right_samples = src_slot->count - split_samples;
+    if (right_samples & 1) right_samples &= ~1ULL;
+    uint32_t dest_pitch = UINT32_MAX;
+    uint32_t mi = 0;
+    for (uint32_t p = src_pitch + 1; p < 128; p++) {
+        mi = p * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+        if (!env->capture_slots[mi].samples || env->capture_slots[mi].count < 2) {
+            dest_pitch = p;
+            break;
+        }
+    }
+    if (dest_pitch == UINT32_MAX) return;
+    if (mi >= 128 * WAR_CAPTURE_SLOT_LAYERS) return;
+    if (env->capture_slots[mi].samples && env->capture_slots[mi].count >= 2) return;
+    uint64_t src_size = src_slot->count * sizeof(float);
+    uint64_t dst_cnt = env->capture_slots[mi].count;
+    uint64_t dst_size = dst_cnt * sizeof(float);
+    uint64_t audio_total = 4 + 4+8+8+src_size + 4+8+8+dst_size;
+    uint8_t* audio_data = malloc(audio_total);
+    if (!audio_data) return;
+    {
+        uint8_t* p = audio_data;
+        *(uint32_t*)p = 2; p += 4;
+        *(uint32_t*)p = src_idx; p += 4;
+        *(uint64_t*)p = src_slot->count; p += 8;
+        *(uint64_t*)p = src_slot->capacity; p += 8;
+        if (src_slot->samples && src_slot->count > 0)
+            memcpy(p, src_slot->samples, src_size);
+        p += src_size;
+        *(uint32_t*)p = mi; p += 4;
+        *(uint64_t*)p = dst_cnt; p += 8;
+        *(uint64_t*)p = env->capture_slots[mi].capacity; p += 8;
+        if (env->capture_slots[mi].samples && dst_cnt > 0)
+            memcpy(p, env->capture_slots[mi].samples, dst_size);
+    }
+    war_undo_save(env);
+    uint32_t audio_idx = env->undo_pos - 1;
+    free(env->undo_audio_data[audio_idx]);
+    env->undo_audio_data[audio_idx] = audio_data;
+    env->undo_audio_size[audio_idx] = audio_total;
+    float keep_w, move_w;
+    uint32_t keep_i;
+    float move_pitch_row = (float)dest_pitch + (float)env->ctx_wayland->gutter_rows;
+    uint32_t col = (&env->ctx_color->layer_none)[layer];
+    if (left_w >= right_w) {
+        keep_w = left_w; move_w = right_w;
+        keep_i = best;
+        float* copy = malloc(right_samples * sizeof(float));
+        if (copy) {
+            if (split_samples + right_samples <= src_slot->count)
+                memcpy(copy, src_slot->samples + split_samples, right_samples * sizeof(float));
+            free(env->capture_slots[mi].samples);
+            env->capture_slots[mi] = *src_slot;
+            env->capture_slots[mi].samples = copy;
+            env->capture_slots[mi].count = right_samples;
+            env->capture_slots[mi].capacity = right_samples;
+        }
+        float* trim = malloc(split_samples * sizeof(float));
+        if (trim) {
+            memcpy(trim, src_slot->samples, split_samples * sizeof(float));
+            free(src_slot->samples);
+            src_slot->samples = trim;
+            src_slot->count = split_samples;
+            src_slot->capacity = split_samples;
+        }
+        note->instance[keep_i].size[0] = keep_w;
+        if (note->instance_count < note->max_instances) {
+            uint32_t ni = note->instance_count++;
+            note->instance[ni] = note->instance[keep_i];
+            note->instance[ni].pos[0] = cx;
+            note->instance[ni].pos[1] = move_pitch_row;
+            note->instance[ni].size[0] = move_w;
+            note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
+            note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
+            note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
+            note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
+            note->instance[ni].tick = note->tick_counter++;
+        }
+    } else {
+        keep_w = right_w; move_w = left_w;
+        note->instance[best].pos[0] = cx;
+        note->instance[best].size[0] = keep_w;
+        keep_i = best;
+        float* copy = malloc(split_samples * sizeof(float));
+        if (copy) {
+            if (split_samples <= src_slot->count)
+                memcpy(copy, src_slot->samples, split_samples * sizeof(float));
+            free(env->capture_slots[mi].samples);
+            env->capture_slots[mi] = *src_slot;
+            env->capture_slots[mi].samples = copy;
+            env->capture_slots[mi].count = split_samples;
+            env->capture_slots[mi].capacity = split_samples;
+        }
+        if (right_samples > 0) {
+            float* trim = malloc(right_samples * sizeof(float));
+            if (trim) {
+                memcpy(trim, src_slot->samples + split_samples, right_samples * sizeof(float));
+                free(src_slot->samples);
+                src_slot->samples = trim;
+                src_slot->count = right_samples;
+                src_slot->capacity = right_samples;
+            }
+        }
+        if (note->instance_count < note->max_instances) {
+            uint32_t ni = note->instance_count++;
+            note->instance[ni] = note->instance[keep_i];
+            note->instance[ni].pos[0] = note_start;
+            note->instance[ni].pos[1] = move_pitch_row;
+            note->instance[ni].size[0] = move_w;
+            note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
+            note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
+            note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
+            note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
+            note->instance[ni].tick = note->tick_counter++;
+        }
+    }
+    snprintf(env->status_msg, sizeof(env->status_msg), "split@play: left=%.1f right=%.1f", left_w, right_w);
 }
 
 static inline void war_wave_view(war_env* env) {

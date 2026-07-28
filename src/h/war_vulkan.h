@@ -2265,6 +2265,62 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             _dwritten += _dn;
         }
     }
+    // MIDI device selector HUD
+    if (ctx_wayland->env->midi_sel_active && ctx_wayland->env->ctx_font) {
+        war_font_context* _mf = ctx_wayland->env->ctx_font;
+        double _mcw = ctx_wayland->env->ctx_cursor->cell_width;
+        double _mch = ctx_wayland->env->ctx_cursor->cell_height;
+        float _mz = ctx_wayland->zoom;
+        float _msw = (float)ctx_wayland->width;
+        float _msh = (float)ctx_wayland->height;
+        VkViewport _mvp = {0, 0, _msw, _msh, 0, 1};
+        VkRect2D _msc = {{0, 0}, {(uint32_t)_msw, (uint32_t)_msh}};
+        vkCmdSetViewport(cmd, 0, 1, &_mvp);
+        vkCmdSetScissor(cmd, 0, 1, &_msc);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _mf->pipeline);
+        float _mpc[] = {(float)_mcw, (float)_mch, -ctx_wayland->panning[0] * _mz, 0, _mz, 0, _msw, _msh, 0, 0};
+        vkCmdPushConstants(cmd, _mf->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_mpc), _mpc);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _mf->pipeline_layout, 0, 1, &_mf->desc_set, 0, NULL);
+        VkBuffer _mbufs[] = {_mf->quad_vbo, _mf->instance_vbo};
+        VkDeviceSize _mooffs[] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, _mbufs, _mooffs);
+        war_vulkan_text_instance* _mdst = (war_vulkan_text_instance*)_mf->instance_mapped;
+        uint32_t _mwritten = 0;
+        uint32_t _mmaxrow = 15;
+        for (uint32_t _mr = ctx_wayland->env->midi_sel_offset;
+             _mr < ctx_wayland->env->midi_dev_count && _mr < ctx_wayland->env->midi_sel_offset + _mmaxrow;
+             _mr++) {
+            char _mline[256];
+            int _mp = 0;
+            if ((int32_t)_mr == ctx_wayland->env->midi_sel_cursor)
+                _mline[_mp++] = '>';
+            if (ctx_wayland->env->midi_dev_node && strcmp(ctx_wayland->env->midi_dev_names[_mr], ctx_wayland->env->midi_dev_node) == 0)
+                _mline[_mp++] = '*';
+            int _mn = snprintf(_mline + _mp, sizeof(_mline) - _mp, "%s", ctx_wayland->env->midi_dev_names[_mr]);
+            if (_mn < 0) _mn = 0;
+            if (_mp + _mn > (int)sizeof(_mline) - 1) _mn = (int)sizeof(_mline) - 1 - _mp;
+            _mn += _mp;
+            if (_mn > 60) _mn = 60;
+            for (int _mi = 0; _mi < _mn; _mi++) {
+                unsigned char _mc = (unsigned char)_mline[_mi];
+                if (_mc < 32) _mc = ' ';
+                war_vulkan_text_instance* _mti = &_mdst[_mwritten + _mi];
+                _mti->pos[0] = (float)ctx_wayland->gutter_cols + 2.0f + (float)_mi;
+                _mti->pos[1] = (float)ctx_wayland->gutter_rows + (float)(_mr - ctx_wayland->env->midi_sel_offset);
+                _mti->pos[2] = 0;
+                _mti->size[0] = 1.0f; _mti->size[1] = 1.0f;
+                _mti->uv[0] = _mf->glyph_uv[_mc][0]; _mti->uv[1] = _mf->glyph_uv[_mc][1];
+                _mti->uv[2] = _mf->glyph_uv[_mc][2]; _mti->uv[3] = _mf->glyph_uv[_mc][3];
+                _mti->glyph_scale[0] = _mf->glyph_norm_width[_mc]; _mti->glyph_scale[1] = _mf->glyph_norm_height[_mc];
+                _mti->ascent = _mf->glyph_norm_ascent[_mc]; _mti->descent = _mf->glyph_norm_descent[_mc];
+                _mti->baseline = _mf->glyph_norm_baseline[_mc];
+                _mti->color[0] = 1.0f; _mti->color[1] = 1.0f; _mti->color[2] = 1.0f; _mti->color[3] = 1.0f;
+                _mti->flags = 0;
+            }
+            vkCmdDraw(cmd, 4, (uint32_t)_mn, 0, _mwritten);
+            _mwritten += _mn;
+        }
+    }
     war_cursor_render(cmd,
                       ctx_wayland->env->ctx_cursor,
                       ctx_wayland,
@@ -2613,6 +2669,34 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                     vkCmdDraw(cmd, 4, (uint32_t)_abn2, 0, ADSR_OFFSET);
 #undef ADSR_OFFSET
                 }
+            }
+        }
+        // velocity sense label on bottom status bar
+        {
+            if (ctx_wayland->env->midi_velocity_sense) {
+                char _st[6] = "SENSE";
+                int _sn = 5;
+                float _srow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
+#define SENSE_OFFSET 270
+                for (int _si = 0; _si < _sn; _si++) {
+                    unsigned char _sc = (unsigned char)_st[_si];
+                    war_vulkan_text_instance* _sti = &dst[SENSE_OFFSET + _si];
+                    _sti->pos[0] = ctx_wayland->panning[0] + (float)(60 + _si);
+                    _sti->pos[1] = _srow;
+                    _sti->pos[2] = 0;
+                    _sti->size[0] = 1.0f; _sti->size[1] = 1.0f;
+                    _sti->uv[0] = font->glyph_uv[_sc][0]; _sti->uv[1] = font->glyph_uv[_sc][1];
+                    _sti->uv[2] = font->glyph_uv[_sc][2]; _sti->uv[3] = font->glyph_uv[_sc][3];
+                    _sti->glyph_scale[0] = font->glyph_norm_width[_sc];
+                    _sti->glyph_scale[1] = font->glyph_norm_height[_sc];
+                    _sti->ascent = font->glyph_norm_ascent[_sc];
+                    _sti->descent = font->glyph_norm_descent[_sc];
+                    _sti->baseline = font->glyph_norm_baseline[_sc];
+                    _sti->color[0] = 0.3f; _sti->color[1] = 1.0f; _sti->color[2] = 0.3f; _sti->color[3] = 1.0f;
+                    _sti->flags = 0;
+                }
+                vkCmdDraw(cmd, 4, (uint32_t)_sn, 0, SENSE_OFFSET);
+#undef SENSE_OFFSET
             }
         }
         // gain label on top status bar

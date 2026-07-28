@@ -2768,7 +2768,8 @@ struct war_env {
     float preview_voice_effect_state[WAR_PREVIEW_VOICES][32]; // per-voice state for real-time effects
     float* preview_voice_delay_line[WAR_PREVIEW_VOICES]; // per-voice delay buffer
     uint64_t preview_voice_delay_len[WAR_PREVIEW_VOICES];
-    // recording state
+    float preview_voice_gain[WAR_PREVIEW_VOICES]; // per-voice gain multiplier (velocity, default 1.0)
+    int midi_velocity_sense; // velocity sensitivity toggle (Alt+S)
     uint8_t recording_active;
     uint8_t loop_mode;
     uint8_t capture_mode;
@@ -2781,6 +2782,16 @@ struct war_env {
     uint32_t dev_count;
     char** dev_names;
     char* dev_nodes[4]; // PipeWire node name for each capture mode
+    // MIDI device selection
+    uint8_t midi_sel_active;
+    int32_t midi_sel_cursor;
+    uint32_t midi_sel_offset;
+    uint32_t midi_dev_count;
+    char** midi_dev_names;
+    char* midi_dev_node; // selected MIDI device
+    void* midi_seq; // ALSA sequencer handle (snd_seq_t*)
+    int midi_seq_port; // ALSA sequencer port
+    int midi_seq_client; // ALSA sequencer client ID of the device
     uint8_t across_mode;
     uint8_t across_resample;
     uint8_t midi_toggle;

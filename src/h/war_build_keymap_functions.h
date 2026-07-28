@@ -121,6 +121,7 @@ else if (strcmp(name, "war_toggle_crop") == 0) { return war_toggle_crop; }
 else if (strcmp(name, "war_offall") == 0) { return war_offall; }
 else if (strcmp(name, "war_compress") == 0) { return war_compress; }
 else if (strcmp(name, "war_clear") == 0) { return war_clear; }
+else if (strcmp(name, "war_clear_all") == 0) { return war_clear_all; }
 else if (strcmp(name, "war_eq1") == 0) { return war_eq1; }
 else if (strcmp(name, "war_eq2") == 0) { return war_eq2; }
 else if (strcmp(name, "war_whatson") == 0) { return war_whatson; }
@@ -161,6 +162,7 @@ else if (strcmp(name, "war_redo") == 0) { return war_redo; }
 else if (strcmp(name, "war_trim_note_under_cursor") == 0) { return war_trim_note_under_cursor; }
 else if (strcmp(name, "war_delete_note_under_cursor") == 0) { return war_delete_note_under_cursor; }
 else if (strcmp(name, "war_split_note") == 0) { return war_split_note; }
+else if (strcmp(name, "war_split_at_playback") == 0) { return war_split_at_playback; }
 else if (strcmp(name, "war_wave_view") == 0) { return war_wave_view; }
 else if (strcmp(name, "war_yank") == 0) { return war_yank; }
 else if (strcmp(name, "war_paste") == 0) { return war_paste; }
