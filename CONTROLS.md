@@ -47,6 +47,8 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `t` + number | Divide cursor width by prefix (thin) |
 | `F` + number | Widen step size by prefix |
 | `T` + number | Narrow step size by prefix |
+| `S-s` | Split note at cursor: divides the capture slot audio and moves the right portion to the nearest empty slot above |
+| `S-c` | Split note at playback bar position: same as S-s but splits at the playback bar column instead of the cursor |
 | `u` | Undo last note modification |
 | `<C-r>` | Redo last undone modification |
 | `<C-Up>` | Increase gain for capture slot under cursor (+10) |
@@ -79,9 +81,31 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `Q` / `<S-q>` | Toggle capture — starts/stops recording audio to the current note/layer |
 | `q` | During capture: save current segment, advance cursor to next row, continue capturing |
 | `Space` | Preview the captured audio at cursor position |
+| `<A-o>` | Open capture device selector popup — lists PipeWire capture sources from `pactl list sources short`, refreshed each open. Press Enter to select, Escape to cancel |
 | `i` | Toggle ACROSS mode (pitch-shifts capture within radius) |
 | `<A-r>` | Toggle RESAMPLE mode (ON: resample changes pitch+length, OFF: pitch shift preserves duration) |
 | `:` | Enter command mode |
+
+## HUD Popup
+
+`C-h` toggles a centered 40×10 popup overlay. Navigate with vim keys:
+
+| Key | Action |
+|-----|--------|
+| `C-h` | Toggle HUD popup on/off |
+| `h` / `Left` | Pan text left (horizontal scroll) |
+| `j` / `Down` | Move cursor down |
+| `k` / `Up` | Move cursor up |
+| `l` / `Right` | Pan text right (horizontal scroll) |
+| `Enter` | Confirm selection (device selectors) |
+| `Esc` | Close popup |
+
+The popup is used by:
+- **Capture device selector** (`A-o` during capture) — lists PipeWire sources, `*` marks current device
+- **MIDI device selector** (`A-o` in MIDI mode) — lists ALSA sequencer devices, `*` marks current device
+- **Generic popup** (`C-h`) — empty navigable grid
+
+When a device list has more than 10 entries, the list scrolls vertically. Long device names pan horizontally with `h`/`l`.
 
 ## ROLL Mode — Playback Bar
 
@@ -92,6 +116,8 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `<S-b>` | Toggle tap tempo mode — tap Space to set BPM |
 | `<S-d>` | Reset playback bar to beginning |
 | `<A-a>` | Move playback bar to cursor position |
+| `n` | Set loop end marker at playback bar position |
+| `N` (<S-n>) | Set loop start marker at playback bar position |
 
 ## ROLL Mode — HUD (Harpoon-style)
 
@@ -179,6 +205,18 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `g` | Toggle toggle mode (press once to start, again to stop) |
 | `<S-d>` | Reset playback bar to beginning |
 | `<A-a>` | Move playback bar to cursor position |
+| `<A-o>` | Open MIDI device selector popup — lists ALSA sequencer input devices from `aconnect -i`, refreshed each open. Press Enter to select, Escape to cancel |
+| `<A-s>` | Toggle velocity sensitivity (SENSE) — when on, MIDI velocity maps to per-voice gain (velocity 64 = 0 dB) |
+
+### MIDI Controller Input
+
+WAR connects to a MIDI controller via ALSA sequencer. Select a device with `A-o` in MIDI mode, then browse with `j`/`k` and confirm with Enter.
+
+- MIDI Note On/Off triggers preview voices (same as keyboard play keys)
+- Velocity sensitivity (toggle with `A-s`) scales playback gain: velocity 64 = unity, lower = quieter, higher = louder
+- MIDI events are processed before the audio mixing loop for zero-frame latency
+- Selected controller is saved to `global_war.config` and auto-connects on next launch
+- Note On places a recorded note on the grid when recording is active (`a`)
 
 ### Layers (same as ROLL mode)
 
@@ -202,13 +240,30 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 | `:loop <quarter_notes> <repeats>` | Loop notes (copy section length × repeats) |
 | `:cd <path>` | Change directory |
 | `:radius <n>` | Set ACROSS pitch-shift radius (notes above/below) |
-| `:eq <0-200>` | Set EQ filter (0=LP, 100=flat, 200=HP) |
+| `:eq1 <value>` | Set EQ1 HPF/LPF for current slot (positive = HP, negative = LP, `off` = zero) |
+| `:eq2 <value>` | Set EQ2 HPF/LPF for current slot (same as eq1) |
+| `:eq1 status` / `:eq2 status` | Show current eq1/eq2 values |
 | `:winst <name>` | Save instrument file for current cursor layer |
 | `:loadinst <name>` | Load instrument file into current layer at cursor |
 | `:mv <layer>` | Move capture slot at cursor row/layer to another layer |
 | `:mvu <n>` | Move capture slot at cursor up n pitches |
 | `:mvd <n>` | Move capture slot at cursor down n pitches |
 | `:across <radius>` | Pitch-shift capture slot at cursor to nearby notes (within radius); respects RESAMPLE toggle |
+| `:compress <on|off|params...>` | Toggle/set compressor (threshold, ratio, attack, release, makeup) |
+| `:saturate <on|off|params...>` | Toggle/set saturator (drive, mix, makeup) |
+| `:reverb <on|off|params...>` | Toggle/set reverb (decay, mix) |
+| `:delay <on|off|params...>` | Toggle/set delay (time, feedback, mix) |
+| `:chorus <on|off|params...>` | Toggle/set chorus (rate, depth, mix) |
+| `:gate <on|off|params...>` | Toggle/set gate (threshold, attack, hold, release) |
+| `:deesser <on|off|params...>` | Toggle/set de-esser (threshold, frequency) |
+| `:effect usage` | Show effect parameter format |
+| `:effect status` | Show current effect states for the slot |
+| `:effect default` | Reset current effect to defaults |
+| `:whatson` | List all active effects on current slot |
+| `:offall` | Turn off all effects on current slot |
+| `:clear` | Clear current slot (frees samples, resets all params) |
+| `:clearall` | Clear ALL slots and note instances (reset project to default) |
+| `:gp` | Move cursor to playback bar position |
 | `:maj7` | Place a major 7th chord (root, +4, +7, +11) at cursor using cursor width |
 | `:min7` | Place a minor 7th chord (0, +3, +7, +10) |
 | `:min9` | Place a minor 9th chord (0, +3, +7, +10, +14) |
@@ -223,6 +278,46 @@ BPM is quarter notes per minute; `seconds_per_cell = 15.0 / bpm`.
 
 Press `Esc` to exit command mode.
 
+## Effect System
+
+Each capture slot has 9 per-slot effect slots (`WAR_EFFECT_COUNT`). Effects are toggled and configured per-slot via commands.
+
+### Effect Commands
+
+Each effect supports the same sub-commands:
+- `:effect on` — enable the effect
+- `:effect off` — disable the effect
+- `:effect <params>` — enable and set parameters
+- `:effect usage` — show parameter format
+- `:effect status` — show current state and values
+- `:effect default` — reset to defaults (`off` with default params)
+
+Effects process in series: Compress1 → Compress2 → Saturate → Gate → De-esser, followed by EQ1/EQ2 inline.
+
+### Effect Parameters
+
+| Effect | Command | Parameters |
+|--------|---------|------------|
+| **Compressor** | `:compress` | `threshold ratio attack(ms) release(ms) makeup` |
+| **Compress2** | `:compress2` | Same as compress (second compressor in series) |
+| **Saturator** | `:saturate` | `drive mix makeup(dB)` |
+| **Reverb** | `:reverb` | `decay(0-1) mix(0-1)` |
+| **Delay** | `:delay` | `time(ms) feedback(0-1) mix(0-1)` |
+| **Chorus** | `:chorus` | `rate(Hz) depth(0-1) mix(0-1)` |
+| **Gate** | `:gate` | `threshold attack(ms) hold(ms) release(ms)` |
+| **De-esser** | `:deesser` | `threshold freq(Hz)` |
+
+### Quick Controls
+
+| Command | Action |
+|---------|--------|
+| `:whatson` | List all active effects on current slot with abbreviations |
+| `:offall` | Disable all effects on current slot |
+| `:clear` | Free current slot samples and reset all params |
+| `:clearall` | Free ALL slot samples and reset project to defaults |
+| `:eq1 <value>` | Set EQ1: positive = high-pass, negative = low-pass, `off` = zero |
+| `:eq2 <value>` | Set EQ2 (same range as eq1) |
+
 ---
 
 ## Status Bar Indicators
@@ -231,10 +326,12 @@ Press `Esc` to exit command mode.
 |-------|----------|---------|
 | `G<value>` | Bottom bar | Gain for capture slot under cursor |
 | `P<value>` | Bottom bar | Pan for capture slot under cursor |
-| `E<value>` | Bottom bar | EQ filter value for capture slot under cursor |
+| `A<value>` / `S<value>` / `R<value>` | Bottom bar | Attack, sustain, release for capture slot under cursor |
+| `SENSE` | Bottom bar | Velocity sensitivity enabled (Alt+S to toggle) |
 | `CROP` | Top bar | Crop mode active |
 | `CAPTURE` | Middle bar | Audio capture in progress |
 | `MIDI` | Middle bar | MIDI mode active |
+| `MIDI RECORD C<N>` | Middle bar | MIDI recording active on capture mode N |
 | `VISUAL` | Middle bar | Visual mode active |
 | `TAP TEMPO` | Middle bar | Tap tempo mode (Shift+B) — Space to tap |
 | `LOOP` | Top bar | Loop mode enabled (MIDI) |
