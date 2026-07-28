@@ -4,7 +4,6 @@ Make music with vim motions and ASR-10 workflow.
 
 [![Download](https://img.shields.io/github/v/release/monacochrist/WAR?label=Download%20WAR&include_prereleases)](https://github.com/monacochrist/WAR/releases/latest)
 
-<a href="https://github.com/monacochrist/WAR/raw/main/assets/videos/war_preview.mp4"><img src="assets/videos/war_preview.gif" alt="WAR Demo" width="100%"></a>
 
 ## Download & Run
 
