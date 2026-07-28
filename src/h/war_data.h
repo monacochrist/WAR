@@ -1657,6 +1657,10 @@ typedef struct war_hud_context {
     uint32_t* count;
     uint32_t* first;
     uint32_t buffer_count;
+    // simple popup HUD
+    uint8_t popup_active;
+    int32_t popup_cursor_x;
+    int32_t popup_cursor_y;
 } war_hud_context;
 
 typedef struct war_hud_line_context {
@@ -2709,6 +2713,7 @@ struct war_env {
     war_nsgt_context* ctx_nsgt;
     war_vulkan_context* ctx_new_vulkan;
     war_cursor_context* ctx_cursor;
+    war_hud_context* ctx_hud;
     war_misc_context* ctx_misc;
     // capture slots: 128 notes × 9 layers
     war_capture_slot capture_slots[128 * WAR_CAPTURE_SLOT_LAYERS];
@@ -2770,6 +2775,13 @@ struct war_env {
     uint64_t preview_voice_delay_len[WAR_PREVIEW_VOICES];
     float preview_voice_gain[WAR_PREVIEW_VOICES]; // per-voice gain multiplier (velocity, default 1.0)
     int midi_velocity_sense; // velocity sensitivity toggle (Alt+S)
+    // simple popup HUD
+    uint8_t popup_active;
+    int32_t popup_cursor_x;
+    int32_t popup_cursor_y;
+    uint32_t popup_scroll_y; // vertical scroll offset for device list
+    uint32_t popup_scroll_x; // horizontal scroll offset for device names
+    uint8_t popup_mode; // 0=generic, 1=MIDI selector, 2=capture selector
     uint8_t recording_active;
     uint8_t loop_mode;
     uint8_t capture_mode;
@@ -2777,6 +2789,7 @@ struct war_env {
     uint8_t dev_sel_active;
     int32_t dev_sel_cursor;
     uint32_t dev_sel_offset;
+    uint32_t dev_sel_text_offset;
     int32_t capture_note_idx;
     uint32_t loopback_modules[4]; // pactl module indices for virtual sinks
     uint32_t dev_count;
@@ -2786,6 +2799,7 @@ struct war_env {
     uint8_t midi_sel_active;
     int32_t midi_sel_cursor;
     uint32_t midi_sel_offset;
+    uint32_t midi_sel_text_offset;
     uint32_t midi_dev_count;
     char** midi_dev_names;
     char* midi_dev_node; // selected MIDI device

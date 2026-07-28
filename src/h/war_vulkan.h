@@ -2200,7 +2200,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         ctx_wayland->env->ctx_cursor->instance[0].color[2] = 0.3f;
         ctx_wayland->env->ctx_cursor->instance[0].color[3] = 0.6f;
     }
-    // device selector HUD overlay (over full screen, panning-independent)
+    // device selector HUD overlay (centered on screen)
     if (ctx_wayland->env->dev_sel_active && ctx_wayland->env->ctx_font) {
         war_font_context* _df = ctx_wayland->env->ctx_font;
         double _dcw = ctx_wayland->env->ctx_cursor->cell_width;
@@ -2208,64 +2208,106 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         float _dz = ctx_wayland->zoom;
         float _dsw = (float)ctx_wayland->width;
         float _dsh = (float)ctx_wayland->height;
-        VkViewport _dvp = {0, 0, _dsw, _dsh, 0, 1};
-        VkRect2D _dsc = {{0, 0}, {(uint32_t)_dsw, (uint32_t)_dsh}};
-        vkCmdSetViewport(cmd, 0, 1, &_dvp);
-        vkCmdSetScissor(cmd, 0, 1, &_dsc);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _df->pipeline);
-        float _dpc[] = {(float)_dcw, (float)_dch,
-                        -ctx_wayland->panning[0] * _dz, 0,
-                        _dz, 0, _dsw, _dsh, 0, 0};
-        vkCmdPushConstants(cmd, _df->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_dpc), _dpc);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                _df->pipeline_layout, 0, 1, &_df->desc_set, 0, NULL);
-        VkBuffer _dbufs[] = {_df->quad_vbo, _df->instance_vbo};
-        VkDeviceSize _doffs[] = {0, 0};
-        vkCmdBindVertexBuffers(cmd, 0, 2, _dbufs, _doffs);
-        war_vulkan_text_instance* _ddst = (war_vulkan_text_instance*)_df->instance_mapped;
-        const char* _dcur = ctx_wayland->env->dev_nodes[ctx_wayland->env->capture_mode - 1];
-        uint32_t _dwritten = 0;
+        // center in screen, panning=(0,0) for fixed HUD position
+        float _dcx = _dsw / (2.0f * (float)_dcw * _dz);
+        float _dcy = _dsh / (2.0f * (float)_dch * _dz);
         uint32_t _dmaxrow = 15;
-        for (uint32_t _dr = ctx_wayland->env->dev_sel_offset;
-             _dr < ctx_wayland->env->dev_count && _dr < ctx_wayland->env->dev_sel_offset + _dmaxrow;
-             _dr++) {
-            char _dline[256];
-            int _dp = 0;
-            if ((int32_t)_dr == ctx_wayland->env->dev_sel_cursor)
-                _dline[_dp++] = '>';
-            if (_dcur && strcmp(ctx_wayland->env->dev_names[_dr], _dcur) == 0)
-                _dline[_dp++] = '*';
-            int _dn = snprintf(_dline + _dp, sizeof(_dline) - _dp, "%s", ctx_wayland->env->dev_names[_dr]);
-            if (_dn < 0) _dn = 0;
-            if (_dp + _dn > (int)sizeof(_dline) - 1) _dn = (int)sizeof(_dline) - 1 - _dp;
-            _dn += _dp;
-            if (_dn > 60) _dn = 60;
-            for (int _di = 0; _di < _dn; _di++) {
-                unsigned char _dc = (unsigned char)_dline[_di];
-                if (_dc < 32) _dc = ' ';
-                war_vulkan_text_instance* _dti = &_ddst[_dwritten + _di];
-                _dti->pos[0] = (float)ctx_wayland->gutter_cols + 2.0f + (float)_di;
-                _dti->pos[1] = (float)ctx_wayland->gutter_rows + (float)(_dr - ctx_wayland->env->dev_sel_offset);
-                _dti->pos[2] = 0;
-                _dti->size[0] = 1.0f;
-                _dti->size[1] = 1.0f;
-                _dti->uv[0] = _df->glyph_uv[_dc][0];
-                _dti->uv[1] = _df->glyph_uv[_dc][1];
-                _dti->uv[2] = _df->glyph_uv[_dc][2];
-                _dti->uv[3] = _df->glyph_uv[_dc][3];
-                _dti->glyph_scale[0] = _df->glyph_norm_width[_dc];
-                _dti->glyph_scale[1] = _df->glyph_norm_height[_dc];
-                _dti->ascent = _df->glyph_norm_ascent[_dc];
-                _dti->descent = _df->glyph_norm_descent[_dc];
-                _dti->baseline = _df->glyph_norm_baseline[_dc];
-                _dti->color[0] = 1.0f; _dti->color[1] = 1.0f; _dti->color[2] = 1.0f; _dti->color[3] = 1.0f;
-                _dti->flags = 0;
+        uint32_t _dline_count = ctx_wayland->env->dev_count > ctx_wayland->env->dev_sel_offset
+                                ? ctx_wayland->env->dev_count - ctx_wayland->env->dev_sel_offset : 0;
+        if (_dline_count > _dmaxrow) _dline_count = _dmaxrow;
+        // draw dark background rectangles
+        {
+            war_cursor_context* _dcur2 = ctx_wayland->env->ctx_cursor;
+            VkViewport _dvp2 = {0, 0, _dsw, _dsh, 0, 1};
+            VkRect2D _dsc2 = {{0, 0}, {(uint32_t)_dsw, (uint32_t)_dsh}};
+            vkCmdSetViewport(cmd, 0, 1, &_dvp2);
+            vkCmdSetScissor(cmd, 0, 1, &_dsc2);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _dcur2->pipeline);
+            float _dpc2[] = {(float)_dcw, (float)_dch, 0, 0, _dz, 0, _dsw, _dsh, 0, 0};
+            vkCmdPushConstants(cmd, _dcur2->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_dpc2), _dpc2);
+            VkBuffer _dbufs2[] = {_dcur2->quad_vbo, _dcur2->instance_vbo};
+            VkDeviceSize _doffs2[] = {0, 0};
+            vkCmdBindVertexBuffers(cmd, 0, 2, _dbufs2, _doffs2);
+            war_vulkan_cursor_instance _dpatches[15] = {0};
+            float _dbg_x = _dcx - 20.0f;
+            float _dbg_y = (float)ctx_wayland->gutter_rows + 2.0f - 0.5f;
+            int32_t _dsel_row = (int32_t)ctx_wayland->env->dev_sel_cursor - (int32_t)ctx_wayland->env->dev_sel_offset;
+            for (uint32_t _di2 = 0; _di2 < _dline_count; _di2++) {
+                _dpatches[_di2].pos[0] = _dbg_x;
+                _dpatches[_di2].pos[1] = _dbg_y + (float)_di2;
+                _dpatches[_di2].size[0] = 40.0f;
+                _dpatches[_di2].size[1] = 1.0f;
+                if ((int32_t)_di2 == _dsel_row) {
+                    _dpatches[_di2].color[0] = 0.35f; _dpatches[_di2].color[1] = 0.35f; _dpatches[_di2].color[2] = 0.35f; _dpatches[_di2].color[3] = 0.95f;
+                } else {
+                    _dpatches[_di2].color[0] = 0.15f; _dpatches[_di2].color[1] = 0.15f; _dpatches[_di2].color[2] = 0.15f; _dpatches[_di2].color[3] = 0.92f;
+                }
+                _dpatches[_di2].flags = 0;
             }
-            vkCmdDraw(cmd, 4, (uint32_t)_dn, 0, _dwritten);
-            _dwritten += _dn;
+            VkDeviceSize _dbg_size = sizeof(war_vulkan_cursor_instance) * _dline_count;
+            memcpy((char*)_dcur2->instance_mapped, _dpatches, _dbg_size);
+            vkCmdDraw(cmd, 4, _dline_count, 0, 0);
+        }
+        // draw text
+        {
+            VkViewport _dvp = {0, 0, _dsw, _dsh, 0, 1};
+            VkRect2D _dsc = {{0, 0}, {(uint32_t)_dsw, (uint32_t)_dsh}};
+            vkCmdSetViewport(cmd, 0, 1, &_dvp);
+            vkCmdSetScissor(cmd, 0, 1, &_dsc);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _df->pipeline);
+            float _dpc[] = {(float)_dcw, (float)_dch, 0, 0, _dz, 0, _dsw, _dsh, 0, 0};
+            vkCmdPushConstants(cmd, _df->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_dpc), _dpc);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _df->pipeline_layout, 0, 1, &_df->desc_set, 0, NULL);
+            VkBuffer _dbufs[] = {_df->quad_vbo, _df->instance_vbo};
+            VkDeviceSize _doffs[] = {0, 0};
+            vkCmdBindVertexBuffers(cmd, 0, 2, _dbufs, _doffs);
+            war_vulkan_text_instance* _ddst = (war_vulkan_text_instance*)_df->instance_mapped;
+            const char* _dcur = ctx_wayland->env->dev_nodes[ctx_wayland->env->capture_mode - 1];
+            uint32_t _dwritten = 0;
+            float _dty = (float)ctx_wayland->gutter_rows + 2.0f;
+            float _dtx_base = _dcx - 20.0f;
+            uint32_t _dtoff = ctx_wayland->env->dev_sel_text_offset;
+            for (uint32_t _dr = ctx_wayland->env->dev_sel_offset;
+                 _dr < ctx_wayland->env->dev_count && _dr < ctx_wayland->env->dev_sel_offset + _dmaxrow;
+                 _dr++) {
+                char _dline[256];
+                int _dp = 0;
+                if ((int32_t)_dr == ctx_wayland->env->dev_sel_cursor)
+                    _dline[_dp++] = '>';
+                if (_dcur && strcmp(ctx_wayland->env->dev_names[_dr], _dcur) == 0)
+                    _dline[_dp++] = '*';
+                int _dn = snprintf(_dline + _dp, sizeof(_dline) - _dp, "%s", ctx_wayland->env->dev_names[_dr]);
+                if (_dn < 0) _dn = 0;
+                if (_dp + _dn > (int)sizeof(_dline) - 1) _dn = (int)sizeof(_dline) - 1 - _dp;
+                int _full_len = _dp + _dn;
+                int _start = (int)_dtoff < _full_len ? (int)_dtoff : (_full_len > 0 ? _full_len - 1 : 0);
+                if (_start < 0) _start = 0;
+                int _vis = _full_len - _start;
+                if (_vis > 40) _vis = 40;
+                if (_vis < 0) _vis = 0;
+                for (int _di = 0; _di < _vis; _di++) {
+                    unsigned char _dc = (unsigned char)_dline[_start + _di];
+                    if (_dc < 32) _dc = ' ';
+                    war_vulkan_text_instance* _dti = &_ddst[_dwritten + _di];
+                    _dti->pos[0] = _dtx_base + (float)_di;
+                    _dti->pos[1] = _dty + (float)(_dr - ctx_wayland->env->dev_sel_offset);
+                    _dti->pos[2] = 0;
+                    _dti->size[0] = 1.0f; _dti->size[1] = 1.0f;
+                    _dti->uv[0] = _df->glyph_uv[_dc][0]; _dti->uv[1] = _df->glyph_uv[_dc][1];
+                    _dti->uv[2] = _df->glyph_uv[_dc][2]; _dti->uv[3] = _df->glyph_uv[_dc][3];
+                    _dti->glyph_scale[0] = _df->glyph_norm_width[_dc]; _dti->glyph_scale[1] = _df->glyph_norm_height[_dc];
+                    _dti->ascent = _df->glyph_norm_ascent[_dc]; _dti->descent = _df->glyph_norm_descent[_dc];
+                    _dti->baseline = _df->glyph_norm_baseline[_dc];
+                    float _dc_bright = ((int32_t)_dr == ctx_wayland->env->dev_sel_cursor) ? 1.0f : 0.8f;
+                    _dti->color[0] = _dc_bright; _dti->color[1] = _dc_bright; _dti->color[2] = _dc_bright; _dti->color[3] = 1.0f;
+                    _dti->flags = 0;
+                }
+                vkCmdDraw(cmd, 4, (uint32_t)_vis, 0, _dwritten);
+                _dwritten += _vis;
+            }
         }
     }
-    // MIDI device selector HUD
+    // MIDI device selector HUD (centered on screen)
     if (ctx_wayland->env->midi_sel_active && ctx_wayland->env->ctx_font) {
         war_font_context* _mf = ctx_wayland->env->ctx_font;
         double _mcw = ctx_wayland->env->ctx_cursor->cell_width;
@@ -2273,59 +2315,108 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
         float _mz = ctx_wayland->zoom;
         float _msw = (float)ctx_wayland->width;
         float _msh = (float)ctx_wayland->height;
-        VkViewport _mvp = {0, 0, _msw, _msh, 0, 1};
-        VkRect2D _msc = {{0, 0}, {(uint32_t)_msw, (uint32_t)_msh}};
-        vkCmdSetViewport(cmd, 0, 1, &_mvp);
-        vkCmdSetScissor(cmd, 0, 1, &_msc);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _mf->pipeline);
-        float _mpc[] = {(float)_mcw, (float)_mch, -ctx_wayland->panning[0] * _mz, 0, _mz, 0, _msw, _msh, 0, 0};
-        vkCmdPushConstants(cmd, _mf->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_mpc), _mpc);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _mf->pipeline_layout, 0, 1, &_mf->desc_set, 0, NULL);
-        VkBuffer _mbufs[] = {_mf->quad_vbo, _mf->instance_vbo};
-        VkDeviceSize _mooffs[] = {0, 0};
-        vkCmdBindVertexBuffers(cmd, 0, 2, _mbufs, _mooffs);
-        war_vulkan_text_instance* _mdst = (war_vulkan_text_instance*)_mf->instance_mapped;
-        uint32_t _mwritten = 0;
+        float _mcx = _msw / (2.0f * (float)_mcw * _mz);
+        float _mcy = _msh / (2.0f * (float)_mch * _mz);
         uint32_t _mmaxrow = 15;
-        for (uint32_t _mr = ctx_wayland->env->midi_sel_offset;
-             _mr < ctx_wayland->env->midi_dev_count && _mr < ctx_wayland->env->midi_sel_offset + _mmaxrow;
-             _mr++) {
-            char _mline[256];
-            int _mp = 0;
-            if ((int32_t)_mr == ctx_wayland->env->midi_sel_cursor)
-                _mline[_mp++] = '>';
-            if (ctx_wayland->env->midi_dev_node && strcmp(ctx_wayland->env->midi_dev_names[_mr], ctx_wayland->env->midi_dev_node) == 0)
-                _mline[_mp++] = '*';
-            int _mn = snprintf(_mline + _mp, sizeof(_mline) - _mp, "%s", ctx_wayland->env->midi_dev_names[_mr]);
-            if (_mn < 0) _mn = 0;
-            if (_mp + _mn > (int)sizeof(_mline) - 1) _mn = (int)sizeof(_mline) - 1 - _mp;
-            _mn += _mp;
-            if (_mn > 60) _mn = 60;
-            for (int _mi = 0; _mi < _mn; _mi++) {
-                unsigned char _mc = (unsigned char)_mline[_mi];
-                if (_mc < 32) _mc = ' ';
-                war_vulkan_text_instance* _mti = &_mdst[_mwritten + _mi];
-                _mti->pos[0] = (float)ctx_wayland->gutter_cols + 2.0f + (float)_mi;
-                _mti->pos[1] = (float)ctx_wayland->gutter_rows + (float)(_mr - ctx_wayland->env->midi_sel_offset);
-                _mti->pos[2] = 0;
-                _mti->size[0] = 1.0f; _mti->size[1] = 1.0f;
-                _mti->uv[0] = _mf->glyph_uv[_mc][0]; _mti->uv[1] = _mf->glyph_uv[_mc][1];
-                _mti->uv[2] = _mf->glyph_uv[_mc][2]; _mti->uv[3] = _mf->glyph_uv[_mc][3];
-                _mti->glyph_scale[0] = _mf->glyph_norm_width[_mc]; _mti->glyph_scale[1] = _mf->glyph_norm_height[_mc];
-                _mti->ascent = _mf->glyph_norm_ascent[_mc]; _mti->descent = _mf->glyph_norm_descent[_mc];
-                _mti->baseline = _mf->glyph_norm_baseline[_mc];
-                _mti->color[0] = 1.0f; _mti->color[1] = 1.0f; _mti->color[2] = 1.0f; _mti->color[3] = 1.0f;
-                _mti->flags = 0;
+        uint32_t _mline_count = ctx_wayland->env->midi_dev_count > ctx_wayland->env->midi_sel_offset
+                                ? ctx_wayland->env->midi_dev_count - ctx_wayland->env->midi_sel_offset : 0;
+        if (_mline_count > _mmaxrow) _mline_count = _mmaxrow;
+        // draw dark background rectangles
+        {
+            war_cursor_context* _mcur2 = ctx_wayland->env->ctx_cursor;
+            VkViewport _mvp2 = {0, 0, _msw, _msh, 0, 1};
+            VkRect2D _msc2 = {{0, 0}, {(uint32_t)_msw, (uint32_t)_msh}};
+            vkCmdSetViewport(cmd, 0, 1, &_mvp2);
+            vkCmdSetScissor(cmd, 0, 1, &_msc2);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _mcur2->pipeline);
+            float _mpc2[] = {(float)_mcw, (float)_mch, 0, 0, _mz, 0, _msw, _msh, 0, 0};
+            vkCmdPushConstants(cmd, _mcur2->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_mpc2), _mpc2);
+            VkBuffer _mbufs2[] = {_mcur2->quad_vbo, _mcur2->instance_vbo};
+            VkDeviceSize _mooffs2[] = {0, 0};
+            vkCmdBindVertexBuffers(cmd, 0, 2, _mbufs2, _mooffs2);
+            war_vulkan_cursor_instance _mpatches[15] = {0};
+            float _mbg_x = _mcx - 20.0f;
+            float _mbg_y = (float)ctx_wayland->gutter_rows + 2.0f - 0.5f;
+            int32_t _msel_row = (int32_t)ctx_wayland->env->midi_sel_cursor - (int32_t)ctx_wayland->env->midi_sel_offset;
+            for (uint32_t _mi2 = 0; _mi2 < _mline_count; _mi2++) {
+                _mpatches[_mi2].pos[0] = _mbg_x;
+                _mpatches[_mi2].pos[1] = _mbg_y + (float)_mi2;
+                _mpatches[_mi2].size[0] = 40.0f;
+                _mpatches[_mi2].size[1] = 1.0f;
+                if ((int32_t)_mi2 == _msel_row) {
+                    _mpatches[_mi2].color[0] = 0.35f; _mpatches[_mi2].color[1] = 0.35f; _mpatches[_mi2].color[2] = 0.35f; _mpatches[_mi2].color[3] = 0.95f;
+                } else {
+                    _mpatches[_mi2].color[0] = 0.15f; _mpatches[_mi2].color[1] = 0.15f; _mpatches[_mi2].color[2] = 0.15f; _mpatches[_mi2].color[3] = 0.92f;
+                }
+                _mpatches[_mi2].flags = 0;
             }
-            vkCmdDraw(cmd, 4, (uint32_t)_mn, 0, _mwritten);
-            _mwritten += _mn;
+            VkDeviceSize _mbg_size = sizeof(war_vulkan_cursor_instance) * _mline_count;
+            memcpy((char*)_mcur2->instance_mapped, _mpatches, _mbg_size);
+            vkCmdDraw(cmd, 4, _mline_count, 0, 0);
+        }
+        // draw text
+        {
+            VkViewport _mvp = {0, 0, _msw, _msh, 0, 1};
+            VkRect2D _msc = {{0, 0}, {(uint32_t)_msw, (uint32_t)_msh}};
+            vkCmdSetViewport(cmd, 0, 1, &_mvp);
+            vkCmdSetScissor(cmd, 0, 1, &_msc);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _mf->pipeline);
+            float _mpc[] = {(float)_mcw, (float)_mch, 0, 0, _mz, 0, _msw, _msh, 0, 0};
+            vkCmdPushConstants(cmd, _mf->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_mpc), _mpc);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _mf->pipeline_layout, 0, 1, &_mf->desc_set, 0, NULL);
+            VkBuffer _mbufs[] = {_mf->quad_vbo, _mf->instance_vbo};
+            VkDeviceSize _mooffs[] = {0, 0};
+            vkCmdBindVertexBuffers(cmd, 0, 2, _mbufs, _mooffs);
+            war_vulkan_text_instance* _mdst = (war_vulkan_text_instance*)_mf->instance_mapped;
+            uint32_t _mwritten = 0;
+            float _mty = (float)ctx_wayland->gutter_rows + 2.0f;
+            float _mtx_base = _mcx - 20.0f;
+            uint32_t _mtoff = ctx_wayland->env->midi_sel_text_offset;
+            for (uint32_t _mr = ctx_wayland->env->midi_sel_offset;
+                 _mr < ctx_wayland->env->midi_dev_count && _mr < ctx_wayland->env->midi_sel_offset + _mmaxrow;
+                 _mr++) {
+                char _mline[256];
+                int _mp = 0;
+                if ((int32_t)_mr == ctx_wayland->env->midi_sel_cursor)
+                    _mline[_mp++] = '>';
+                if (ctx_wayland->env->midi_dev_node && strcmp(ctx_wayland->env->midi_dev_names[_mr], ctx_wayland->env->midi_dev_node) == 0)
+                    _mline[_mp++] = '*';
+                int _mn = snprintf(_mline + _mp, sizeof(_mline) - _mp, "%s", ctx_wayland->env->midi_dev_names[_mr]);
+                if (_mn < 0) _mn = 0;
+                if (_mp + _mn > (int)sizeof(_mline) - 1) _mn = (int)sizeof(_mline) - 1 - _mp;
+                int _full_len = _mp + _mn;
+                int _start = (int)_mtoff < _full_len ? (int)_mtoff : (_full_len > 0 ? _full_len - 1 : 0);
+                if (_start < 0) _start = 0;
+                int _vis = _full_len - _start;
+                if (_vis > 40) _vis = 40;
+                if (_vis < 0) _vis = 0;
+                for (int _mi = 0; _mi < _vis; _mi++) {
+                    unsigned char _mc = (unsigned char)_mline[_start + _mi];
+                    if (_mc < 32) _mc = ' ';
+                    war_vulkan_text_instance* _mti = &_mdst[_mwritten + _mi];
+                    _mti->pos[0] = _mtx_base + (float)_mi;
+                    _mti->pos[1] = _mty + (float)(_mr - ctx_wayland->env->midi_sel_offset);
+                    _mti->pos[2] = 0;
+                    _mti->size[0] = 1.0f; _mti->size[1] = 1.0f;
+                    _mti->uv[0] = _mf->glyph_uv[_mc][0]; _mti->uv[1] = _mf->glyph_uv[_mc][1];
+                    _mti->uv[2] = _mf->glyph_uv[_mc][2]; _mti->uv[3] = _mf->glyph_uv[_mc][3];
+                    _mti->glyph_scale[0] = _mf->glyph_norm_width[_mc]; _mti->glyph_scale[1] = _mf->glyph_norm_height[_mc];
+                    _mti->ascent = _mf->glyph_norm_ascent[_mc]; _mti->descent = _mf->glyph_norm_descent[_mc];
+                    _mti->baseline = _mf->glyph_norm_baseline[_mc];
+                    float _mc_bright = ((int32_t)_mr == ctx_wayland->env->midi_sel_cursor) ? 1.0f : 0.8f;
+                    _mti->color[0] = _mc_bright; _mti->color[1] = _mc_bright; _mti->color[2] = _mc_bright; _mti->color[3] = 1.0f;
+                    _mti->flags = 0;
+                }
+                vkCmdDraw(cmd, 4, (uint32_t)_vis, 0, _mwritten);
+                _mwritten += _vis;
+            }
         }
     }
     war_cursor_render(cmd,
                       ctx_wayland->env->ctx_cursor,
                       ctx_wayland,
                       (float)ctx_wayland->width,
-                      (float)ctx_wayland->height);
+                        (float)ctx_wayland->height);
     // --- 4 status bar backgrounds at bottom gutter rows ---
     {
         war_cursor_context* cur = ctx_wayland->env->ctx_cursor;
@@ -2497,6 +2588,117 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                 vkCmdDraw(cmd, 4, wcount, 0, wcur->instance_count + 4);
             }
             #undef WAVE_MAX_BARS
+        }
+    }
+    // HUD popup overlay (centered, 40x10)
+    if (ctx_wayland->env->popup_active) {
+        war_cursor_context* _hcur = ctx_wayland->env->ctx_cursor;
+        double _hcw = _hcur->cell_width;
+        double _hch = _hcur->cell_height;
+        float _hz = ctx_wayland->zoom;
+        float _hsw = (float)ctx_wayland->width;
+        float _hsh = (float)ctx_wayland->height;
+        float _hcx = _hsw / (2.0f * (float)_hcw * _hz);
+        float _hcy = _hsh / (2.0f * (float)_hch * _hz);
+        VkViewport _hvp = {0, 0, _hsw, _hsh, 0, 1};
+        VkRect2D _hsc = {{0, 0}, {(uint32_t)_hsw, (uint32_t)_hsh}};
+        vkCmdSetViewport(cmd, 0, 1, &_hvp);
+        vkCmdSetScissor(cmd, 0, 1, &_hsc);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _hcur->pipeline);
+        float _hpc[] = {(float)_hcw, (float)_hch, 0, 0, _hz, 0, _hsw, _hsh, 0, 0};
+        vkCmdPushConstants(cmd, _hcur->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_hpc), _hpc);
+        VkBuffer _hbufs[] = {_hcur->quad_vbo, _hcur->instance_vbo};
+        VkDeviceSize _hoffs[] = {0, 0};
+        vkCmdBindVertexBuffers(cmd, 0, 2, _hbufs, _hoffs);
+        float _htotal_x = _hsw / ((float)_hcw * _hz);
+        float _htotal_y = _hsh / ((float)_hch * _hz);
+        float _hbg_x = _hcx - 20.0f;
+        float _hbg_y = _hcy - 5.0f;
+        if (_hbg_x + 40.0f > _htotal_x) _hbg_x = _htotal_x - 40.0f;
+        if (_hbg_x < (float)ctx_wayland->gutter_cols) _hbg_x = (float)ctx_wayland->gutter_cols;
+        if (_hbg_y + 10.0f > _htotal_y) _hbg_y = _htotal_y - 10.0f;
+        if (_hbg_y < (float)ctx_wayland->gutter_rows) _hbg_y = (float)ctx_wayland->gutter_rows;
+        war_vulkan_cursor_instance _hinst[2] = {0};
+        _hinst[0].pos[0] = _hbg_x;
+        _hinst[0].pos[1] = _hbg_y;
+        _hinst[0].size[0] = 40.0f;
+        _hinst[0].size[1] = 10.0f;
+        _hinst[0].color[0] = 0.12f; _hinst[0].color[1] = 0.12f; _hinst[0].color[2] = 0.12f; _hinst[0].color[3] = 0.92f;
+        _hinst[0].flags = 0;
+        _hinst[1].pos[0] = _hbg_x + (float)ctx_wayland->env->popup_cursor_x;
+        _hinst[1].pos[1] = _hbg_y + 9.0f - (float)ctx_wayland->env->popup_cursor_y;
+        _hinst[1].size[0] = 1.0f;
+        _hinst[1].size[1] = 1.0f;
+        _hinst[1].color[0] = 1.0f; _hinst[1].color[1] = 1.0f; _hinst[1].color[2] = 0.3f; _hinst[1].color[3] = 1.0f;
+        _hinst[1].flags = 0;
+#define HUD_OFFSET 900
+        memcpy((char*)_hcur->instance_mapped + sizeof(war_vulkan_cursor_instance) * HUD_OFFSET, _hinst, sizeof(_hinst));
+        vkCmdDraw(cmd, 4, 2, 0, HUD_OFFSET);
+#undef HUD_OFFSET
+        // draw device names in popup
+        if (ctx_wayland->env->popup_mode >= 1 && ctx_wayland->env->ctx_font) {
+            war_font_context* _hf = ctx_wayland->env->ctx_font;
+            VkViewport _hfv = {0, 0, _hsw, _hsh, 0, 1};
+            VkRect2D _hfs = {{0, 0}, {(uint32_t)_hsw, (uint32_t)_hsh}};
+            vkCmdSetViewport(cmd, 0, 1, &_hfv);
+            vkCmdSetScissor(cmd, 0, 1, &_hfs);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _hf->pipeline);
+            float _hfp[] = {(float)_hcw, (float)_hch, 0, 0, _hz, 0, _hsw, _hsh, 0, 0};
+            vkCmdPushConstants(cmd, _hf->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(_hfp), _hfp);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _hf->pipeline_layout, 0, 1, &_hf->desc_set, 0, NULL);
+            VkBuffer _hfbuf[] = {_hf->quad_vbo, _hf->instance_vbo};
+            VkDeviceSize _hfoff[] = {0, 0};
+            vkCmdBindVertexBuffers(cmd, 0, 2, _hfbuf, _hfoff);
+#define HF_OFFSET 500
+            war_vulkan_text_instance* _hfdst = (war_vulkan_text_instance*)_hf->instance_mapped;
+            uint32_t _hf_written = HF_OFFSET;
+            uint32_t _hf_count = ctx_wayland->env->popup_mode == 1 ? ctx_wayland->env->midi_dev_count : ctx_wayland->env->dev_count;
+            uint32_t _hf_scroll_y = ctx_wayland->env->popup_scroll_y;
+            uint32_t _hf_scroll_x = ctx_wayland->env->popup_scroll_x;
+            uint32_t _hf_max = _hf_count < 10 ? _hf_count : 10;
+            const char* _hcur_dev = ctx_wayland->env->popup_mode == 1 ? ctx_wayland->env->midi_dev_node : ctx_wayland->env->dev_nodes[ctx_wayland->env->capture_mode - 1];
+            for (uint32_t _hr = 0; _hr < _hf_max; _hr++) {
+                uint32_t _hdev_idx = _hf_scroll_y + _hr;
+                if (_hdev_idx >= _hf_count) break;
+                const char* _hname = ctx_wayland->env->popup_mode == 1 ? ctx_wayland->env->midi_dev_names[_hdev_idx] : ctx_wayland->env->dev_names[_hdev_idx];
+                if (!_hname) continue;
+                char _hline[256];
+                int _hp = 0;
+                if (_hcur_dev && strcmp(_hname, _hcur_dev) == 0)
+                    _hline[_hp++] = '*';
+                int _hn = snprintf(_hline + _hp, sizeof(_hline) - _hp, "%s", _hname);
+                if (_hn < 0) _hn = 0;
+                if (_hp + _hn > (int)sizeof(_hline) - 1) _hn = (int)sizeof(_hline) - 1 - _hp;
+                _hp += _hn;
+                // slice by horizontal scroll
+                int _hstart = (int)_hf_scroll_x < _hp ? (int)_hf_scroll_x : (_hp > 0 ? _hp - 1 : 0);
+                if (_hstart < 0) _hstart = 0;
+                int _hvis = _hp - _hstart;
+                if (_hvis > 38) _hvis = 38;
+                if (_hvis < 0) _hvis = 0;
+                float _hrow_y = _hbg_y + 9.0f - (float)_hr;
+                for (int _hi = 0; _hi < _hvis; _hi++) {
+                    unsigned char _hc = (unsigned char)_hline[_hstart + _hi];
+                    if (_hc < 32) _hc = ' ';
+                    war_vulkan_text_instance* _hti = &_hfdst[_hf_written + _hi];
+                    _hti->pos[0] = _hbg_x + 1.0f + (float)_hi;
+                    _hti->pos[1] = _hrow_y;
+                    _hti->pos[2] = 0;
+                    _hti->size[0] = 1.0f; _hti->size[1] = 1.0f;
+                    _hti->uv[0] = _hf->glyph_uv[_hc][0]; _hti->uv[1] = _hf->glyph_uv[_hc][1];
+                    _hti->uv[2] = _hf->glyph_uv[_hc][2]; _hti->uv[3] = _hf->glyph_uv[_hc][3];
+                    _hti->glyph_scale[0] = _hf->glyph_norm_width[_hc]; _hti->glyph_scale[1] = _hf->glyph_norm_height[_hc];
+                    _hti->ascent = _hf->glyph_norm_ascent[_hc]; _hti->descent = _hf->glyph_norm_descent[_hc];
+                    _hti->baseline = _hf->glyph_norm_baseline[_hc];
+                    _hti->color[0] = (int32_t)_hr == ctx_wayland->env->popup_cursor_y ? 1.0f : 0.7f;
+                    _hti->color[1] = (int32_t)_hr == ctx_wayland->env->popup_cursor_y ? 1.0f : 0.7f;
+                    _hti->color[2] = (int32_t)_hr == ctx_wayland->env->popup_cursor_y ? 1.0f : 0.7f;
+                    _hti->color[3] = 1.0f;
+                    _hti->flags = 0;
+                }
+                vkCmdDraw(cmd, 4, (uint32_t)_hvis, 0, _hf_written);
+                _hf_written += _hvis;
+            }
         }
     }
     if (ctx_wayland->env->ctx_font) {

@@ -1675,6 +1675,80 @@ static void war_keyboard_key(void* data,
         return;
     }
 
+    // HUD popup
+    if (env->popup_active) {
+        if (raw_sym == XKB_KEY_Escape) {
+            env->popup_active = 0;
+        } else if ((raw_sym == XKB_KEY_o || raw_sym == XKB_KEY_O) && (mod & MOD_ALT)) {
+            env->popup_active = 0;
+        } else if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
+            if (env->popup_mode == 1) {
+                uint32_t _idx = env->popup_scroll_y + (uint32_t)env->popup_cursor_y;
+                if (_idx < env->midi_dev_count && env->midi_dev_names[_idx]) {
+                    free(env->midi_dev_node);
+                    env->midi_dev_node = strdup(env->midi_dev_names[_idx]);
+                    snprintf(env->status_msg, sizeof(env->status_msg), "MIDI: %s", env->midi_dev_node);
+                    _war_midi_connect(env, env->midi_dev_node);
+                    FILE* _gs = fopen("global_war.config", "w");
+                    if (_gs) {
+                        for (int _gsi = 0; _gsi < 4; _gsi++)
+                            fprintf(_gs, "%s\n", env->dev_nodes[_gsi] ? env->dev_nodes[_gsi] : "");
+                        fprintf(_gs, "%s\n", env->midi_dev_node ? env->midi_dev_node : "");
+                        fclose(_gs);
+                    }
+                }
+            } else if (env->popup_mode == 2) {
+                uint32_t _idx = env->popup_scroll_y + (uint32_t)env->popup_cursor_y;
+                if (_idx < env->dev_count && env->dev_names[_idx]) {
+                    free(env->dev_nodes[env->capture_mode - 1]);
+                    env->dev_nodes[env->capture_mode - 1] = strdup(env->dev_names[_idx]);
+                    snprintf(env->status_msg, sizeof(env->status_msg), "CAPTURE %u: %s", env->capture_mode, env->dev_names[_idx]);
+                    FILE* _gs = fopen("global_war.config", "w");
+                    if (_gs) {
+                        for (int _gsi = 0; _gsi < 4; _gsi++)
+                            fprintf(_gs, "%s\n", env->dev_nodes[_gsi] ? env->dev_nodes[_gsi] : "");
+                        fprintf(_gs, "%s\n", env->midi_dev_node ? env->midi_dev_node : "");
+                        fclose(_gs);
+                    }
+                }
+            }
+            env->popup_active = 0;
+        } else if (raw_sym == XKB_KEY_j || raw_sym == XKB_KEY_Down) {
+            uint32_t _total = env->popup_mode == 1 ? env->midi_dev_count : (env->popup_mode == 2 ? env->dev_count : 10);
+            if (env->popup_cursor_y < 9 && env->popup_scroll_y + (uint32_t)env->popup_cursor_y + 1 < _total) {
+                env->popup_cursor_y++;
+            } else if (env->popup_cursor_y == 9 && env->popup_scroll_y + 9 + 1 < _total) {
+                env->popup_scroll_y++;
+            }
+        } else if (raw_sym == XKB_KEY_k || raw_sym == XKB_KEY_Up) {
+            if (env->popup_cursor_y > 0) {
+                env->popup_cursor_y--;
+            } else if (env->popup_scroll_y > 0) {
+                env->popup_scroll_y--;
+            }
+        } else if (raw_sym == XKB_KEY_h || raw_sym == XKB_KEY_Left) {
+            if (env->popup_scroll_x > 0) env->popup_scroll_x--;
+        } else if (raw_sym == XKB_KEY_l || raw_sym == XKB_KEY_Right) {
+            env->popup_scroll_x++;
+        }
+        cur->prefix = 0;
+        return;
+    }
+
+    // toggle HUD (Ctrl+H)
+    if (raw_sym == XKB_KEY_h && (mod & MOD_CTRL) && !env->cmd_active) {
+        env->popup_active = !env->popup_active;
+        if (env->popup_active) {
+            env->popup_mode = 0;
+            env->popup_cursor_x = 0;
+            env->popup_cursor_y = 9;
+            env->popup_scroll_y = 0;
+            env->popup_scroll_x = 0;
+        }
+        cur->prefix = 0;
+        return;
+    }
+
     // device selector HUD
     if (env->dev_sel_active) {
         int _dprev = env->dev_sel_cursor;
@@ -1695,9 +1769,9 @@ static void war_keyboard_key(void* data,
             }
             snprintf(env->status_msg, sizeof(env->status_msg), "[%d/%u] off=%u", env->dev_sel_cursor, env->dev_count, env->dev_sel_offset);
         } else if (raw_sym == XKB_KEY_Left || raw_sym == XKB_KEY_h) {
-            if (ctx_wayland->panning[0] > 0) ctx_wayland->panning[0] -= 1.0f;
+            if (env->dev_sel_text_offset > 0) env->dev_sel_text_offset--;
         } else if (raw_sym == XKB_KEY_Right || raw_sym == XKB_KEY_l) {
-            ctx_wayland->panning[0] += 1.0f;
+            env->dev_sel_text_offset++;
         } else if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
             if (env->dev_count > 0 && env->dev_names && (uint32_t)env->dev_sel_cursor < env->dev_count) {
                 free(env->dev_nodes[env->capture_mode - 1]);
@@ -1737,6 +1811,10 @@ static void war_keyboard_key(void* data,
                 if ((uint32_t)(env->midi_sel_cursor) >= env->midi_sel_offset + 15)
                     env->midi_sel_offset = (uint32_t)(env->midi_sel_cursor) - 14;
             }
+        } else if (raw_sym == XKB_KEY_Left || raw_sym == XKB_KEY_h) {
+            if (env->midi_sel_text_offset > 0) env->midi_sel_text_offset--;
+        } else if (raw_sym == XKB_KEY_Right || raw_sym == XKB_KEY_l) {
+            env->midi_sel_text_offset++;
         } else if (raw_sym == XKB_KEY_Return || raw_sym == XKB_KEY_KP_Enter) {
             if (env->midi_dev_count > 0 && env->midi_dev_names && (uint32_t)env->midi_sel_cursor < env->midi_dev_count) {
                 free(env->midi_dev_node);
@@ -1764,10 +1842,38 @@ static void war_keyboard_key(void* data,
     
     // open device selector (Alt+O) — during active capture
     if (raw_sym == XKB_KEY_o && (mod & MOD_ALT) && !env->cmd_active && env->atomics->capture) {
+        if (env->popup_active && env->popup_mode == 2) { env->popup_active = 0; cur->prefix = 0; return; }
+        // refresh device list
+        for (uint32_t _sri = 1; _sri < env->dev_count; _sri++)
+            free(env->dev_names[_sri]);
+        env->dev_count = 1;
+        {
+            char buf[256];
+            FILE* pw_fp = popen("pactl list sources short 2>/dev/null | cut -f2", "r");
+            if (pw_fp) {
+                while (fgets(buf, sizeof(buf), pw_fp) && env->dev_count < 128) {
+                    size_t len = strlen(buf);
+                    if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
+                    if (len > 1 && env->dev_count < 128) {
+                        int _dup = 0;
+                        for (uint32_t _di2 = 0; _di2 < env->dev_count; _di2++)
+                            if (env->dev_names[_di2] && strcmp(env->dev_names[_di2], buf) == 0) { _dup = 1; break; }
+                        if (!_dup) {
+                            env->dev_names[env->dev_count] = strdup(buf);
+                            env->dev_count++;
+                        }
+                    }
+                }
+                pclose(pw_fp);
+            }
+        }
         if (env->dev_count > 0 && env->dev_names) {
-            env->dev_sel_active = 1;
-            env->dev_sel_cursor = 0;
-            env->dev_sel_offset = 0;
+            env->popup_active = 1;
+            env->popup_mode = 2;
+            env->popup_cursor_x = 0;
+            env->popup_cursor_y = 0;
+            env->popup_scroll_y = 0;
+            env->popup_scroll_x = 0;
         } else {
             snprintf(env->status_msg, sizeof(env->status_msg), "no devices found");
         }
@@ -1776,10 +1882,31 @@ static void war_keyboard_key(void* data,
     }
     // open MIDI device selector (Alt+O) — in MIDI mode without capture
     if (raw_sym == XKB_KEY_o && (mod & MOD_ALT) && !env->cmd_active && mode == WAR_MODE_ID_MIDI && !env->atomics->capture) {
+        if (env->popup_active && env->popup_mode == 1) { env->popup_active = 0; cur->prefix = 0; return; }
+        // refresh MIDI device list
+        for (uint32_t _mi = 0; _mi < env->midi_dev_count; _mi++)
+            free(env->midi_dev_names[_mi]);
+        env->midi_dev_count = 0;
+        {
+            char _mbuf[256];
+            FILE* _mf = popen("aconnect -i 2>/dev/null | grep '^client' | cut -d: -f2 | cut '-d[' -f1 | tr -d \"'\" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'", "r");
+            if (_mf) {
+                while (fgets(_mbuf, sizeof(_mbuf), _mf) && env->midi_dev_count < 128) {
+                    size_t _ml = strlen(_mbuf);
+                    if (_ml > 0 && _mbuf[_ml-1] == '\n') _mbuf[_ml-1] = '\0';
+                    if (_ml > 1 && env->midi_dev_count < 128)
+                        env->midi_dev_names[env->midi_dev_count++] = strdup(_mbuf);
+                }
+                pclose(_mf);
+            }
+        }
         if (env->midi_dev_count > 0 && env->midi_dev_names) {
-            env->midi_sel_active = 1;
-            env->midi_sel_cursor = 0;
-            env->midi_sel_offset = 0;
+            env->popup_active = 1;
+            env->popup_mode = 1;
+            env->popup_cursor_x = 0;
+            env->popup_cursor_y = 0;
+            env->popup_scroll_y = 0;
+            env->popup_scroll_x = 0;
             snprintf(env->status_msg, sizeof(env->status_msg), "%u MIDI devices", env->midi_dev_count);
         } else {
             snprintf(env->status_msg, sizeof(env->status_msg), "no MIDI devices found");
@@ -2085,6 +2212,13 @@ static void war_keyboard_key(void* data,
     // Shift+M enters master mode
     if (raw_sym == XKB_KEY_M && (mod & MOD_SHIFT) && !(mod & (MOD_CTRL | MOD_ALT)) && mode == WAR_MODE_ID_ROLL && !env->cmd_active) {
         env->active_mode = WAR_MODE_ID_MASTER;
+        cur->prefix = 0;
+        return;
+    }
+    // Shift+C splits note at playback bar position
+    if (keysym == XKB_KEY_c && (mod & MOD_SHIFT) && !(mod & (MOD_CTRL | MOD_ALT)) && !env->cmd_active &&
+        (mode == WAR_MODE_ID_ROLL || mode == WAR_MODE_ID_VISUAL)) {
+        war_split_at_playback(env);
         cur->prefix = 0;
         return;
     }
@@ -2813,8 +2947,14 @@ int main(int argc, char** argv) {
                 size_t len = strlen(buf);
                 if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
                 if (len > 1 && env->dev_count < 128) {
-                    env->dev_names[env->dev_count] = strdup(buf);
-                    env->dev_count++;
+                    // deduplicate: skip if name already in list
+                    int _dup = 0;
+                    for (uint32_t _di = 0; _di < env->dev_count; _di++)
+                        if (env->dev_names[_di] && strcmp(env->dev_names[_di], buf) == 0) { _dup = 1; break; }
+                    if (!_dup) {
+                        env->dev_names[env->dev_count] = strdup(buf);
+                        env->dev_count++;
+                    }
                 }
             }
             pclose(pw_fp);
@@ -2848,7 +2988,8 @@ int main(int argc, char** argv) {
     env->midi_seq = NULL;
     env->midi_seq_port = -1;
     env->midi_seq_client = -1;
-    env->midi_velocity_sense = 1;
+    env->midi_velocity_sense = 0;
+    env->popup_active = 0;
 
     // load global device config
     {
@@ -3070,6 +3211,29 @@ int main(int argc, char** argv) {
                     continue;
                 for (uint64_t i = 0; i < exp; i++) {
                     war_env* env = ctx_wayland->env;
+                    // HUD popup repeat
+                    if (env->popup_active) {
+                        uint32_t _hrs = ctx_wayland->repeat_sym;
+                        if (_hrs == XKB_KEY_j || _hrs == XKB_KEY_Down) {
+                            uint32_t _total = env->popup_mode == 1 ? env->midi_dev_count : (env->popup_mode == 2 ? env->dev_count : 10);
+                            if (env->popup_cursor_y < 9 && env->popup_scroll_y + (uint32_t)env->popup_cursor_y + 1 < _total) {
+                                env->popup_cursor_y++;
+                            } else if (env->popup_cursor_y == 9 && env->popup_scroll_y + 9 + 1 < _total) {
+                                env->popup_scroll_y++;
+                            }
+                        } else if (_hrs == XKB_KEY_k || _hrs == XKB_KEY_Up) {
+                            if (env->popup_cursor_y > 0) {
+                                env->popup_cursor_y--;
+                            } else if (env->popup_scroll_y > 0) {
+                                env->popup_scroll_y--;
+                            }
+                        } else if (_hrs == XKB_KEY_h || _hrs == XKB_KEY_Left) {
+                            if (env->popup_scroll_x > 0) env->popup_scroll_x--;
+                        } else if (_hrs == XKB_KEY_l || _hrs == XKB_KEY_Right) {
+                            env->popup_scroll_x++;
+                        }
+                        continue;
+                    }
                     // crop mode: arrow keys handled inline, skip keymap dispatch
                     if (env->crop_active) {
                         uint32_t rsym = ctx_wayland->repeat_sym;
@@ -3222,7 +3386,7 @@ int main(int argc, char** argv) {
         // MOVED BEFORE mixing loop so playbar rendering uses current playhead
         double _pb_ccp = 0.0, _pb_spc = 0.0;
         uint64_t _delta_us = 0;
-        if (env->play_bar_playing) {
+        if (env->play_bar_playing || env->midi_seq) {
             uint64_t _now_us = war_get_monotonic_time_us();
             if (!env->play_bar_last_us)
                 env->play_bar_last_us = _now_us - 1000;
@@ -3335,14 +3499,14 @@ int main(int argc, char** argv) {
             // compute adaptive chunk limit: produce enough audio to cover
             // the wall-clock time since last frame so the ring buffer never drains
             uint32_t _max_chunks = 2;
-            if (env->play_bar_playing) {
+            if (env->play_bar_playing || env->midi_seq) {
                 uint64_t _need = (uint64_t)(_delta_us * 48 / 1000); // stereo samples needed
                 uint32_t _ch = (uint32_t)((_need + 31) / 32); // each chunk = 32 stereo samples
                 if (_ch > _max_chunks) _max_chunks = _ch;
                 if (_max_chunks > 48) _max_chunks = 48; // cap at ~32ms worth
             }
             uint32_t _pb_chunks = 0;
-            while ((any_active || env->play_bar_playing) && _pb_chunks < _max_chunks) {
+            while ((any_active || env->play_bar_playing || env->midi_seq) && _pb_chunks < _max_chunks) {
                 float mix[PW_CHUNK_FLOATS];
                 memset(mix, 0, sizeof(mix));
                 any_active = 0;
@@ -3562,7 +3726,7 @@ int main(int argc, char** argv) {
                         any_active = 1;
                     }
                 }
-                if (!any_active && !env->play_bar_playing) break;
+                if (!any_active && !env->play_bar_playing && !env->midi_seq) break;
                 if (env->master_gain != 0.0f) {
                     float _mg_live = (env->master_gain + 100000.0f) / 100000.0f;
                     for (int _mf = 0; _mf < PW_CHUNK_FLOATS; _mf++)
