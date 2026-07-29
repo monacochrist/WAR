@@ -1349,14 +1349,15 @@ static inline void war_font_render_cmd(VkCommandBuffer cmd,
 
     font->cmd_instance_count = count;
     war_vulkan_text_instance* inst = font->instance_mapped;
-    // skip index 0 (used by cursor glyph)
+    // use offset 1024 to avoid overlap with status bar labels
+    uint32_t _cmd_base = 1024;
 
     // position: middle of the 3 gutter rows, 3 cells left of gutter edge
     float gutter_row = ctx_wayland->panning[1] + 1.0f;
 
     for (uint32_t i = 0; i < count; i++) {
         unsigned char c = (unsigned char)env->cmd_buf[i];
-        war_vulkan_text_instance* ti = &inst[1 + i];
+        war_vulkan_text_instance* ti = &inst[_cmd_base + i];
         ti->pos[0] = ctx_wayland->panning[0] + (float)ctx_wayland->gutter_cols + (float)i - 4.0f;
         ti->pos[1] = gutter_row;
         ti->pos[2] = 0;
@@ -1403,7 +1404,7 @@ static inline void war_font_render_cmd(VkCommandBuffer cmd,
     VkBuffer bufs[] = {font->quad_vbo, font->instance_vbo};
     VkDeviceSize offsets[] = {0, 0};
     vkCmdBindVertexBuffers(cmd, 0, 2, bufs, offsets);
-    vkCmdDraw(cmd, 4, count, 0, 1);
+    vkCmdDraw(cmd, 4, count, 0, _cmd_base);
 
     // restore bottom scissor for subsequent passes (none follow, but be tidy)
 }
