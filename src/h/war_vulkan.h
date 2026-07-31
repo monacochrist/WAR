@@ -2901,6 +2901,31 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
                 vkCmdDraw(cmd, 4, (uint32_t)_sn, 0, SENSE_OFFSET);
 #undef SENSE_OFFSET
             }
+            if (ctx_wayland->env->midi_ctrl_play && ctx_wayland->env->midi_seq) {
+                char _ct[7] = "MCPLAY";
+                int _cn = 6;
+                float _crow = ctx_wayland->panning[1] + (float)ctx_wayland->gutter_rows - 1.0f;
+#define MCPLAY_OFFSET 276
+                for (int _ci = 0; _ci < _cn; _ci++) {
+                    unsigned char _cc = (unsigned char)_ct[_ci];
+                    war_vulkan_text_instance* _cti = &dst[MCPLAY_OFFSET + _ci];
+                    _cti->pos[0] = ctx_wayland->panning[0] + (float)(66 + _ci);
+                    _cti->pos[1] = _crow;
+                    _cti->pos[2] = 0;
+                    _cti->size[0] = 1.0f; _cti->size[1] = 1.0f;
+                    _cti->uv[0] = font->glyph_uv[_cc][0]; _cti->uv[1] = font->glyph_uv[_cc][1];
+                    _cti->uv[2] = font->glyph_uv[_cc][2]; _cti->uv[3] = font->glyph_uv[_cc][3];
+                    _cti->glyph_scale[0] = font->glyph_norm_width[_cc];
+                    _cti->glyph_scale[1] = font->glyph_norm_height[_cc];
+                    _cti->ascent = font->glyph_norm_ascent[_cc];
+                    _cti->descent = font->glyph_norm_descent[_cc];
+                    _cti->baseline = font->glyph_norm_baseline[_cc];
+                    _cti->color[0] = 0.4f; _cti->color[1] = 0.8f; _cti->color[2] = 1.0f; _cti->color[3] = 1.0f;
+                    _cti->flags = 0;
+                }
+                vkCmdDraw(cmd, 4, (uint32_t)_cn, 0, MCPLAY_OFFSET);
+#undef MCPLAY_OFFSET
+            }
         }
         // gain label on top status bar
         {

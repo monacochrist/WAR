@@ -2775,6 +2775,7 @@ struct war_env {
     uint64_t preview_voice_delay_len[WAR_PREVIEW_VOICES];
     float preview_voice_gain[WAR_PREVIEW_VOICES]; // per-voice gain multiplier (velocity, default 1.0)
     int midi_velocity_sense; // velocity sensitivity toggle (Alt+S)
+    int midi_ctrl_play; // MIDI controller playback toggle (Ctrl+M), default on
     // simple popup HUD
     uint8_t popup_active;
     int32_t popup_cursor_x;

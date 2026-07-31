@@ -207,12 +207,14 @@ When a device list has more than 10 entries, the list scrolls vertically. Long d
 | `<A-a>` | Move playback bar to cursor position |
 | `<A-o>` | Open MIDI device selector popup — lists ALSA sequencer input devices from `aconnect -i`, refreshed each open. Press Enter to select, Escape to cancel |
 | `<A-s>` | Toggle velocity sensitivity (SENSE) — when on, MIDI velocity maps to per-voice gain (velocity 64 = 0 dB) |
+| `<C-m>` | Toggle MIDI controller playback (MCPLAY) — when on (default), connected controller Note On/Off triggers preview voices |
 
 ### MIDI Controller Input
 
 WAR connects to a MIDI controller via ALSA sequencer. Select a device with `A-o` in MIDI mode, then browse with `j`/`k` and confirm with Enter.
 
-- MIDI Note On/Off triggers preview voices (same as keyboard play keys)
+- MIDI Note On/Off triggers preview voices (same as keyboard play keys) when controller playback is on
+- Controller playback toggle (`C-m`, default on): off ignores Note On from the controller (events still drained; hanging notes release)
 - Velocity sensitivity (toggle with `A-s`) scales playback gain: velocity 64 = unity, lower = quieter, higher = louder
 - MIDI events are processed before the audio mixing loop for zero-frame latency
 - Selected controller is saved to `global_war.config` and auto-connects on next launch

@@ -387,11 +387,13 @@ static void war_export_wav(war_env* env, const char* filename) {
         if (_dur_frames < _src_frames) _src_frames = _dur_frames;
         float _exp_lp0 = 0.0f, _exp_lp1 = 0.0f;
         int _eq_val = env->capture_slots[idx].eq1;
-        // ADSR envelope
-        uint64_t _min_fade = 0;
+        // ADSR envelope (min ~5ms anti-click fade)
+        uint64_t _min_fade = 256;
         uint64_t _atk_f = env->capture_slots[idx].attack > 0 ? (uint64_t)(env->capture_slots[idx].attack / 1000.0f * 48000.0f) : _min_fade;
+        if (_atk_f < _min_fade) _atk_f = _min_fade;
         float _sus_lvl = (env->capture_slots[idx].sustain + 1000.0f) / 1000.0f;
         uint64_t _rel_f = env->capture_slots[idx].release > 0 ? (uint64_t)(env->capture_slots[idx].release / 1000.0f * 48000.0f) : _min_fade;
+        if (_rel_f < _min_fade) _rel_f = _min_fade;
         if (_sus_lvl < 0.0f) _sus_lvl = 0.0f;
         if (_sus_lvl > 2.0f) _sus_lvl = 2.0f;
         if (_atk_f > _src_frames / 2) _atk_f = _src_frames / 2;
@@ -979,6 +981,29 @@ static void _war_midi_connect(war_env* env, const char* dev_name) {
         snd_seq_nonblock(_seq, 1);
     }
 }
+// minimum anti-click fade (~5.3ms @ 48kHz), in stereo float samples
+#define WAR_CLICK_FADE_FLOATS (256ULL * 2ULL)
+static uint64_t _war_release_floats(war_env* env, uint32_t slot_idx) {
+    float frames = env->capture_slots[slot_idx].release / 1000.0f * 48000.0f;
+    if (frames < 256.0f) frames = 256.0f;
+    uint64_t fl = (uint64_t)frames * 2ULL;
+    if (fl < WAR_CLICK_FADE_FLOATS) fl = WAR_CLICK_FADE_FLOATS;
+    return fl;
+}
+static void _war_preview_start_release(war_env* env, uint32_t v) {
+    if (!env->preview_voice_active[v]) return;
+    uint32_t note = env->preview_voice_note[v];
+    uint32_t layer = env->preview_voice_layer[v];
+    if (layer < 1 || layer > 9) { env->preview_voice_active[v] = 0; return; }
+    uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    uint64_t cur = env->preview_voice_read_pos[v];
+    uint64_t rel = _war_release_floats(env, idx);
+    uint64_t limit = cur + rel;
+    // if already releasing with a shorter remaining tail, keep it
+    if (env->preview_voice_read_limit[v] > cur && env->preview_voice_read_limit[v] < limit)
+        return;
+    env->preview_voice_read_limit[v] = limit;
+}
 static void _war_process_midi(war_env* env) {
     if (!env->midi_seq) return;
     snd_seq_t* seq = (snd_seq_t*)env->midi_seq;
@@ -990,6 +1015,7 @@ static void _war_process_midi(war_env* env) {
         if (ret < 0) break;
         if (ret == 0 || !ev) break;
         if (ev->type == SND_SEQ_EVENT_NOTEON && ev->data.note.velocity > 0) {
+            if (!env->midi_ctrl_play) continue;
             uint32_t note = ev->data.note.note;
             uint32_t velocity = ev->data.note.velocity;
             uint32_t layer = 1;
@@ -1005,18 +1031,12 @@ static void _war_process_midi(war_env* env) {
                   (ev->type == SND_SEQ_EVENT_NOTEON && ev->data.note.velocity == 0)) {
             uint32_t note = ev->data.note.note;
             for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
-                if (env->preview_voice_active[v] && env->preview_voice_note[v] == note) {
-                    uint32_t _rlidx = note * WAR_CAPTURE_SLOT_LAYERS + (env->preview_voice_layer[v] - 1);
-                    if (_rlidx < 128 * WAR_CAPTURE_SLOT_LAYERS) {
-                        float _rel_target = env->capture_slots[_rlidx].release / 1000.0f * 48000.0f;
-                        uint64_t _rel_min = (uint64_t)_rel_target;
-                        env->preview_voice_read_limit[v] = env->preview_voice_read_pos[v] + _rel_min;
-                    }
-                }
-            }
+                if (env->preview_voice_active[v] && env->preview_voice_note[v] == note)
+                    _war_preview_start_release(env, v);
             }
         }
     }
+}
 
 static void war_keyboard_key(void* data,
                              struct wl_keyboard* keyboard,
@@ -1061,10 +1081,7 @@ static void war_keyboard_key(void* data,
                             }
                         }
                         // graceful release: set read_limit so release envelope plays out
-                        uint32_t _rlidx = rel_note * WAR_CAPTURE_SLOT_LAYERS + (ctx_wayland->env->preview_voice_layer[v] - 1);
-                        float _rel_target = ctx_wayland->env->capture_slots[_rlidx].release / 1000.0f * 48000.0f;
-                        uint64_t _rel_min = (uint64_t)_rel_target;
-                        ctx_wayland->env->preview_voice_read_limit[v] = ctx_wayland->env->preview_voice_read_pos[v] + _rel_min;
+                        _war_preview_start_release(ctx_wayland->env, v);
                     }
                 }
                 return;
@@ -1919,6 +1936,14 @@ static void war_keyboard_key(void* data,
     if (raw_sym == XKB_KEY_s && (mod & MOD_ALT) && !env->cmd_active) {
         env->midi_velocity_sense = !env->midi_velocity_sense;
         snprintf(env->status_msg, sizeof(env->status_msg), "SENSE %s", env->midi_velocity_sense ? "on" : "off");
+        cur->prefix = 0;
+        return;
+    }
+
+    // toggle MIDI controller playback (Ctrl+M)
+    if (raw_sym == XKB_KEY_m && (mod & MOD_CTRL) && !(mod & (MOD_SHIFT | MOD_ALT)) && !env->cmd_active) {
+        env->midi_ctrl_play = !env->midi_ctrl_play;
+        snprintf(env->status_msg, sizeof(env->status_msg), "MIDI CTRL %s", env->midi_ctrl_play ? "on" : "off");
         cur->prefix = 0;
         return;
     }
@@ -2989,6 +3014,7 @@ int main(int argc, char** argv) {
     env->midi_seq_port = -1;
     env->midi_seq_client = -1;
     env->midi_velocity_sense = 0;
+    env->midi_ctrl_play = 1;
     env->popup_active = 0;
 
     // load global device config
@@ -3595,9 +3621,12 @@ int main(int argc, char** argv) {
                         } else { _es[18] = 0; _es[19] = _s_l; _es[20] = _s_r; } }
                         float _mix_l = _s_l, _mix_r = _s_r;
                     float _a_g = _gm;
-                    float _atk_samples = slot->attack / 1000.0f * 48000.0f;
+                    // stereo float units (2 samples/frame); enforce min anti-click fade
+                    float _atk_samples = slot->attack / 1000.0f * 48000.0f * 2.0f;
                     float _sus_level = (slot->sustain + 1000.0f) / 1000.0f;
-                    float _rel_samples = slot->release / 1000.0f * 48000.0f;
+                    float _rel_samples = slot->release / 1000.0f * 48000.0f * 2.0f;
+                    if (_atk_samples < (float)WAR_CLICK_FADE_FLOATS) _atk_samples = (float)WAR_CLICK_FADE_FLOATS;
+                    if (_rel_samples < (float)WAR_CLICK_FADE_FLOATS) _rel_samples = (float)WAR_CLICK_FADE_FLOATS;
                     int64_t _rem_preview = (int64_t)(slot_avail - read_pos) - (int64_t)f;
                     float _env = _sus_level;
                     if (_atk_samples > 0.0f) {
@@ -3605,13 +3634,12 @@ int main(int argc, char** argv) {
                         if (_elapsed < (uint64_t)_atk_samples)
                             _env = (float)_elapsed / _atk_samples * _sus_level;
                     }
+                    // scale current env (don't jump to full sustain mid-attack)
                     if (_rem_preview < (int64_t)_rel_samples) {
                         if (_rem_preview <= 0) _env = 0.0f;
-                        else _env = ((float)_rem_preview / _rel_samples) * _sus_level;
+                        else _env *= (float)_rem_preview / _rel_samples;
                     }
                     _a_g *= _env * env->preview_voice_gain[v];
-                    mix[f]   += _mix_l * _a_g * _pl;
-                    mix[f+1] += _mix_r * _a_g * _pr;
                     mix[f]   += _mix_l * _a_g * _pl;
                     mix[f+1] += _mix_r * _a_g * _pr;
                     }
@@ -3705,9 +3733,11 @@ int main(int argc, char** argv) {
                             } else { _es[18] = 0; _es[19] = _s_l; _es[20] = _s_r; } }
                             float _mix_l = _s_l, _mix_r = _s_r;
                             float _a_g2 = _gm;
-                            float _atk_s = slot->attack / 1000.0f * 48000.0f;
+                            float _atk_s = slot->attack / 1000.0f * 48000.0f * 2.0f;
                             float _sus_l = (slot->sustain + 1000.0f) / 1000.0f;
-                            float _rel_s = slot->release / 1000.0f * 48000.0f;
+                            float _rel_s = slot->release / 1000.0f * 48000.0f * 2.0f;
+                            if (_atk_s < (float)WAR_CLICK_FADE_FLOATS) _atk_s = (float)WAR_CLICK_FADE_FLOATS;
+                            if (_rel_s < (float)WAR_CLICK_FADE_FLOATS) _rel_s = (float)WAR_CLICK_FADE_FLOATS;
                             int64_t _rem_playbar = (int64_t)remain - (int64_t)f;
                             float _env2 = _sus_l;
                             if (_atk_s > 0.0f) {
@@ -3717,7 +3747,7 @@ int main(int argc, char** argv) {
                             }
                             if (_rem_playbar < (int64_t)_rel_s) {
                                 if (_rem_playbar <= 0) _env2 = 0.0f;
-                                else _env2 = ((float)_rem_playbar / _rel_s) * _sus_l;
+                                else _env2 *= (float)_rem_playbar / _rel_s;
                             }
                             _a_g2 *= _env2;
                             mix[f]   += _mix_l * _a_g2 * _pl2;

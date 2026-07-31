@@ -437,9 +437,19 @@ static inline void war_record_midi(war_env* env) {
 
 static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t layer) {
     if (env->midi_toggle) {
-        // toggle mode: if note is playing, stop it; otherwise start it
+        // toggle mode: if note is sustain-playing, soft-release; if already releasing, retrigger
         for (uint32_t v = 0; v < WAR_PREVIEW_VOICES; v++) {
             if (env->preview_voice_active[v] && env->preview_voice_note[v] == note) {
+                uint32_t _tidx = note * WAR_CAPTURE_SLOT_LAYERS + (env->preview_voice_layer[v] - 1);
+                float _tframes = env->capture_slots[_tidx].release / 1000.0f * 48000.0f;
+                if (_tframes < 256.0f) _tframes = 256.0f;
+                uint64_t _tfl = (uint64_t)_tframes * 2ULL;
+                if (_tfl < 512ULL) _tfl = 512ULL;
+                uint64_t _tcur = env->preview_voice_read_pos[v];
+                uint64_t _tlim = env->preview_voice_read_limit[v];
+                uint64_t _trem = (_tlim > _tcur) ? (_tlim - _tcur) : 0;
+                // already in release tail -> fall through to retrigger below
+                if (_trem > 0 && _trem <= _tfl * 2) break;
                 if (env->recording_active && env->ctx_note) {
                     uint32_t ni = env->recording_note_idx[v];
                     uint64_t elapsed_us = war_get_monotonic_time_us() - env->recording_press_time_us[v];
@@ -451,7 +461,8 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
                     if (ni < env->ctx_note->instance_count)
                         env->ctx_note->instance[ni].size[0] = (float)width;
                 }
-                env->preview_voice_active[v] = 0;
+                if (!(_tlim > _tcur && _tlim < _tcur + _tfl))
+                    env->preview_voice_read_limit[v] = _tcur + _tfl;
                 return (int)v;
             }
         }
