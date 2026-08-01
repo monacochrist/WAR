@@ -18,7 +18,7 @@ chmod +x WAR-x86_64.AppImage
 
 **Requirements:** Pipewire, Wayland, and Freetype — present on any modern Linux desktop.
 
-**Optional (AI stems):** `pip install demucs` — then use `:stem extract` / `:stem vocals` etc. (see CONTROLS.md).
+**Optional (AI stems):** `pip install demucs` — then `:stem extract` / `:stem vocals` etc. writes each extracted stem into a new, savable slot above the source row (see CONTROLS.md).
 
 Full keybindings and controls: **[CONTROLS.md](CONTROLS.md)**
 

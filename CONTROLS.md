@@ -263,13 +263,11 @@ WAR connects to a MIDI controller via ALSA sequencer. Select a device with `A-o`
 | `:effect default` | Reset current effect to defaults |
 | `:whatson` | List all active effects on current slot |
 | `:offall` | Turn off all effects on current slot |
-| `:stem extract` | Run Demucs AI 4-stem split on selected row(s) (async; `pip install demucs`) |
-| `:stem vocals` / `drums` / `bass` / `other` | Solo that stem (auto-extract if missing) |
-| `:stem instrumental` | Play drums+bass+other (no vocals) |
-| `:stem off` | Play original full mix |
-| `:stem status` | Listen mode + ready flags + demucs availability |
-| `:stem clear` | Free stem caches / cancel queue for selection |
-| `:stemvocals on\|off` | Alias for `:stem vocals` / `:stem off` |
+| `:stem extract` | Run Demucs AI 4-stem split on selected row(s): writes all 5 stems (vocals, drums, bass, other, instrumental) to the next free slots above (async; `pip install demucs`) |
+| `:stem vocals` / `drums` / `bass` / `other` / `instrumental` | Extract just that stem into the next free slot above the source row |
+| `:stem status` | Queue / progress / last result + demucs availability |
+| `:stem clear` | Cancel pending stem extraction queue |
+| `:stemvocals on\|off` | Alias for `:stem vocals` / `:stem clear` |
 | `:clear` | Clear current slot (frees samples, resets all params) |
 | `:clearall` | Clear ALL slots and note instances (reset project to default) |
 | `:gp` | Move cursor to playback bar position |

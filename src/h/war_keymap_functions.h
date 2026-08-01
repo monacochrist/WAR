@@ -473,8 +473,7 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
         if (env->preview_voice_active[v] && env->preview_voice_note[v] == note) {
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             war_capture_slot* slot = &env->capture_slots[idx];
-            float* _sa = NULL; uint64_t _sc = 0;
-            _war_slot_audio(slot, &_sa, &_sc);
+            float* _sa = slot->samples; uint64_t _sc = slot->count;
             if (!_sa || _sc < 2) { env->preview_voice_active[v] = 0; return -1; }
             env->preview_voice_layer[v] = layer;
             env->preview_voice_read_pos[v] = 0;
@@ -514,8 +513,7 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
         if (!env->preview_voice_active[v]) {
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             war_capture_slot* slot = &env->capture_slots[idx];
-            float* _sa2 = NULL; uint64_t _sc2 = 0;
-            _war_slot_audio(slot, &_sa2, &_sc2);
+            float* _sa2 = slot->samples; uint64_t _sc2 = slot->count;
             if (!_sa2 || _sc2 < 2) return -1;
             uint32_t voice = v;
             env->preview_voice_note[voice] = note;
@@ -1044,7 +1042,6 @@ static inline void _war_stretch_slot(war_env* env, uint32_t note, uint32_t layer
         slot->capacity = dst_cnt;
     }
     free(wrk);
-    _war_stem_invalidate(slot);
 }
 
 static inline void war_undo_save(war_env* env);
@@ -1338,7 +1335,6 @@ static inline void war_toggle_crop(war_env* env) {
                     env->capture_slots[idx].samples = new_data;
                     env->capture_slots[idx].count = new_count;
                     env->capture_slots[idx].capacity = new_count;
-                    _war_stem_invalidate(&env->capture_slots[idx]);
                     call_king_terry("CROP: applied [%llu, %llu) -> %llu frames",
                                     (unsigned long long)start, (unsigned long long)end,
                                     (unsigned long long)new_frames);
@@ -1648,7 +1644,6 @@ static inline void war_clear(war_env* env) {
         slot->release = 0.0f;
         slot->effect_flags = 0;
         memset(slot->effect_params, 0, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
-        _war_stem_free_slot(slot);
     }
     if (np > 1)
         snprintf(env->status_msg, sizeof(env->status_msg), "cleared %d slots layer=%u", np, layer);
@@ -1667,7 +1662,6 @@ static inline void war_clear_all(war_env* env) {
                 slot->samples = NULL;
                 cleared++;
             }
-            _war_stem_free_slot(slot);
             slot->count = 0;
             slot->capacity = 0;
             slot->gain = 0.0f;
@@ -2492,7 +2486,6 @@ static inline void war_capture_audio(war_env* env) {
             env->capture_accumulator = NULL;
             env->capture_accumulator_count = 0;
             env->capture_accumulator_capacity = 0;
-            _war_stem_invalidate(&env->capture_slots[idx]);
             // ACROSS: pitch-shift within radius
             if (env->across_mode) {
                 _war_across_pitch_shift(env, note, layer, env->across_radius);
@@ -3140,22 +3133,14 @@ static inline void war_delete_note_under_cursor(war_env* env) {
     }
 }
 
-// Copy slot params without sharing owned sample/stem pointers (prevents double-free).
+// Copy slot params without sharing owned sample pointers (prevents double-free).
 static inline void _war_slot_clone_params(war_capture_slot* dst, const war_capture_slot* src) {
     if (!dst || !src) return;
     free(dst->samples);
-    _war_stem_free_slot(dst);
     *dst = *src;
     dst->samples = NULL;
     dst->count = 0;
     dst->capacity = 0;
-    dst->stem_vocals = NULL; dst->stem_vocals_count = 0;
-    dst->stem_drums = NULL; dst->stem_drums_count = 0;
-    dst->stem_bass = NULL; dst->stem_bass_count = 0;
-    dst->stem_other = NULL; dst->stem_other_count = 0;
-    dst->stem_instrumental = NULL; dst->stem_instrumental_count = 0;
-    dst->stem_ready = 0;
-    dst->stem_listen = WAR_STEM_OFF;
 }
 
 // Split note at column cx on row cy. Left stays on src pitch; right moves to empty pitch above.
@@ -3253,7 +3238,6 @@ static inline void _war_split_at_col(war_env* env, float cx, float cy) {
     src_slot->samples = left;
     src_slot->count = split_samples;
     src_slot->capacity = split_samples;
-    _war_stem_invalidate(src_slot);
 
     // RIGHT goes to empty pitch above (params copied, no shared buffers)
     _war_slot_clone_params(&env->capture_slots[mi], src_slot);

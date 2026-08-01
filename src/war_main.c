@@ -372,9 +372,8 @@ static void war_export_wav(war_env* env, const char* filename) {
         if (!(env->layer_visible & (1 << (_nlayer - 1)))) continue;
         uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (_nlayer - 1);
         if (!env->capture_slots[idx].samples || env->capture_slots[idx].count < 2) continue;
-        float* _s = NULL;
-        uint64_t _sc = 0;
-        _war_slot_audio(&env->capture_slots[idx], &_s, &_sc);
+        float* _s = env->capture_slots[idx].samples;
+        uint64_t _sc = env->capture_slots[idx].count;
         if (!_s || _sc < 2) continue;
         float _sg = (env->capture_slots[idx].gain + 500000.0f) / 500000.0f;
         int _sp = env->capture_slots[idx].pan;
@@ -617,7 +616,6 @@ static void war_load_project(war_env* env, const char* filename) {
             env->capture_slots[i].capacity = 0;
         }
         env->capture_slots[i].effect_flags = 0;
-        _war_stem_free_slot(&env->capture_slots[i]);
     }
     uint32_t note_count;
     fread(&note_count, 4, 1, f);
@@ -774,7 +772,6 @@ static void war_load_inst(war_env* env, const char* filename) {
         s->gain = 0.0f;
         s->eq1 = 0;
         s->eq2 = 0;
-        _war_stem_free_slot(s);
     }
     uint32_t count;
     fread(&count, 4, 1, f);
@@ -1349,7 +1346,6 @@ static void war_keyboard_key(void* data,
                         fprintf(stderr, "MV: source and destination are the same layer\n");
                     } else if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
                         free(env->capture_slots[dst_idx].samples);
-                        _war_stem_free_slot(&env->capture_slots[dst_idx]);
                         env->capture_slots[dst_idx] = env->capture_slots[src_idx];
                         _war_slot_null_owned(&env->capture_slots[src_idx]);
                         snprintf(env->status_msg, sizeof(env->status_msg), "mv: pitch %u layer %d -> %d", pitch, cur_layer, to_layer);
@@ -1429,7 +1425,6 @@ static void war_keyboard_key(void* data,
                         uint32_t dst_idx = dst_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                          if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
                              free(env->capture_slots[dst_idx].samples);
-                             _war_stem_free_slot(&env->capture_slots[dst_idx]);
                              env->capture_slots[dst_idx] = env->capture_slots[src_idx];
                              _war_slot_null_owned(&env->capture_slots[src_idx]);
                              snprintf(env->status_msg, sizeof(env->status_msg), "mvu: pitch %u -> %u", pitch, dst_pitch);
@@ -1488,7 +1483,6 @@ static void war_keyboard_key(void* data,
                         uint32_t dst_idx = dst_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                          if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
                              free(env->capture_slots[dst_idx].samples);
-                             _war_stem_free_slot(&env->capture_slots[dst_idx]);
                              env->capture_slots[dst_idx] = env->capture_slots[src_idx];
                              _war_slot_null_owned(&env->capture_slots[src_idx]);
                              snprintf(env->status_msg, sizeof(env->status_msg), "mvd: pitch %u -> %u", pitch, dst_pitch);
@@ -2782,13 +2776,6 @@ int main(int argc, char** argv) {
         env->capture_slots[i].sustain = 0.0f;
         env->capture_slots[i].release = 0.0f;
         env->capture_slots[i].eq1 = 0;
-        env->capture_slots[i].stem_vocals = NULL;
-        env->capture_slots[i].stem_drums = NULL;
-        env->capture_slots[i].stem_bass = NULL;
-        env->capture_slots[i].stem_other = NULL;
-        env->capture_slots[i].stem_instrumental = NULL;
-        env->capture_slots[i].stem_ready = 0;
-        env->capture_slots[i].stem_listen = WAR_STEM_OFF;
         env->capture_slots[i].eq2 = 0;
         env->capture_slots[i].effect_flags = 0;
         for (int j = 0; j < WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS; j++)
@@ -3510,8 +3497,7 @@ int main(int argc, char** argv) {
                                 env->play_bar_voice_tick[_v] = _tik;
                                 env->play_bar_voice_read_pos[_v] = _off2;
                                 {
-                                    float* _pa = NULL; uint64_t _pc = 0;
-                                    _war_slot_audio(_sl, &_pa, &_pc);
+                                    float* _pa = _sl->samples; uint64_t _pc = _sl->count;
                                     env->play_bar_voice_read_limit[_v] = _mf;
                                     if (_pc > 0 && env->play_bar_voice_read_limit[_v] > _pc)
                                         env->play_bar_voice_read_limit[_v] = _pc;
@@ -3570,9 +3556,8 @@ int main(int argc, char** argv) {
                     }
                     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                     war_capture_slot* slot = &env->capture_slots[idx];
-                    float* _aud = NULL;
-                    uint64_t _aud_count = 0;
-                    _war_slot_audio(slot, &_aud, &_aud_count);
+                    float* _aud = slot->samples;
+                    uint64_t _aud_count = slot->count;
                     if (!_aud || _aud_count < 2) {
                         env->preview_voice_active[v] = 0;
                         continue;
@@ -3688,9 +3673,8 @@ int main(int argc, char** argv) {
                         }
                         uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                         war_capture_slot* slot = &env->capture_slots[idx];
-                        float* _aud2 = NULL;
-                        uint64_t _aud2_count = 0;
-                        _war_slot_audio(slot, &_aud2, &_aud2_count);
+                        float* _aud2 = slot->samples;
+                        uint64_t _aud2_count = slot->count;
                         uint64_t read_pos = env->play_bar_voice_read_pos[v];
                         uint64_t read_limit = env->play_bar_voice_read_limit[v];
                         if (read_pos >= read_limit) {
@@ -3904,7 +3888,6 @@ int main(int argc, char** argv) {
     for (uint32_t i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++) {
         free(env->capture_slots[i].samples);
         env->capture_slots[i].samples = NULL;
-        _war_stem_free_slot(&env->capture_slots[i]);
     }
     free(env->capture_accumulator);
     env->capture_accumulator = NULL;

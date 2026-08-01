@@ -5,7 +5,12 @@
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
-// src/h/war_stem.h — Demucs CLI stem extraction + playback source switch
+// src/h/war_stem.h — Demucs CLI stem extraction into new slots above source
+//
+// Each extraction job splits a source slot with Demucs (4 stems) and writes
+// the requested stem into the next free capture slot above the source pitch
+// (same layer), like the split logic. Extracted slots are normal capture
+// slots, so they save/load like any other audio.
 //-----------------------------------------------------------------------------
 
 #ifndef WAR_STEM_H
@@ -23,78 +28,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static inline void _war_stem_free_slot(war_capture_slot* s) {
-    if (!s) return;
-    free(s->stem_vocals); s->stem_vocals = NULL; s->stem_vocals_count = 0;
-    free(s->stem_drums); s->stem_drums = NULL; s->stem_drums_count = 0;
-    free(s->stem_bass); s->stem_bass = NULL; s->stem_bass_count = 0;
-    free(s->stem_other); s->stem_other = NULL; s->stem_other_count = 0;
-    free(s->stem_instrumental); s->stem_instrumental = NULL; s->stem_instrumental_count = 0;
-    s->stem_ready = 0;
-    s->stem_listen = WAR_STEM_OFF;
-}
-
 // Drop ownership without free (after move of whole slot to another index).
 static inline void _war_slot_null_owned(war_capture_slot* s) {
     if (!s) return;
     s->samples = NULL;
     s->count = 0;
     s->capacity = 0;
-    s->stem_vocals = NULL; s->stem_vocals_count = 0;
-    s->stem_drums = NULL; s->stem_drums_count = 0;
-    s->stem_bass = NULL; s->stem_bass_count = 0;
-    s->stem_other = NULL; s->stem_other_count = 0;
-    s->stem_instrumental = NULL; s->stem_instrumental_count = 0;
-    s->stem_ready = 0;
-    s->stem_listen = WAR_STEM_OFF;
-}
-
-static inline void _war_stem_invalidate(war_capture_slot* s) {
-    if (!s) return;
-    uint8_t listen = s->stem_listen;
-    free(s->stem_vocals); s->stem_vocals = NULL; s->stem_vocals_count = 0;
-    free(s->stem_drums); s->stem_drums = NULL; s->stem_drums_count = 0;
-    free(s->stem_bass); s->stem_bass = NULL; s->stem_bass_count = 0;
-    free(s->stem_other); s->stem_other = NULL; s->stem_other_count = 0;
-    free(s->stem_instrumental); s->stem_instrumental = NULL; s->stem_instrumental_count = 0;
-    s->stem_ready = 0;
-    s->stem_listen = listen; // keep mode; falls back to original until re-extract
-}
-
-// Playback source for current stem_listen mode (falls back to original).
-static inline void _war_slot_audio(const war_capture_slot* s, float** out, uint64_t* count) {
-    if (!s) { *out = NULL; *count = 0; return; }
-    *out = s->samples;
-    *count = s->count;
-    switch (s->stem_listen) {
-    case WAR_STEM_VOCALS:
-        if ((s->stem_ready & WAR_STEM_READY_VOCALS) && s->stem_vocals && s->stem_vocals_count >= 2) {
-            *out = s->stem_vocals; *count = s->stem_vocals_count;
-        }
-        break;
-    case WAR_STEM_DRUMS:
-        if ((s->stem_ready & WAR_STEM_READY_DRUMS) && s->stem_drums && s->stem_drums_count >= 2) {
-            *out = s->stem_drums; *count = s->stem_drums_count;
-        }
-        break;
-    case WAR_STEM_BASS:
-        if ((s->stem_ready & WAR_STEM_READY_BASS) && s->stem_bass && s->stem_bass_count >= 2) {
-            *out = s->stem_bass; *count = s->stem_bass_count;
-        }
-        break;
-    case WAR_STEM_OTHER:
-        if ((s->stem_ready & WAR_STEM_READY_OTHER) && s->stem_other && s->stem_other_count >= 2) {
-            *out = s->stem_other; *count = s->stem_other_count;
-        }
-        break;
-    case WAR_STEM_INSTRUMENTAL:
-        if (s->stem_instrumental && s->stem_instrumental_count >= 2) {
-            *out = s->stem_instrumental; *count = s->stem_instrumental_count;
-        }
-        break;
-    default:
-        break;
-    }
 }
 
 static inline const char* _war_stem_name(uint8_t mode) {
@@ -297,16 +236,26 @@ static inline int _war_stem_run_demucs(const char* in_wav, const char* out_dir) 
     return 0;
 }
 
-static inline int _war_stem_extract_slot(war_env* env, uint32_t slot_idx) {
-    if (!env || slot_idx >= 128 * WAR_CAPTURE_SLOT_LAYERS) return -1;
-    war_capture_slot* slot = &env->capture_slots[slot_idx];
+// Run the whole extraction for one job: split src slot with demucs and write
+// the requested stem into the next free slot above (same layer).
+static inline int _war_stem_extract_job(war_env* env, uint32_t src_idx, uint8_t kind) {
+    if (!env || src_idx >= 128 * WAR_CAPTURE_SLOT_LAYERS) return -1;
+    uint32_t src_pitch = src_idx / WAR_CAPTURE_SLOT_LAYERS;
+    uint32_t src_layer = src_idx % WAR_CAPTURE_SLOT_LAYERS + 1;
+    war_capture_slot* slot = &env->capture_slots[src_idx];
     if (!slot->samples || slot->count < 2) {
+        pthread_mutex_lock(&env->stem_mutex);
+        env->stem_last_ok = 0;
+        env->stem_last_kind = kind;
+        env->stem_last_src = src_idx;
+        env->stem_last_dst = UINT32_MAX;
+        pthread_mutex_unlock(&env->stem_mutex);
         snprintf(env->status_msg, sizeof(env->status_msg), "stem: empty slot");
         return -1;
     }
 
     char tmpdir[256], in_wav[300], out_dir[300];
-    snprintf(tmpdir, sizeof(tmpdir), "/tmp/war_stem_%d_%u", (int)getpid(), slot_idx);
+    snprintf(tmpdir, sizeof(tmpdir), "/tmp/war_stem_%d_%u", (int)getpid(), src_idx);
     snprintf(in_wav, sizeof(in_wav), "%s/input.wav", tmpdir);
     snprintf(out_dir, sizeof(out_dir), "%s/out", tmpdir);
     char mk[400];
@@ -361,29 +310,90 @@ static inline int _war_stem_extract_slot(war_env* env, uint32_t slot_idx) {
         inst[i] = s;
     }
 
-    // swap into slot (free old)
-    free(slot->stem_vocals);
-    free(slot->stem_drums);
-    free(slot->stem_bass);
-    free(slot->stem_other);
-    free(slot->stem_instrumental);
-    slot->stem_vocals = v0; slot->stem_vocals_count = c0;
-    slot->stem_drums = v1; slot->stem_drums_count = c1;
-    slot->stem_bass = v2; slot->stem_bass_count = c2;
-    slot->stem_other = v3; slot->stem_other_count = c3;
-    slot->stem_instrumental = inst; slot->stem_instrumental_count = target;
-    slot->stem_ready = WAR_STEM_READY_ALL;
+    float* chosen = NULL;
+    uint64_t chosen_count = 0;
+    switch (kind) {
+    case WAR_STEM_VOCALS: chosen = v0; chosen_count = c0; break;
+    case WAR_STEM_DRUMS: chosen = v1; chosen_count = c1; break;
+    case WAR_STEM_BASS: chosen = v2; chosen_count = c2; break;
+    case WAR_STEM_OTHER: chosen = v3; chosen_count = c3; break;
+    case WAR_STEM_INSTRUMENTAL: chosen = inst; chosen_count = target; break;
+    default: chosen = NULL; break;
+    }
+    if (!chosen || chosen_count < 2) {
+        free(v0); free(v1); free(v2); free(v3); free(inst);
+        snprintf(env->status_msg, sizeof(env->status_msg), "stem: bad kind");
+        return -1;
+    }
+
+    // find next free slot above (same layer, like split)
+    pthread_mutex_lock(&env->stem_mutex);
+    uint32_t dst_idx = UINT32_MAX;
+    for (uint32_t p = src_pitch + 1; p < 128; p++) {
+        uint32_t mi = p * WAR_CAPTURE_SLOT_LAYERS + (src_layer - 1);
+        if (!env->capture_slots[mi].samples || env->capture_slots[mi].count < 2) {
+            dst_idx = mi;
+            break;
+        }
+    }
+    if (dst_idx == UINT32_MAX) {
+        env->stem_last_ok = 0;
+        env->stem_last_kind = kind;
+        env->stem_last_src = src_idx;
+        env->stem_last_dst = UINT32_MAX;
+        pthread_mutex_unlock(&env->stem_mutex);
+        free(v0); free(v1); free(v2); free(v3); free(inst);
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "stem: no free slot above pitch %u", src_pitch);
+        return -1;
+    }
+
+    // install into dest: params copied from source; samples written before
+    // count so concurrent readers see an empty slot, never a dangling one
+    war_capture_slot* dst = &env->capture_slots[dst_idx];
+    free(dst->samples);
+    dst->samples = NULL;
+    dst->count = 0;
+    dst->capacity = 0;
+    dst->gain = slot->gain;
+    dst->pan = slot->pan;
+    dst->eq1 = slot->eq1;
+    dst->eq2 = slot->eq2;
+    dst->attack = slot->attack;
+    dst->sustain = slot->sustain;
+    dst->release = slot->release;
+    dst->effect_flags = slot->effect_flags;
+    memcpy(dst->effect_params, slot->effect_params,
+           sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
+    dst->samples = chosen;
+    dst->count = chosen_count;
+    dst->capacity = chosen_count;
+    env->stem_last_ok = 1;
+    env->stem_last_kind = kind;
+    env->stem_last_src = src_idx;
+    env->stem_last_dst = dst_idx;
+    pthread_mutex_unlock(&env->stem_mutex);
+
+    if (chosen != v0) free(v0);
+    if (chosen != v1) free(v1);
+    if (chosen != v2) free(v2);
+    if (chosen != v3) free(v3);
+    if (chosen != inst) free(inst);
 
     char rm[300];
     snprintf(rm, sizeof(rm), "rm -rf '%s'", tmpdir);
     system(rm);
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "stem: %s -> pitch %u", _war_stem_name(kind), dst_idx / WAR_CAPTURE_SLOT_LAYERS);
     return 0;
 }
 
 static void* _war_stem_worker(void* arg) {
     war_env* env = (war_env*)arg;
     for (;;) {
-        uint32_t slot_idx = UINT32_MAX;
+        war_stem_job job;
+        job.src_idx = UINT32_MAX;
+        job.kind = WAR_STEM_OFF;
         uint32_t done = 0, total = 0;
         pthread_mutex_lock(&env->stem_mutex);
         if (env->stem_cancel) {
@@ -401,7 +411,7 @@ static void* _war_stem_worker(void* arg) {
             pthread_mutex_unlock(&env->stem_mutex);
             break;
         }
-        slot_idx = env->stem_queue[0];
+        job = env->stem_queue[0];
         for (uint32_t i = 1; i < env->stem_queue_len; i++)
             env->stem_queue[i - 1] = env->stem_queue[i];
         env->stem_queue_len--;
@@ -411,8 +421,8 @@ static void* _war_stem_worker(void* arg) {
         pthread_mutex_unlock(&env->stem_mutex);
 
         snprintf(env->status_msg, sizeof(env->status_msg),
-                 "stem: extracting %u/%u…", done + 1, total);
-        int rc = _war_stem_extract_slot(env, slot_idx);
+                 "stem: %s %u/%u…", _war_stem_name(job.kind), done + 1, total);
+        int rc = _war_stem_extract_job(env, job.src_idx, job.kind);
 
         pthread_mutex_lock(&env->stem_mutex);
         env->stem_done_count++;
@@ -467,6 +477,10 @@ static inline void war_stem_init(war_env* env) {
     env->stem_queue_len = 0;
     env->stem_done_count = 0;
     env->stem_total_count = 0;
+    env->stem_last_ok = 0;
+    env->stem_last_kind = WAR_STEM_OFF;
+    env->stem_last_src = 0;
+    env->stem_last_dst = UINT32_MAX;
 }
 
 static inline void war_stem_shutdown(war_env* env) {
@@ -486,11 +500,12 @@ static inline void war_stem_shutdown(war_env* env) {
     pthread_mutex_destroy(&env->stem_mutex);
 }
 
-static inline void war_stem_enqueue(war_env* env, uint32_t slot_idx) {
-    if (!env || slot_idx >= 128 * WAR_CAPTURE_SLOT_LAYERS) return;
+static inline void war_stem_enqueue(war_env* env, uint32_t src_idx, uint8_t kind) {
+    if (!env || src_idx >= 128 * WAR_CAPTURE_SLOT_LAYERS) return;
+    if (kind < WAR_STEM_VOCALS || kind > WAR_STEM_INSTRUMENTAL) return;
     pthread_mutex_lock(&env->stem_mutex);
     for (uint32_t i = 0; i < env->stem_queue_len; i++) {
-        if (env->stem_queue[i] == slot_idx) {
+        if (env->stem_queue[i].src_idx == src_idx && env->stem_queue[i].kind == kind) {
             pthread_mutex_unlock(&env->stem_mutex);
             return;
         }
@@ -501,7 +516,9 @@ static inline void war_stem_enqueue(war_env* env, uint32_t slot_idx) {
         return;
     }
     int start_counts = (!env->stem_worker_busy && env->stem_queue_len == 0);
-    env->stem_queue[env->stem_queue_len++] = slot_idx;
+    env->stem_queue[env->stem_queue_len].src_idx = src_idx;
+    env->stem_queue[env->stem_queue_len].kind = kind;
+    env->stem_queue_len++;
     if (start_counts) {
         env->stem_done_count = 0;
         env->stem_total_count = 1;
@@ -512,158 +529,109 @@ static inline void war_stem_enqueue(war_env* env, uint32_t slot_idx) {
     _war_stem_ensure_thread(env);
 }
 
-static inline void war_stem_enqueue_selection(war_env* env) {
-    if (!env || !env->ctx_cursor) return;
+// Selected pitch rows (visual anchor→cursor, else cursor row), same as
+// _war_sel_pitches (kept local to this header to avoid include order issues).
+static inline int _war_stem_sel_pitches(war_env* env, uint32_t* out) {
+    if (!env || !env->ctx_cursor || !env->ctx_wayland) return 0;
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return 0;
+    double gr = (double)env->ctx_wayland->gutter_rows;
+    int np = 0;
+    if (cur->visual_active) {
+        float y0 = cur->visual_anchor_row;
+        float y1 = cur->instance[0].pos[1];
+        if (y0 > y1) { float t = y0; y0 = y1; y1 = t; }
+        int p0 = (int)(y0 - gr + 0.5);
+        int p1 = (int)(y1 - gr + 0.5);
+        if (p0 < 0) p0 = 0;
+        if (p1 > 127) p1 = 127;
+        for (int p = p0; p <= p1; p++) out[np++] = (uint32_t)p;
+    } else {
+        int p = (int)(cur->instance[0].pos[1] - gr + 0.5);
+        if (p < 0) p = 0;
+        if (p > 127) p = 127;
+        out[np++] = (uint32_t)p;
+    }
+    return np;
+}
+
+static inline void war_stem_enqueue_selection(war_env* env, uint8_t kind) {
+    if (!env || !env->ctx_cursor || !env->ctx_wayland) return;
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur->instance_count) return;
     if (_war_stem_demucs_available() == 0) {
         snprintf(env->status_msg, sizeof(env->status_msg),
                  "stem: demucs not found (pip install demucs)");
         return;
     }
     uint32_t pitches[128];
-    // _war_sel_pitches is in keymap_functions; duplicate minimal here if needed
-    war_cursor_context* cur = env->ctx_cursor;
-    if (!cur->instance_count || !env->ctx_wayland) return;
-    double gr = (double)env->ctx_wayland->gutter_rows;
-    int np = 0;
-    if (cur->visual_active) {
-        float y0 = cur->visual_anchor_row;
-        float y1 = cur->instance[0].pos[1];
-        if (y0 > y1) { float t = y0; y0 = y1; y1 = t; }
-        int p0 = (int)(y0 - gr + 0.5);
-        int p1 = (int)(y1 - gr + 0.5);
-        if (p0 < 0) p0 = 0;
-        if (p1 > 127) p1 = 127;
-        for (int p = p0; p <= p1; p++) pitches[np++] = (uint32_t)p;
-    } else {
-        int p = (int)(cur->instance[0].pos[1] - gr + 0.5);
-        if (p < 0) p = 0;
-        if (p > 127) p = 127;
-        pitches[np++] = (uint32_t)p;
-    }
+    int np = _war_stem_sel_pitches(env, pitches);
     uint32_t layer = cur->layer;
     if (layer < 1 || layer > 9) layer = 1;
     int queued = 0;
     for (int i = 0; i < np; i++) {
         uint32_t idx = pitches[i] * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
         if (env->capture_slots[idx].samples && env->capture_slots[idx].count >= 2) {
-            war_stem_enqueue(env, idx);
+            war_stem_enqueue(env, idx, kind);
             queued++;
         }
     }
     if (queued == 0)
         snprintf(env->status_msg, sizeof(env->status_msg), "stem: no audio in selection");
     else
-        snprintf(env->status_msg, sizeof(env->status_msg), "stem: queued %d slot(s)", queued);
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "stem: queued %s for %d row(s)", _war_stem_name(kind), queued);
 }
 
-static inline void war_stem_set_listen_selection(war_env* env, uint8_t mode) {
-    if (!env || !env->ctx_cursor || !env->ctx_wayland) return;
-    war_cursor_context* cur = env->ctx_cursor;
-    if (!cur->instance_count) return;
-    double gr = (double)env->ctx_wayland->gutter_rows;
-    uint32_t pitches[128];
-    int np = 0;
-    if (cur->visual_active) {
-        float y0 = cur->visual_anchor_row;
-        float y1 = cur->instance[0].pos[1];
-        if (y0 > y1) { float t = y0; y0 = y1; y1 = t; }
-        int p0 = (int)(y0 - gr + 0.5);
-        int p1 = (int)(y1 - gr + 0.5);
-        if (p0 < 0) p0 = 0;
-        if (p1 > 127) p1 = 127;
-        for (int p = p0; p <= p1; p++) pitches[np++] = (uint32_t)p;
-    } else {
-        int p = (int)(cur->instance[0].pos[1] - gr + 0.5);
-        if (p < 0) p = 0;
-        if (p > 127) p = 127;
-        pitches[np++] = (uint32_t)p;
-    }
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    int need_extract = 0, setn = 0;
-    for (int i = 0; i < np; i++) {
-        uint32_t idx = pitches[i] * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-        war_capture_slot* s = &env->capture_slots[idx];
-        if (!s->samples || s->count < 2) continue;
-        s->stem_listen = mode;
-        setn++;
-        if (mode != WAR_STEM_OFF && s->stem_ready != WAR_STEM_READY_ALL)
-            need_extract = 1;
-    }
-    if (setn == 0) {
-        snprintf(env->status_msg, sizeof(env->status_msg), "stem: no audio in selection");
-        return;
-    }
-    if (need_extract && mode != WAR_STEM_OFF) {
-        war_stem_enqueue_selection(env);
-        snprintf(env->status_msg, sizeof(env->status_msg),
-                 "stem: %s (extracting…)", _war_stem_name(mode));
-    } else if (np > 1) {
-        snprintf(env->status_msg, sizeof(env->status_msg),
-                 "stem: %s (%d rows)", _war_stem_name(mode), setn);
-    } else {
-        snprintf(env->status_msg, sizeof(env->status_msg),
-                 "stem: %s", _war_stem_name(mode));
-    }
+static inline void war_stem_enqueue_selection_all(war_env* env) {
+    war_stem_enqueue_selection(env, WAR_STEM_VOCALS);
+    war_stem_enqueue_selection(env, WAR_STEM_DRUMS);
+    war_stem_enqueue_selection(env, WAR_STEM_BASS);
+    war_stem_enqueue_selection(env, WAR_STEM_OTHER);
+    war_stem_enqueue_selection(env, WAR_STEM_INSTRUMENTAL);
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "stem: queued all 5 stems for selection");
 }
 
-static inline void war_stem_clear_selection(war_env* env) {
-    if (!env || !env->ctx_cursor || !env->ctx_wayland) return;
-    war_cursor_context* cur = env->ctx_cursor;
-    if (!cur->instance_count) return;
-    double gr = (double)env->ctx_wayland->gutter_rows;
-    uint32_t pitches[128];
-    int np = 0;
-    if (cur->visual_active) {
-        float y0 = cur->visual_anchor_row;
-        float y1 = cur->instance[0].pos[1];
-        if (y0 > y1) { float t = y0; y0 = y1; y1 = t; }
-        int p0 = (int)(y0 - gr + 0.5);
-        int p1 = (int)(y1 - gr + 0.5);
-        if (p0 < 0) p0 = 0;
-        if (p1 > 127) p1 = 127;
-        for (int p = p0; p <= p1; p++) pitches[np++] = (uint32_t)p;
-    } else {
-        int p = (int)(cur->instance[0].pos[1] - gr + 0.5);
-        if (p < 0) p = 0;
-        if (p > 127) p = 127;
-        pitches[np++] = (uint32_t)p;
-    }
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    int n = 0;
-    for (int i = 0; i < np; i++) {
-        uint32_t idx = pitches[i] * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-        _war_stem_free_slot(&env->capture_slots[idx]);
-        n++;
-    }
+static inline void war_stem_cancel(war_env* env) {
+    if (!env) return;
     pthread_mutex_lock(&env->stem_mutex);
     env->stem_cancel = 1;
     env->stem_queue_len = 0;
     pthread_mutex_unlock(&env->stem_mutex);
-    snprintf(env->status_msg, sizeof(env->status_msg), "stem: cleared %d", n);
+    snprintf(env->status_msg, sizeof(env->status_msg), "stem: cancelled");
 }
 
 static inline void war_stem_status(war_env* env) {
-    if (!env || !env->ctx_cursor || !env->ctx_wayland) return;
-    war_cursor_context* cur = env->ctx_cursor;
-    if (!cur->instance_count) return;
-    double gr = (double)env->ctx_wayland->gutter_rows;
-    int p = (int)(cur->instance[0].pos[1] - gr + 0.5);
-    if (p < 0) p = 0;
-    if (p > 127) p = 127;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    war_capture_slot* s = &env->capture_slots[(uint32_t)p * WAR_CAPTURE_SLOT_LAYERS + (layer - 1)];
+    if (!env) return;
     int dem = _war_stem_demucs_available();
-    snprintf(env->status_msg, sizeof(env->status_msg),
-             "stem: %s ready=%s%s%s%s demucs=%s",
-             _war_stem_name(s->stem_listen),
-             (s->stem_ready & WAR_STEM_READY_VOCALS) ? "V" : "-",
-             (s->stem_ready & WAR_STEM_READY_DRUMS) ? "D" : "-",
-             (s->stem_ready & WAR_STEM_READY_BASS) ? "B" : "-",
-             (s->stem_ready & WAR_STEM_READY_OTHER) ? "O" : "-",
-             dem ? "yes" : "no");
+    pthread_mutex_lock(&env->stem_mutex);
+    uint32_t qlen = env->stem_queue_len;
+    uint32_t done = env->stem_done_count;
+    uint32_t total = env->stem_total_count;
+    uint8_t lk = env->stem_last_ok;
+    uint8_t lkind = env->stem_last_kind;
+    uint32_t lsrc = env->stem_last_src;
+    uint32_t ldst = env->stem_last_dst;
+    pthread_mutex_unlock(&env->stem_mutex);
+    if (lkind != WAR_STEM_OFF) {
+        uint32_t lsrc_p = lsrc / WAR_CAPTURE_SLOT_LAYERS;
+        uint32_t lsrc_l = lsrc % WAR_CAPTURE_SLOT_LAYERS + 1;
+        if (lk)
+            snprintf(env->status_msg, sizeof(env->status_msg),
+                     "stem: %s -> pitch %u (src p%u/l%u) done=%u/%u queued=%u demucs=%s",
+                     _war_stem_name(lkind), ldst / WAR_CAPTURE_SLOT_LAYERS,
+                     lsrc_p, lsrc_l, done, total, qlen, dem ? "yes" : "no");
+        else
+            snprintf(env->status_msg, sizeof(env->status_msg),
+                     "stem: last %s failed (src p%u/l%u) done=%u/%u queued=%u demucs=%s",
+                     _war_stem_name(lkind), lsrc_p, lsrc_l, done, total, qlen,
+                     dem ? "yes" : "no");
+    } else {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "stem: idle done=%u/%u queued=%u demucs=%s",
+                 done, total, qlen, dem ? "yes" : "no");
+    }
 }
 
 // Command entry: parse rest after ":stem" or handle ":stemvocals"
@@ -671,14 +639,14 @@ static inline void war_stem_cmd(war_env* env) {
     if (!env || !env->cmd_active) return;
     const char* buf = env->cmd_buf;
     int len = (int)env->cmd_len;
-    // :stemvocals on|off
+    // :stemvocals on|off (alias)
     if (len >= 11 && strncmp(buf, ":stemvocals", 11) == 0) {
         const char* rest = buf + 11;
         while (*rest == ' ' || *rest == '\t') rest++;
         if (strcmp(rest, "on") == 0 || strcmp(rest, "vocals") == 0 || *rest == '\0')
-            war_stem_set_listen_selection(env, WAR_STEM_VOCALS);
+            war_stem_enqueue_selection(env, WAR_STEM_VOCALS);
         else if (strcmp(rest, "off") == 0)
-            war_stem_set_listen_selection(env, WAR_STEM_OFF);
+            war_stem_cancel(env);
         else
             snprintf(env->status_msg, sizeof(env->status_msg),
                      "usage: :stemvocals on|off");
@@ -692,39 +660,35 @@ static inline void war_stem_cmd(war_env* env) {
         return;
     }
     if (strcmp(rest, "extract") == 0) {
-        war_stem_enqueue_selection(env);
+        war_stem_enqueue_selection_all(env);
         return;
     }
     if (strcmp(rest, "clear") == 0 || strcmp(rest, "cancel") == 0) {
-        war_stem_clear_selection(env);
-        return;
-    }
-    if (strcmp(rest, "off") == 0) {
-        war_stem_set_listen_selection(env, WAR_STEM_OFF);
+        war_stem_cancel(env);
         return;
     }
     if (strcmp(rest, "vocals") == 0 || strcmp(rest, "vocal") == 0) {
-        war_stem_set_listen_selection(env, WAR_STEM_VOCALS);
+        war_stem_enqueue_selection(env, WAR_STEM_VOCALS);
         return;
     }
     if (strcmp(rest, "drums") == 0 || strcmp(rest, "drum") == 0) {
-        war_stem_set_listen_selection(env, WAR_STEM_DRUMS);
+        war_stem_enqueue_selection(env, WAR_STEM_DRUMS);
         return;
     }
     if (strcmp(rest, "bass") == 0) {
-        war_stem_set_listen_selection(env, WAR_STEM_BASS);
+        war_stem_enqueue_selection(env, WAR_STEM_BASS);
         return;
     }
     if (strcmp(rest, "other") == 0) {
-        war_stem_set_listen_selection(env, WAR_STEM_OTHER);
+        war_stem_enqueue_selection(env, WAR_STEM_OTHER);
         return;
     }
     if (strcmp(rest, "instrumental") == 0 || strcmp(rest, "inst") == 0) {
-        war_stem_set_listen_selection(env, WAR_STEM_INSTRUMENTAL);
+        war_stem_enqueue_selection(env, WAR_STEM_INSTRUMENTAL);
         return;
     }
     snprintf(env->status_msg, sizeof(env->status_msg),
-             "usage: :stem extract|off|vocals|drums|bass|other|instrumental|status|clear");
+             "usage: :stem extract|vocals|drums|bass|other|instrumental|status|clear");
 }
 
 #endif // WAR_STEM_H
