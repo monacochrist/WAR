@@ -72,3 +72,7 @@ bpm
 
 # mistake
 \'
+
+# venv
+.venv-demucs/
+.venv*/

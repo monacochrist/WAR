@@ -372,8 +372,10 @@ static void war_export_wav(war_env* env, const char* filename) {
         if (!(env->layer_visible & (1 << (_nlayer - 1)))) continue;
         uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (_nlayer - 1);
         if (!env->capture_slots[idx].samples || env->capture_slots[idx].count < 2) continue;
-        float* _s = env->capture_slots[idx].samples;
-        uint64_t _sc = env->capture_slots[idx].count;
+        float* _s = NULL;
+        uint64_t _sc = 0;
+        _war_slot_audio(&env->capture_slots[idx], &_s, &_sc);
+        if (!_s || _sc < 2) continue;
         float _sg = (env->capture_slots[idx].gain + 500000.0f) / 500000.0f;
         int _sp = env->capture_slots[idx].pan;
         float _pe = (float)(_sp + 1000) / 2000.0f;
@@ -615,6 +617,7 @@ static void war_load_project(war_env* env, const char* filename) {
             env->capture_slots[i].capacity = 0;
         }
         env->capture_slots[i].effect_flags = 0;
+        _war_stem_free_slot(&env->capture_slots[i]);
     }
     uint32_t note_count;
     fread(&note_count, 4, 1, f);
@@ -771,6 +774,7 @@ static void war_load_inst(war_env* env, const char* filename) {
         s->gain = 0.0f;
         s->eq1 = 0;
         s->eq2 = 0;
+        _war_stem_free_slot(s);
     }
     uint32_t count;
     fread(&count, 4, 1, f);
@@ -1345,10 +1349,9 @@ static void war_keyboard_key(void* data,
                         fprintf(stderr, "MV: source and destination are the same layer\n");
                     } else if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
                         free(env->capture_slots[dst_idx].samples);
+                        _war_stem_free_slot(&env->capture_slots[dst_idx]);
                         env->capture_slots[dst_idx] = env->capture_slots[src_idx];
-                        env->capture_slots[src_idx].samples = NULL;
-                        env->capture_slots[src_idx].count = 0;
-                        env->capture_slots[src_idx].capacity = 0;
+                        _war_slot_null_owned(&env->capture_slots[src_idx]);
                         snprintf(env->status_msg, sizeof(env->status_msg), "mv: pitch %u layer %d -> %d", pitch, cur_layer, to_layer);
                         fprintf(stderr, "MV: moved pitch=%u from layer %d to layer %d\n", pitch, cur_layer, to_layer);
                     } else {
@@ -1426,10 +1429,9 @@ static void war_keyboard_key(void* data,
                         uint32_t dst_idx = dst_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                          if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
                              free(env->capture_slots[dst_idx].samples);
+                             _war_stem_free_slot(&env->capture_slots[dst_idx]);
                              env->capture_slots[dst_idx] = env->capture_slots[src_idx];
-                             env->capture_slots[src_idx].samples = NULL;
-                             env->capture_slots[src_idx].count = 0;
-                             env->capture_slots[src_idx].capacity = 0;
+                             _war_slot_null_owned(&env->capture_slots[src_idx]);
                              snprintf(env->status_msg, sizeof(env->status_msg), "mvu: pitch %u -> %u", pitch, dst_pitch);
                              fprintf(stderr, "MVU: moved pitch=%u up %d to pitch=%u\n", pitch, n, dst_pitch);
                          } else {
@@ -1443,28 +1445,28 @@ static void war_keyboard_key(void* data,
              } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'g' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'i' && env->cmd_buf[4] == 'n') {
                 double _gv = 0;
                 if (sscanf(env->cmd_buf + 5, " %lf", &_gv) == 1 && _gv >= -500000 && _gv <= 500000) {
-                    double _gr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
-                    uint32_t _gp = _gr > 0 ? (uint32_t)(_gr + 0.5) : 0;
-                    if (_gp > 127) _gp = 127;
-                    uint32_t _gl = cur->layer;
-                    if (_gl < 1 || _gl > 9) _gl = 1;
-                    uint32_t _gi = _gp * WAR_CAPTURE_SLOT_LAYERS + (_gl - 1);
-                    env->capture_slots[_gi].gain = (float)_gv;
-                    snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", (float)_gv);
+                    uint32_t _gpitches[128];
+                    int _gnp = _war_sel_pitches(env, _gpitches);
+                    for (int _gi = 0; _gi < _gnp; _gi++)
+                        _war_sel_slot(env, _gpitches[_gi])->gain = (float)_gv;
+                    if (_gnp > 1)
+                        snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f (%d rows)", (float)_gv, _gnp);
+                    else
+                        snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", (float)_gv);
                 } else {
                     fprintf(stderr, "GAIN: usage :gain <-500000..500000>\n");
                 }
              } else if (env->cmd_len >= 4 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'p' && env->cmd_buf[2] == 'a' && env->cmd_buf[3] == 'n') {
                 int _pv = 0;
                 if (sscanf(env->cmd_buf + 4, " %d", &_pv) == 1 && _pv >= -1000 && _pv <= 1000) {
-                    double _pr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
-                    uint32_t _pp = _pr > 0 ? (uint32_t)(_pr + 0.5) : 0;
-                    if (_pp > 127) _pp = 127;
-                    uint32_t _pl = cur->layer;
-                    if (_pl < 1 || _pl > 9) _pl = 1;
-                    uint32_t _pi = _pp * WAR_CAPTURE_SLOT_LAYERS + (_pl - 1);
-                    env->capture_slots[_pi].pan = _pv;
-                    snprintf(env->status_msg, sizeof(env->status_msg), "P%+d", _pv);
+                    uint32_t _ppitches[128];
+                    int _pnp = _war_sel_pitches(env, _ppitches);
+                    for (int _pi = 0; _pi < _pnp; _pi++)
+                        _war_sel_slot(env, _ppitches[_pi])->pan = _pv;
+                    if (_pnp > 1)
+                        snprintf(env->status_msg, sizeof(env->status_msg), "P%+d (%d rows)", _pv, _pnp);
+                    else
+                        snprintf(env->status_msg, sizeof(env->status_msg), "P%+d", _pv);
                 } else {
                     fprintf(stderr, "PAN: usage :pan <-1000..1000>\n");
                 }
@@ -1486,10 +1488,9 @@ static void war_keyboard_key(void* data,
                         uint32_t dst_idx = dst_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                          if (env->capture_slots[src_idx].samples && env->capture_slots[src_idx].count > 0) {
                              free(env->capture_slots[dst_idx].samples);
+                             _war_stem_free_slot(&env->capture_slots[dst_idx]);
                              env->capture_slots[dst_idx] = env->capture_slots[src_idx];
-                             env->capture_slots[src_idx].samples = NULL;
-                             env->capture_slots[src_idx].count = 0;
-                             env->capture_slots[src_idx].capacity = 0;
+                             _war_slot_null_owned(&env->capture_slots[src_idx]);
                              snprintf(env->status_msg, sizeof(env->status_msg), "mvd: pitch %u -> %u", pitch, dst_pitch);
                              fprintf(stderr, "MVD: moved pitch=%u down %d to pitch=%u\n", pitch, n, dst_pitch);
                          } else {
@@ -1535,6 +1536,10 @@ static void war_keyboard_key(void* data,
                 war_chorus(env);
             } else if (env->cmd_len >= 9 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'a' && env->cmd_buf[2] == 'u' && env->cmd_buf[3] == 't' && env->cmd_buf[4] == 'o' && env->cmd_buf[5] == 't' && env->cmd_buf[6] == 'u' && env->cmd_buf[7] == 'n' && env->cmd_buf[8] == 'e') {
                 war_autotune(env);
+            } else if (env->cmd_len >= 11 && env->cmd_buf[0] == ':' && strncmp(env->cmd_buf, ":stemvocals", 11) == 0) {
+                war_stem_cmd(env);
+            } else if (env->cmd_len >= 5 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 's' && env->cmd_buf[2] == 't' && env->cmd_buf[3] == 'e' && env->cmd_buf[4] == 'm') {
+                war_stem_cmd(env);
             } else if (env->cmd_len >= 8 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'w' && env->cmd_buf[2] == 'h' && env->cmd_buf[3] == 'a' && env->cmd_buf[4] == 't' && env->cmd_buf[5] == 's' && env->cmd_buf[6] == 'o' && env->cmd_buf[7] == 'n') {
                 war_whatson(env);
             } else if (env->cmd_len >= 7 && env->cmd_buf[0] == ':' && env->cmd_buf[1] == 'o' && env->cmd_buf[2] == 'f' && env->cmd_buf[3] == 'f' && env->cmd_buf[4] == 'a' && env->cmd_buf[5] == 'l' && env->cmd_buf[6] == 'l') {
@@ -2093,85 +2098,88 @@ static void war_keyboard_key(void* data,
             cur->prefix = 0;
             return;
         }
-        // ADSR: adjust capture slot under cursor
+        // ADSR: adjust capture slots in selection (or cursor row)
         if (cur->instance_count) {
-            double _agr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
-            uint32_t _agp = _agr > 0 ? (uint32_t)(_agr + 0.5) : 0;
-            if (_agp > 127) _agp = 127;
-            uint32_t _agl = cur->layer;
-            if (_agl < 1 || _agl > 9) _agl = 1;
-            uint32_t _agi = _agp * WAR_CAPTURE_SLOT_LAYERS + (_agl - 1);
-            war_capture_slot* _cs = &env->capture_slots[_agi];
-            int8_t delta = 0;
-            float* target = NULL;
+            int _which = 0; // 1=atk 2=sus 3=rel
             const char* name = "";
-            float max_val = 1000.0f;
-            if (mod & MOD_ALT) {
-                target = &_cs->attack;
-                name = "ATK";
-            } else if (mod & MOD_SHIFT) {
-                target = &_cs->sustain;
-                name = "SUS";
-            } else if (mod & MOD_CTRL) {
-                target = &_cs->release;
-                name = "REL";
-            }
-            if (target) {
+            if (mod & MOD_ALT) { _which = 1; name = "ATK"; }
+            else if (mod & MOD_SHIFT) { _which = 2; name = "SUS"; }
+            else if (mod & MOD_CTRL) { _which = 3; name = "REL"; }
+            int8_t delta = 0;
+            if (_which) {
                 if (raw_sym == XKB_KEY_Up || raw_sym == XKB_KEY_Right) delta = 10;
                 if (raw_sym == XKB_KEY_Down || raw_sym == XKB_KEY_Left) delta = -10;
-                if (delta) {
-                    float _minv = (target == &_cs->sustain) ? -max_val : 0.0f;
+            }
+            if (_which && delta) {
+                uint32_t _apitches[128];
+                int _anp = _war_sel_pitches(env, _apitches);
+                float max_val = 1000.0f;
+                war_capture_slot* _last = NULL;
+                float _lastv = 0;
+                for (int _ai = 0; _ai < _anp; _ai++) {
+                    war_capture_slot* _cs = _war_sel_slot(env, _apitches[_ai]);
+                    float* target = (_which == 1) ? &_cs->attack : (_which == 2) ? &_cs->sustain : &_cs->release;
+                    float _minv = (_which == 2) ? -max_val : 0.0f;
                     *target += (float)delta;
                     if (*target < _minv) *target = _minv;
                     if (*target > max_val) *target = max_val;
-                    snprintf(env->status_msg, sizeof(env->status_msg), "%s %.0f A%.0f S%.0f R%.0f",
-                             name, *target,
-                             _cs->attack, _cs->sustain, _cs->release);
-                    cur->prefix = 0;
-                    return;
+                    _last = _cs; _lastv = *target;
                 }
+                if (_last) {
+                    if (_anp > 1)
+                        snprintf(env->status_msg, sizeof(env->status_msg), "%s %.0f (%d rows) A%.0f S%.0f R%.0f",
+                                 name, _lastv, _anp, _last->attack, _last->sustain, _last->release);
+                    else
+                        snprintf(env->status_msg, sizeof(env->status_msg), "%s %.0f A%.0f S%.0f R%.0f",
+                                 name, _lastv, _last->attack, _last->sustain, _last->release);
+                }
+                cur->prefix = 0;
+                return;
             }
         }
     }
-    // gain adjust: ctrl+up / ctrl+down
+    // gain/pan adjust: ctrl+arrows (applies to visual row selection)
     if ((mode == WAR_MODE_ID_ROLL || mode == WAR_MODE_ID_VISUAL) && env->ctx_cursor->instance_count) {
-        double _gr = cur->instance[0].pos[1] - (double)ctx_wayland->gutter_rows;
-        uint32_t _gp = _gr > 0 ? (uint32_t)(_gr + 0.5) : 0;
-        if (_gp > 127) _gp = 127;
-        uint32_t _gl = cur->layer;
-        if (_gl < 1 || _gl > 9) _gl = 1;
-        uint32_t _gi = _gp * WAR_CAPTURE_SLOT_LAYERS + (_gl - 1);
-        war_capture_slot* _gs = &env->capture_slots[_gi];
-        if (_gs->samples && _gs->count > 0) {
-            if (raw_sym == XKB_KEY_Up && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
-                _gs->gain += 10.0f;
-                if (_gs->gain > 500000.0f) _gs->gain = 500000.0f;
-                snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", _gs->gain);
+        int _gadj = (raw_sym == XKB_KEY_Up || raw_sym == XKB_KEY_Down ||
+                     raw_sym == XKB_KEY_Left || raw_sym == XKB_KEY_Right) &&
+                    (mod & MOD_CTRL) && !(mod & MOD_SHIFT);
+        if (_gadj) {
+            uint32_t _gpitches[128];
+            int _gnp = _war_sel_pitches(env, _gpitches);
+            float _glast = 0.0f; int _plast = 0; int _napp = 0;
+            for (int _gi = 0; _gi < _gnp; _gi++) {
+                war_capture_slot* _gs = _war_sel_slot(env, _gpitches[_gi]);
+                if (!(_gs->samples && _gs->count > 0)) continue;
+                if (raw_sym == XKB_KEY_Up) {
+                    _gs->gain += 10.0f;
+                    if (_gs->gain > 500000.0f) _gs->gain = 500000.0f;
+                    _glast = _gs->gain;
+                } else if (raw_sym == XKB_KEY_Down) {
+                    _gs->gain -= 10.0f;
+                    if (_gs->gain < -500000.0f) _gs->gain = -500000.0f;
+                    _glast = _gs->gain;
+                } else if (raw_sym == XKB_KEY_Left) {
+                    _gs->pan -= 10;
+                    if (_gs->pan < -1000) _gs->pan = -1000;
+                    _plast = _gs->pan;
+                } else if (raw_sym == XKB_KEY_Right) {
+                    _gs->pan += 10;
+                    if (_gs->pan > 1000) _gs->pan = 1000;
+                    _plast = _gs->pan;
+                }
+                _napp++;
+            }
+            if (_napp > 0) {
+                if (raw_sym == XKB_KEY_Up || raw_sym == XKB_KEY_Down) {
+                    if (_napp > 1) snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f (%d rows)", _glast, _napp);
+                    else snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", _glast);
+                } else {
+                    if (_napp > 1) snprintf(env->status_msg, sizeof(env->status_msg), "P%+d (%d rows)", _plast, _napp);
+                    else snprintf(env->status_msg, sizeof(env->status_msg), "P%+d", _plast);
+                }
                 cur->prefix = 0;
                 return;
             }
-            if (raw_sym == XKB_KEY_Down && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
-                _gs->gain -= 10.0f;
-                if (_gs->gain < -500000.0f) _gs->gain = -500000.0f;
-                snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f", _gs->gain);
-                cur->prefix = 0;
-                return;
-            }
-            if (raw_sym == XKB_KEY_Left && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
-                _gs->pan -= 10;
-                if (_gs->pan < -1000) _gs->pan = -1000;
-                snprintf(env->status_msg, sizeof(env->status_msg), "P%+d", _gs->pan);
-                cur->prefix = 0;
-                return;
-            }
-            if (raw_sym == XKB_KEY_Right && (mod & MOD_CTRL) && !(mod & MOD_SHIFT)) {
-                _gs->pan += 10;
-                if (_gs->pan > 1000) _gs->pan = 1000;
-                snprintf(env->status_msg, sizeof(env->status_msg), "P%+d", _gs->pan);
-                cur->prefix = 0;
-                return;
-            }
-
         }
     }
     // tap tempo: space records a tap
@@ -2767,12 +2775,20 @@ int main(int argc, char** argv) {
     ctx_hot->fn_id[3] = WAR_HOT_ID_PLUGIN;
     ctx_hot->fn_count = 4;
     war_override(ctx_hot->fn_count, ctx_hot->fn_id, env);
+    war_stem_init(env);
     // set ADSR defaults after override (plugins may reset pool)
     for (int i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++) {
         env->capture_slots[i].attack = 0.0f;
         env->capture_slots[i].sustain = 0.0f;
         env->capture_slots[i].release = 0.0f;
         env->capture_slots[i].eq1 = 0;
+        env->capture_slots[i].stem_vocals = NULL;
+        env->capture_slots[i].stem_drums = NULL;
+        env->capture_slots[i].stem_bass = NULL;
+        env->capture_slots[i].stem_other = NULL;
+        env->capture_slots[i].stem_instrumental = NULL;
+        env->capture_slots[i].stem_ready = 0;
+        env->capture_slots[i].stem_listen = WAR_STEM_OFF;
         env->capture_slots[i].eq2 = 0;
         env->capture_slots[i].effect_flags = 0;
         for (int j = 0; j < WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS; j++)
@@ -3273,35 +3289,35 @@ int main(int argc, char** argv) {
                     if (env->active_mode == WAR_MODE_ID_MASTER) {
                         uint32_t _mrsym = ctx_wayland->repeat_sym;
                         uint32_t _mrmod = ctx_wayland->repeat_mod;
-                        // ADSR editing with modifiers
+                        // ADSR editing with modifiers (applies to visual row selection)
                         if (env->ctx_cursor->instance_count) {
-                            double _rmgr = env->ctx_cursor->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows;
-                            uint32_t _rmgp = _rmgr > 0 ? (uint32_t)(_rmgr + 0.5) : 0;
-                            if (_rmgp > 127) _rmgp = 127;
-                            uint32_t _rmgl = env->ctx_cursor->layer;
-                            if (_rmgl < 1 || _rmgl > 9) _rmgl = 1;
-                            uint32_t _rmgi = _rmgp * WAR_CAPTURE_SLOT_LAYERS + (_rmgl - 1);
-                            war_capture_slot* _rmcs = &env->capture_slots[_rmgi];
                             int8_t _rmdelta = 0;
                             if (_mrsym == XKB_KEY_Up || _mrsym == XKB_KEY_Right) _rmdelta = 10;
                             if (_mrsym == XKB_KEY_Down || _mrsym == XKB_KEY_Left) _rmdelta = -10;
-                            if (_rmdelta != 0) {
-                                if (_mrmod & MOD_ALT) {
-                                    _rmcs->attack += (float)_rmdelta;
-                                    if (_rmcs->attack < 0.0f) _rmcs->attack = 0.0f;
-                                    if (_rmcs->attack > 1000.0f) _rmcs->attack = 1000.0f;
-                                    continue;
-                                } else if (_mrmod & MOD_SHIFT) {
-                                    _rmcs->sustain += (float)_rmdelta;
-                                    if (_rmcs->sustain < -1000.0f) _rmcs->sustain = -1000.0f;
-                                    if (_rmcs->sustain > 1000.0f) _rmcs->sustain = 1000.0f;
-                                    continue;
-                                } else if (_mrmod & MOD_CTRL) {
-                                    _rmcs->release += (float)_rmdelta;
-                                    if (_rmcs->release < 0.0f) _rmcs->release = 0.0f;
-                                    if (_rmcs->release > 1000.0f) _rmcs->release = 1000.0f;
-                                    continue;
+                            int _rmwhich = 0;
+                            if (_mrmod & MOD_ALT) _rmwhich = 1;
+                            else if (_mrmod & MOD_SHIFT) _rmwhich = 2;
+                            else if (_mrmod & MOD_CTRL) _rmwhich = 3;
+                            if (_rmdelta != 0 && _rmwhich) {
+                                uint32_t _rmpitches[128];
+                                int _rmnp = _war_sel_pitches(env, _rmpitches);
+                                for (int _rmi = 0; _rmi < _rmnp; _rmi++) {
+                                    war_capture_slot* _rmcs = _war_sel_slot(env, _rmpitches[_rmi]);
+                                    if (_rmwhich == 1) {
+                                        _rmcs->attack += (float)_rmdelta;
+                                        if (_rmcs->attack < 0.0f) _rmcs->attack = 0.0f;
+                                        if (_rmcs->attack > 1000.0f) _rmcs->attack = 1000.0f;
+                                    } else if (_rmwhich == 2) {
+                                        _rmcs->sustain += (float)_rmdelta;
+                                        if (_rmcs->sustain < -1000.0f) _rmcs->sustain = -1000.0f;
+                                        if (_rmcs->sustain > 1000.0f) _rmcs->sustain = 1000.0f;
+                                    } else {
+                                        _rmcs->release += (float)_rmdelta;
+                                        if (_rmcs->release < 0.0f) _rmcs->release = 0.0f;
+                                        if (_rmcs->release > 1000.0f) _rmcs->release = 1000.0f;
+                                    }
                                 }
+                                continue;
                             }
                         }
                         // fallback: master gain
@@ -3316,37 +3332,34 @@ int main(int argc, char** argv) {
                             continue;
                         }
                     }
-                    // gain/pan repeat: ctrl+arrows handled inline
+                    // gain/pan repeat: ctrl+arrows (visual selection)
                     if (ctx_wayland->repeat_mod & MOD_CTRL) {
                         uint32_t _rsym = ctx_wayland->repeat_sym;
                         uint32_t _rmod = ctx_wayland->repeat_mod;
                         war_cursor_context* _rcur = env->ctx_cursor;
                         if ((_rsym == XKB_KEY_Up || _rsym == XKB_KEY_Down ||
                              _rsym == XKB_KEY_Left || _rsym == XKB_KEY_Right) &&
+                            !(_rmod & MOD_SHIFT) &&
                             _rcur && _rcur->instance_count &&
                             (env->active_mode == WAR_MODE_ID_ROLL || env->active_mode == WAR_MODE_ID_VISUAL)) {
-                            double _rgr = _rcur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows;
-                            uint32_t _rgp = _rgr > 0 ? (uint32_t)(_rgr + 0.5) : 0;
-                            if (_rgp > 127) _rgp = 127;
-                            uint32_t _rgl = _rcur->layer;
-                            if (_rgl < 1 || _rgl > 9) _rgl = 1;
-                            uint32_t _rgi = _rgp * WAR_CAPTURE_SLOT_LAYERS + (_rgl - 1);
-                            war_capture_slot* _rgs = &env->capture_slots[_rgi];
-                            if (_rgs->samples && _rgs->count > 0) {
-                                if (_rsym == XKB_KEY_Up && !(_rmod & MOD_SHIFT)) {
+                            uint32_t _rpitches[128];
+                            int _rnp = _war_sel_pitches(env, _rpitches);
+                            for (int _ri = 0; _ri < _rnp; _ri++) {
+                                war_capture_slot* _rgs = _war_sel_slot(env, _rpitches[_ri]);
+                                if (!(_rgs->samples && _rgs->count > 0)) continue;
+                                if (_rsym == XKB_KEY_Up) {
                                     _rgs->gain += 10.0f;
-                                     if (_rgs->gain > 500000.0f) _rgs->gain = 500000.0f;
-                                 } else if (_rsym == XKB_KEY_Down && !(_rmod & MOD_SHIFT)) {
-                                     _rgs->gain -= 10.0f;
-                                     if (_rgs->gain < -500000.0f) _rgs->gain = -500000.0f;
-                                } else if (_rsym == XKB_KEY_Left && !(_rmod & MOD_SHIFT)) {
+                                    if (_rgs->gain > 500000.0f) _rgs->gain = 500000.0f;
+                                } else if (_rsym == XKB_KEY_Down) {
+                                    _rgs->gain -= 10.0f;
+                                    if (_rgs->gain < -500000.0f) _rgs->gain = -500000.0f;
+                                } else if (_rsym == XKB_KEY_Left) {
                                     _rgs->pan -= 10;
                                     if (_rgs->pan < -1000) _rgs->pan = -1000;
-                                } else if (_rsym == XKB_KEY_Right && !(_rmod & MOD_SHIFT)) {
+                                } else if (_rsym == XKB_KEY_Right) {
                                     _rgs->pan += 10;
                                     if (_rgs->pan > 1000) _rgs->pan = 1000;
                                 }
-
                             }
                             continue;
                         }
@@ -3496,9 +3509,13 @@ int main(int argc, char** argv) {
                                 env->play_bar_voice_layer[_v] = _li;
                                 env->play_bar_voice_tick[_v] = _tik;
                                 env->play_bar_voice_read_pos[_v] = _off2;
-                                env->play_bar_voice_read_limit[_v] = _mf;
-                                if (_sl->count > 0 && env->play_bar_voice_read_limit[_v] > _sl->count)
-                                    env->play_bar_voice_read_limit[_v] = _sl->count;
+                                {
+                                    float* _pa = NULL; uint64_t _pc = 0;
+                                    _war_slot_audio(_sl, &_pa, &_pc);
+                                    env->play_bar_voice_read_limit[_v] = _mf;
+                                    if (_pc > 0 && env->play_bar_voice_read_limit[_v] > _pc)
+                                        env->play_bar_voice_read_limit[_v] = _pc;
+                                }
                                 env->play_bar_voice_filter_lp[_v][0] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][1] = 0.0f;
                                 env->play_bar_voice_filter_lp[_v][2] = 0.0f;
@@ -3553,12 +3570,15 @@ int main(int argc, char** argv) {
                     }
                     uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                     war_capture_slot* slot = &env->capture_slots[idx];
-                    if (!slot->samples || slot->count < 2) {
+                    float* _aud = NULL;
+                    uint64_t _aud_count = 0;
+                    _war_slot_audio(slot, &_aud, &_aud_count);
+                    if (!_aud || _aud_count < 2) {
                         env->preview_voice_active[v] = 0;
                         continue;
                     }
                     uint64_t read_pos = env->preview_voice_read_pos[v];
-                    uint64_t slot_avail = slot->samples ? slot->count : 0;
+                    uint64_t slot_avail = _aud_count;
                     uint64_t read_limit = env->preview_voice_read_limit[v];
                     if (read_limit > 0 && read_limit < slot_avail)
                         slot_avail = read_limit;
@@ -3591,8 +3611,8 @@ int main(int argc, char** argv) {
                     float _pl = sinf((1.0f - _pp) * (float)(M_PI / 2.0));
                     float _pr = sinf(_pp * (float)(M_PI / 2.0));
                     for (uint64_t f = 0; f < batch; f += 2) {
-                        float _s_l = slot->samples[read_pos + f];
-                        float _s_r = slot->samples[read_pos + f + 1];
+                        float _s_l = _aud[read_pos + f];
+                        float _s_r = _aud[read_pos + f + 1];
                         _war_process_effects(slot, env->preview_voice_effect_state[v], &_s_l, &_s_r);
                         { float* _es = env->preview_voice_effect_state[v];
                         if (slot->eq1) {
@@ -3668,14 +3688,17 @@ int main(int argc, char** argv) {
                         }
                         uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
                         war_capture_slot* slot = &env->capture_slots[idx];
+                        float* _aud2 = NULL;
+                        uint64_t _aud2_count = 0;
+                        _war_slot_audio(slot, &_aud2, &_aud2_count);
                         uint64_t read_pos = env->play_bar_voice_read_pos[v];
                         uint64_t read_limit = env->play_bar_voice_read_limit[v];
                         if (read_pos >= read_limit) {
                             env->play_bar_voice_active[v] = 0;
                             continue;
                         }
-                        uint64_t slot_avail = slot->samples ? slot->count : 0;
-                        if (slot_avail == 0) {
+                        uint64_t slot_avail = _aud2_count;
+                        if (!_aud2 || slot_avail == 0) {
                             env->play_bar_voice_active[v] = 0;
                             continue;
                         }
@@ -3703,8 +3726,8 @@ int main(int argc, char** argv) {
                         float _pl2 = sinf((1.0f - _pp2) * (float)(M_PI / 2.0));
                         float _pr2 = sinf(_pp2 * (float)(M_PI / 2.0));
                         for (uint64_t f = 0; f < batch; f += 2) {
-                            float _s_l = slot->samples[slot_offset + f];
-                            float _s_r = slot->samples[slot_offset + f + 1];
+                            float _s_l = _aud2[slot_offset + f];
+                            float _s_r = _aud2[slot_offset + f + 1];
                             _war_process_effects(slot, env->play_bar_voice_effect_state[v], &_s_l, &_s_r);
                             { float* _es = env->play_bar_voice_effect_state[v];
                             if (slot->eq1) {
@@ -3869,9 +3892,22 @@ int main(int argc, char** argv) {
     _war_midi_disconnect(env);
     free(env->atomics);
     // free capture slots and accumulator
-    for (uint32_t i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++)
+    war_stem_shutdown(env);
+    for (uint32_t i = 0; i < WAR_PREVIEW_VOICES; i++) {
+        free(env->preview_voice_delay_line[i]);
+        env->preview_voice_delay_line[i] = NULL;
+    }
+    for (uint32_t i = 0; i < WAR_PLAY_BAR_VOICES; i++) {
+        free(env->play_bar_voice_delay_line[i]);
+        env->play_bar_voice_delay_line[i] = NULL;
+    }
+    for (uint32_t i = 0; i < 128 * WAR_CAPTURE_SLOT_LAYERS; i++) {
         free(env->capture_slots[i].samples);
+        env->capture_slots[i].samples = NULL;
+        _war_stem_free_slot(&env->capture_slots[i]);
+    }
     free(env->capture_accumulator);
+    env->capture_accumulator = NULL;
     env->atomics = NULL;
     env->pc_capture = NULL;
     env->pc_loopback = NULL;

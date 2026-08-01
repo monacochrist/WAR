@@ -14,6 +14,7 @@
 #include "war_data.h"
 #include "war_debug_macros.h"
 #include "war_functions.h"
+#include "war_stem.h"
 
 extern void war_reconnect_capture(war_env* env, const char* target);
 extern void war_reconnect_loopback(war_env* env, const char* target);
@@ -472,10 +473,12 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
         if (env->preview_voice_active[v] && env->preview_voice_note[v] == note) {
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             war_capture_slot* slot = &env->capture_slots[idx];
-            if (!slot->samples || slot->count < 2) { env->preview_voice_active[v] = 0; return -1; }
+            float* _sa = NULL; uint64_t _sc = 0;
+            _war_slot_audio(slot, &_sa, &_sc);
+            if (!_sa || _sc < 2) { env->preview_voice_active[v] = 0; return -1; }
             env->preview_voice_layer[v] = layer;
             env->preview_voice_read_pos[v] = 0;
-            env->preview_voice_read_limit[v] = slot->count;
+            env->preview_voice_read_limit[v] = _sc;
             memset(env->preview_voice_effect_state[v], 0, sizeof(env->preview_voice_effect_state[v]));
             env->preview_voice_effect_state[v][14] = 1.0f;
             env->preview_voice_filter_lp[v][0] = 0.0f;
@@ -511,12 +514,14 @@ static inline int _war_preview_start_voice(war_env* env, uint32_t note, uint32_t
         if (!env->preview_voice_active[v]) {
             uint32_t idx = note * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
             war_capture_slot* slot = &env->capture_slots[idx];
-            if (!slot->samples || slot->count < 2) return -1;
+            float* _sa2 = NULL; uint64_t _sc2 = 0;
+            _war_slot_audio(slot, &_sa2, &_sc2);
+            if (!_sa2 || _sc2 < 2) return -1;
             uint32_t voice = v;
             env->preview_voice_note[voice] = note;
             env->preview_voice_layer[voice] = layer;
             env->preview_voice_read_pos[voice] = 0;
-            env->preview_voice_read_limit[voice] = slot->count;
+            env->preview_voice_read_limit[voice] = _sc2;
             memset(env->preview_voice_effect_state[voice], 0, sizeof(env->preview_voice_effect_state[voice]));
             env->preview_voice_effect_state[voice][14] = 1.0f;
             env->preview_voice_filter_lp[voice][0] = 0.0f;
@@ -1039,6 +1044,7 @@ static inline void _war_stretch_slot(war_env* env, uint32_t note, uint32_t layer
         slot->capacity = dst_cnt;
     }
     free(wrk);
+    _war_stem_invalidate(slot);
 }
 
 static inline void war_undo_save(war_env* env);
@@ -1332,6 +1338,7 @@ static inline void war_toggle_crop(war_env* env) {
                     env->capture_slots[idx].samples = new_data;
                     env->capture_slots[idx].count = new_count;
                     env->capture_slots[idx].capacity = new_count;
+                    _war_stem_invalidate(&env->capture_slots[idx]);
                     call_king_terry("CROP: applied [%llu, %llu) -> %llu frames",
                                     (unsigned long long)start, (unsigned long long)end,
                                     (unsigned long long)new_frames);
@@ -1460,32 +1467,69 @@ static inline void _war_process_effects(war_capture_slot* slot, float* state, fl
     }
 }
 
+// pitches covered by visual selection (or single cursor row). out needs 128 entries.
+static inline int _war_sel_pitches(war_env* env, uint32_t* out) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count || !env->ctx_wayland || !out) return 0;
+    double gr = (double)env->ctx_wayland->gutter_rows;
+    if (cur->visual_active) {
+        float y0 = cur->visual_anchor_row;
+        float y1 = cur->instance[0].pos[1];
+        if (y0 > y1) { float t = y0; y0 = y1; y1 = t; }
+        int p0 = (int)(y0 - gr + 0.5);
+        int p1 = (int)(y1 - gr + 0.5);
+        if (p0 < 0) p0 = 0;
+        if (p1 > 127) p1 = 127;
+        if (p0 > 127 || p1 < 0) return 0;
+        int n = 0;
+        for (int p = p0; p <= p1; p++) out[n++] = (uint32_t)p;
+        return n;
+    }
+    int p = (int)(cur->instance[0].pos[1] - gr + 0.5);
+    if (p < 0) p = 0;
+    if (p > 127) p = 127;
+    out[0] = (uint32_t)p;
+    return 1;
+}
+static inline uint32_t _war_sel_layer(war_env* env) {
+    uint32_t layer = (env->ctx_cursor) ? env->ctx_cursor->layer : 1;
+    if (layer < 1 || layer > 9) layer = 1;
+    return layer;
+}
+static inline war_capture_slot* _war_sel_slot(war_env* env, uint32_t pitch) {
+    return &env->capture_slots[pitch * WAR_CAPTURE_SLOT_LAYERS + (_war_sel_layer(env) - 1)];
+}
+
 static inline void war_offall(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
-    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    env->capture_slots[idx].effect_flags = 0;
-    snprintf(env->status_msg, sizeof(env->status_msg), "all effects OFF");
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
+    for (int i = 0; i < np; i++)
+        _war_sel_slot(env, pitches[i])->effect_flags = 0;
+    if (np > 1)
+        snprintf(env->status_msg, sizeof(env->status_msg), "all effects OFF (%d rows)", np);
+    else
+        snprintf(env->status_msg, sizeof(env->status_msg), "all effects OFF");
 }
 
 static inline void war_compress(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
-    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
+    war_capture_slot* slot = _war_sel_slot(env, pitches[0]);
+    // status uses cursor row when available
+    {
+        uint32_t cp = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+        if (cp <= 127) slot = _war_sel_slot(env, cp);
+    }
     int cmdlen = (int)env->cmd_len;
-    uint8_t turn_on = 0, turn_off = 0, set_params = 0;
+    uint8_t turn_on = 0, turn_off = 0, set_params = 0, set_default = 0;
     double threshold_db = -20.0, ratio = 4.0, attack_ms = 1.0, release_ms = 40.0, makeup_db = 4.0;
     if (!env->cmd_active || cmdlen < 9) {
-        // show state
         int a = _war_effect_active(slot, WAR_EFFECT_COMPRESS);
         if (a) {
             threshold_db = _war_effect_get_param(slot, WAR_EFFECT_COMPRESS, 0);
@@ -1519,15 +1563,7 @@ static inline void war_compress(war_env* env) {
                  a ? "compress ON: thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f"
                    : "compress OFF", t, r, at, rt, m); return;
     }
-    else if (strcmp(rest, "default") == 0) {
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 0, -20.0);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 1, 4.0);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 2, 1.0);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 3, 40.0);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 4, 4.0);
-        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "compress ON (defaults)"); return;
-    }
+    else if (strcmp(rest, "default") == 0) set_default = 1;
     else if (*rest) {
         set_params = 1;
         sscanf(rest, " %lf %lf %lf %lf %lf", &threshold_db, &ratio, &attack_ms, &release_ms, &makeup_db);
@@ -1535,66 +1571,89 @@ static inline void war_compress(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "compress: bad args"); return;
         }
     }
-    // handle on/off toggle
-    uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_COMPRESS);
-    if (turn_off && was_active) {
-        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 0);
-        snprintf(env->status_msg, sizeof(env->status_msg), "compress OFF"); return;
+    for (int i = 0; i < np; i++) {
+        war_capture_slot* s = _war_sel_slot(env, pitches[i]);
+        if (turn_off) {
+            _war_effect_set_active(s, WAR_EFFECT_COMPRESS, 0);
+        } else if (turn_on || set_default) {
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 0, -20.0);
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 1, 4.0);
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 2, 1.0);
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 3, 40.0);
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 4, 4.0);
+            _war_effect_set_active(s, WAR_EFFECT_COMPRESS, 1);
+        } else if (set_params) {
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 0, threshold_db);
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 1, ratio);
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 2, attack_ms);
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 3, release_ms);
+            _war_effect_set_param(s, WAR_EFFECT_COMPRESS, 4, makeup_db);
+            _war_effect_set_active(s, WAR_EFFECT_COMPRESS, 1);
+        }
     }
-    if (turn_on && !was_active) {
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 0, -20.0);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 1, 4.0);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 2, 1.0);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 3, 40.0);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 4, 4.0);
-        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg),
-                 "compress ON (defaults)"); return;
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 0, threshold_db);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 1, ratio);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 2, attack_ms);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 3, release_ms);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 4, makeup_db);
-        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg),
-                 "compress ON: thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f",
-                 threshold_db, ratio, attack_ms, release_ms, makeup_db);
-        return; // dead code but harmless
+    if (turn_off) {
+        if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "compress OFF (%d rows)", np);
+        else snprintf(env->status_msg, sizeof(env->status_msg), "compress OFF");
+    } else if (turn_on || set_default) {
+        if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "compress ON (defaults, %d rows)", np);
+        else snprintf(env->status_msg, sizeof(env->status_msg), "compress ON (defaults)");
+    } else if (set_params) {
+        if (np > 1)
+            snprintf(env->status_msg, sizeof(env->status_msg),
+                     "compress ON (%d rows): thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f",
+                     np, threshold_db, ratio, attack_ms, release_ms, makeup_db);
+        else
+            snprintf(env->status_msg, sizeof(env->status_msg),
+                     "compress ON: thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f",
+                     threshold_db, ratio, attack_ms, release_ms, makeup_db);
     }
-    if (set_params) {
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 0, threshold_db);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 1, ratio);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 2, attack_ms);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 3, release_ms);
-        _war_effect_set_param(slot, WAR_EFFECT_COMPRESS, 4, makeup_db);
-        _war_effect_set_active(slot, WAR_EFFECT_COMPRESS, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "compress ON: thresh=%.0f ratio=%.1f attack=%.0f release=%.0f makeup=%.0f", threshold_db, ratio, attack_ms, release_ms, makeup_db);
+}
+
+// copy one effect's active bit + params from src slot to all other selected pitches
+static inline void _war_sel_copy_effect(war_env* env, const uint32_t* pitches, int np, uint32_t src_pitch, int effect_id) {
+    if (np <= 1 || effect_id <= 0 || effect_id >= WAR_EFFECT_COUNT) return;
+    war_capture_slot* src = _war_sel_slot(env, src_pitch);
+    int active = _war_effect_active(src, effect_id);
+    double params[WAR_EFFECT_PARAMS];
+    for (int p = 0; p < WAR_EFFECT_PARAMS; p++)
+        params[p] = _war_effect_get_param(src, effect_id, p);
+    for (int i = 0; i < np; i++) {
+        if (pitches[i] == src_pitch) continue;
+        war_capture_slot* s = _war_sel_slot(env, pitches[i]);
+        for (int p = 0; p < WAR_EFFECT_PARAMS; p++)
+            _war_effect_set_param(s, effect_id, p, params[p]);
+        _war_effect_set_active(s, effect_id, active);
     }
 }
 
 static inline void war_clear(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
-    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
-    free(slot->samples);
-    slot->samples = NULL;
-    slot->count = 0;
-    slot->capacity = 0;
-    slot->gain = 0.0f;
-    slot->pan = 0;
-    slot->eq1 = 0;
-    slot->eq2 = 0;
-    slot->attack = 0.0f;
-    slot->sustain = 0.0f;
-    slot->release = 0.0f;
-    slot->effect_flags = 0;
-    memset(slot->effect_params, 0, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
-    snprintf(env->status_msg, sizeof(env->status_msg), "cleared slot pitch=%u layer=%u", pitch, layer);
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
+    uint32_t layer = _war_sel_layer(env);
+    for (int i = 0; i < np; i++) {
+        war_capture_slot* slot = _war_sel_slot(env, pitches[i]);
+        free(slot->samples);
+        slot->samples = NULL;
+        slot->count = 0;
+        slot->capacity = 0;
+        slot->gain = 0.0f;
+        slot->pan = 0;
+        slot->eq1 = 0;
+        slot->eq2 = 0;
+        slot->attack = 0.0f;
+        slot->sustain = 0.0f;
+        slot->release = 0.0f;
+        slot->effect_flags = 0;
+        memset(slot->effect_params, 0, sizeof(double) * WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS);
+        _war_stem_free_slot(slot);
+    }
+    if (np > 1)
+        snprintf(env->status_msg, sizeof(env->status_msg), "cleared %d slots layer=%u", np, layer);
+    else
+        snprintf(env->status_msg, sizeof(env->status_msg), "cleared slot pitch=%u layer=%u", pitches[0], layer);
 }
 
 static inline void war_clear_all(war_env* env) {
@@ -1608,6 +1667,7 @@ static inline void war_clear_all(war_env* env) {
                 slot->samples = NULL;
                 cleared++;
             }
+            _war_stem_free_slot(slot);
             slot->count = 0;
             slot->capacity = 0;
             slot->gain = 0.0f;
@@ -1631,53 +1691,67 @@ static inline void war_clear_all(war_env* env) {
 static inline void war_eq1(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
-    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
+    uint32_t cp = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (cp > 127) cp = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, cp);
     int val = 0;
     if (!env->cmd_active || env->cmd_len < 4) {
-        int v = env->capture_slots[idx].eq1;
+        int v = slot->eq1;
         snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ1: %+d" : "EQ1 OFF", v);
         return;
     }
     const char* rest = env->cmd_buf + 4;
     while (*rest == ' ' || *rest == '\t') rest++;
-    if (strcmp(rest, "off") == 0) { env->capture_slots[idx].eq1 = 0; snprintf(env->status_msg, sizeof(env->status_msg), "EQ1 OFF"); return; }
+    if (strcmp(rest, "off") == 0) {
+        for (int i = 0; i < np; i++) _war_sel_slot(env, pitches[i])->eq1 = 0;
+        if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "EQ1 OFF (%d rows)", np);
+        else snprintf(env->status_msg, sizeof(env->status_msg), "EQ1 OFF");
+        return;
+    }
     if (strcmp(rest, "status") == 0) {
-        int v = env->capture_slots[idx].eq1;
+        int v = slot->eq1;
         snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ1 ON: %+d" : "EQ1 OFF", v); return;
     }
     if (*rest && sscanf(rest, "%d", &val) == 1 && val >= -1000 && val <= 1000) {
-        env->capture_slots[idx].eq1 = val;
-        snprintf(env->status_msg, sizeof(env->status_msg), "EQ1: %+d", val);
+        for (int i = 0; i < np; i++) _war_sel_slot(env, pitches[i])->eq1 = val;
+        if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "EQ1: %+d (%d rows)", val, np);
+        else snprintf(env->status_msg, sizeof(env->status_msg), "EQ1: %+d", val);
     } else snprintf(env->status_msg, sizeof(env->status_msg), "EQ1: usage [-1000..1000] | off | status");
 }
 static inline void war_eq2(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
-    uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
+    uint32_t cp = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
+    if (cp > 127) cp = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, cp);
     int val = 0;
     if (!env->cmd_active || env->cmd_len < 4) {
-        int v = env->capture_slots[idx].eq2;
+        int v = slot->eq2;
         snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ2: %+d" : "EQ2 OFF", v);
         return;
     }
     const char* rest = env->cmd_buf + 4;
     while (*rest == ' ' || *rest == '\t') rest++;
-    if (strcmp(rest, "off") == 0) { env->capture_slots[idx].eq2 = 0; snprintf(env->status_msg, sizeof(env->status_msg), "EQ2 OFF"); return; }
+    if (strcmp(rest, "off") == 0) {
+        for (int i = 0; i < np; i++) _war_sel_slot(env, pitches[i])->eq2 = 0;
+        if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "EQ2 OFF (%d rows)", np);
+        else snprintf(env->status_msg, sizeof(env->status_msg), "EQ2 OFF");
+        return;
+    }
     if (strcmp(rest, "status") == 0) {
-        int v = env->capture_slots[idx].eq2;
+        int v = slot->eq2;
         snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ2 ON: %+d" : "EQ2 OFF", v); return;
     }
     if (*rest && sscanf(rest, "%d", &val) == 1 && val >= -1000 && val <= 1000) {
-        env->capture_slots[idx].eq2 = val;
-        snprintf(env->status_msg, sizeof(env->status_msg), "EQ2: %+d", val);
+        for (int i = 0; i < np; i++) _war_sel_slot(env, pitches[i])->eq2 = val;
+        if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "EQ2: %+d (%d rows)", val, np);
+        else snprintf(env->status_msg, sizeof(env->status_msg), "EQ2: %+d", val);
     } else snprintf(env->status_msg, sizeof(env->status_msg), "EQ2: usage [-1000..1000] | off | status");
 }
 
@@ -1716,12 +1790,12 @@ static inline void war_whatson(war_env* env) {
 static inline void war_saturate(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
     uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
+    if (pitch > 127) pitch = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, pitch);
     int cmdlen = (int)env->cmd_len;
     uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double drive = 2.0, mix = 0.3, makeup_db = 0.0;
@@ -1759,7 +1833,9 @@ static inline void war_saturate(war_env* env) {
         _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 1, 0.4);
         _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 2, 2.0);
         _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "saturate ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "saturate ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_SATURATE);
+        return;
     }
     else if (*rest) {
         set_params = 1;
@@ -1769,14 +1845,21 @@ static inline void war_saturate(war_env* env) {
         }
     }
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_SATURATE);
-    if (turn_on && !was_active) {
+    if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 0, 3.0);
         _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 1, 0.4);
         _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 2, 2.0);
         _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "saturate ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "saturate ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_SATURATE);
+        return;
     }
-    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 0); snprintf(env->status_msg, sizeof(env->status_msg), "saturate OFF"); return; }
+    if (turn_off) {
+        _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 0);
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_SATURATE);
+        snprintf(env->status_msg, sizeof(env->status_msg), "saturate OFF");
+        return;
+    }
     if (set_params) {
         _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 0, drive);
         _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 1, mix);
@@ -1784,17 +1867,18 @@ static inline void war_saturate(war_env* env) {
         _war_effect_set_active(slot, WAR_EFFECT_SATURATE, 1);
         snprintf(env->status_msg, sizeof(env->status_msg), "saturate ON: drive=%.1f mix=%.2f makeup=%.0f", drive, mix, makeup_db);
     }
+    if (np > 1) _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_SATURATE);
 }
 
 static inline void war_reverb(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
     uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
+    if (pitch > 127) pitch = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, pitch);
     int cmdlen = (int)env->cmd_len;
     uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double decay = 0.4, mix = 0.15, predelay_ms = 0.0, damping = 0.3;
@@ -1835,7 +1919,9 @@ static inline void war_reverb(war_env* env) {
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 2, 0.0);
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 3, 0.3);
         _war_effect_set_active(slot, WAR_EFFECT_REVERB, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "reverb ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "reverb ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_REVERB);
+        return;
     }
     else if (*rest) {
         set_params = 1;
@@ -1845,15 +1931,22 @@ static inline void war_reverb(war_env* env) {
         }
     }
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_REVERB);
-    if (turn_on && !was_active) {
+    if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 0, 0.4);
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 1, 0.15);
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 2, 0.0);
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 3, 0.3);
         _war_effect_set_active(slot, WAR_EFFECT_REVERB, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "reverb ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "reverb ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_REVERB);
+        return;
     }
-    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_REVERB, 0); snprintf(env->status_msg, sizeof(env->status_msg), "reverb OFF"); return; }
+    if (turn_off) {
+        _war_effect_set_active(slot, WAR_EFFECT_REVERB, 0);
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_REVERB);
+        snprintf(env->status_msg, sizeof(env->status_msg), "reverb OFF");
+        return;
+    }
     if (set_params) {
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 0, decay);
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 1, mix);
@@ -1862,17 +1955,18 @@ static inline void war_reverb(war_env* env) {
         _war_effect_set_active(slot, WAR_EFFECT_REVERB, 1);
         snprintf(env->status_msg, sizeof(env->status_msg), "reverb ON: decay=%.2f mix=%.2f predelay=%.0f damping=%.2f", decay, mix, predelay_ms, damping);
     }
+    if (np > 1) _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_REVERB);
 }
 
 static inline void war_delay(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
     uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
+    if (pitch > 127) pitch = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, pitch);
     int cmdlen = (int)env->cmd_len;
     uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double time_ms = 60.0, feedback = 0.2, mix = 0.4, fb_damping = 0.3;
@@ -1913,7 +2007,9 @@ static inline void war_delay(war_env* env) {
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 2, 0.4);
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 3, 0.3);
         _war_effect_set_active(slot, WAR_EFFECT_DELAY, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "delay ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "delay ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_DELAY);
+        return;
     }
     else if (*rest) {
         set_params = 1;
@@ -1923,15 +2019,22 @@ static inline void war_delay(war_env* env) {
         }
     }
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_DELAY);
-    if (turn_on && !was_active) {
+    if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 0, 60.0);
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 1, 0.2);
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 2, 0.4);
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 3, 0.3);
         _war_effect_set_active(slot, WAR_EFFECT_DELAY, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "delay ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "delay ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_DELAY);
+        return;
     }
-    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_DELAY, 0); snprintf(env->status_msg, sizeof(env->status_msg), "delay OFF"); return; }
+    if (turn_off) {
+        _war_effect_set_active(slot, WAR_EFFECT_DELAY, 0);
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_DELAY);
+        snprintf(env->status_msg, sizeof(env->status_msg), "delay OFF");
+        return;
+    }
     if (set_params) {
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 0, time_ms);
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 1, feedback);
@@ -1940,17 +2043,18 @@ static inline void war_delay(war_env* env) {
         _war_effect_set_active(slot, WAR_EFFECT_DELAY, 1);
         snprintf(env->status_msg, sizeof(env->status_msg), "delay ON: time=%.0f feedback=%.2f mix=%.2f damp=%.2f", time_ms, feedback, mix, fb_damping);
     }
+    if (np > 1) _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_DELAY);
 }
 
 static inline void war_gate(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
     uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
+    if (pitch > 127) pitch = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, pitch);
     int cmdlen = (int)env->cmd_len;
     uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double threshold_db = -40.0, attack_ms = 2.0, hold_ms = 10.0, release_ms = 50.0, floor_db = -80.0;
@@ -1994,7 +2098,9 @@ static inline void war_gate(war_env* env) {
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 3, 50.0);
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 4, -80.0);
         _war_effect_set_active(slot, WAR_EFFECT_GATE, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "gate ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "gate ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_GATE);
+        return;
     }
     else if (*rest) {
         set_params = 1;
@@ -2004,16 +2110,23 @@ static inline void war_gate(war_env* env) {
         }
     }
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_GATE);
-    if (turn_on && !was_active) {
+    if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 0, -40.0);
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 1, 2.0);
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 2, 10.0);
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 3, 50.0);
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 4, -80.0);
         _war_effect_set_active(slot, WAR_EFFECT_GATE, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "gate ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "gate ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_GATE);
+        return;
     }
-    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_GATE, 0); snprintf(env->status_msg, sizeof(env->status_msg), "gate OFF"); return; }
+    if (turn_off) {
+        _war_effect_set_active(slot, WAR_EFFECT_GATE, 0);
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_GATE);
+        snprintf(env->status_msg, sizeof(env->status_msg), "gate OFF");
+        return;
+    }
     if (set_params) {
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 0, threshold_db);
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 1, attack_ms);
@@ -2023,17 +2136,18 @@ static inline void war_gate(war_env* env) {
         _war_effect_set_active(slot, WAR_EFFECT_GATE, 1);
         snprintf(env->status_msg, sizeof(env->status_msg), "gate ON: thresh=%.0f attack=%.0f hold=%.0f release=%.0f floor=%.0f", threshold_db, attack_ms, hold_ms, release_ms, floor_db);
     }
+    if (np > 1) _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_GATE);
 }
 
 static inline void war_deesser(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
     uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
+    if (pitch > 127) pitch = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, pitch);
     int cmdlen = (int)env->cmd_len;
     uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double threshold_db = -30.0, freq_hz = 6000.0, attack_ms = 1.0, release_ms = 30.0;
@@ -2074,7 +2188,9 @@ static inline void war_deesser(war_env* env) {
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 2, 1.0);
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 3, 30.0);
         _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "deesser ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "deesser ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_DEESSER);
+        return;
     }
     else if (*rest) {
         set_params = 1;
@@ -2084,15 +2200,22 @@ static inline void war_deesser(war_env* env) {
         }
     }
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_DEESSER);
-    if (turn_on && !was_active) {
+    if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 0, -30.0);
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 1, 6000.0);
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 2, 1.0);
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 3, 30.0);
         _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "deesser ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "deesser ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_DEESSER);
+        return;
     }
-    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 0); snprintf(env->status_msg, sizeof(env->status_msg), "deesser OFF"); return; }
+    if (turn_off) {
+        _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 0);
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_DEESSER);
+        snprintf(env->status_msg, sizeof(env->status_msg), "deesser OFF");
+        return;
+    }
     if (set_params) {
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 0, threshold_db);
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 1, freq_hz);
@@ -2101,17 +2224,18 @@ static inline void war_deesser(war_env* env) {
         _war_effect_set_active(slot, WAR_EFFECT_DEESSER, 1);
         snprintf(env->status_msg, sizeof(env->status_msg), "deesser ON: thresh=%.0f freq=%.0f attack=%.0f release=%.0f", threshold_db, freq_hz, attack_ms, release_ms);
     }
+    if (np > 1) _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_DEESSER);
 }
 
 static inline void war_chorus(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
     uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
+    if (pitch > 127) pitch = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, pitch);
     int cmdlen = (int)env->cmd_len;
     uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double rate_hz = 0.3, depth_ms = 8.0, mix = 0.3, base_ms = 25.0;
@@ -2152,7 +2276,9 @@ static inline void war_chorus(war_env* env) {
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 2, 0.3);
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 3, 25.0);
         _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "chorus ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "chorus ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_CHORUS);
+        return;
     }
     else if (*rest) {
         set_params = 1;
@@ -2162,15 +2288,22 @@ static inline void war_chorus(war_env* env) {
         }
     }
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_CHORUS);
-    if (turn_on && !was_active) {
+    if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 0, 0.3);
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 1, 8.0);
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 2, 0.3);
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 3, 25.0);
         _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "chorus ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "chorus ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_CHORUS);
+        return;
     }
-    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 0); snprintf(env->status_msg, sizeof(env->status_msg), "chorus OFF"); return; }
+    if (turn_off) {
+        _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 0);
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_CHORUS);
+        snprintf(env->status_msg, sizeof(env->status_msg), "chorus OFF");
+        return;
+    }
     if (set_params) {
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 0, rate_hz);
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 1, depth_ms);
@@ -2179,17 +2312,18 @@ static inline void war_chorus(war_env* env) {
         _war_effect_set_active(slot, WAR_EFFECT_CHORUS, 1);
         snprintf(env->status_msg, sizeof(env->status_msg), "chorus ON: rate=%.1f depth=%.1f mix=%.2f base=%.0f", rate_hz, depth_ms, mix, base_ms);
     }
+    if (np > 1) _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_CHORUS);
 }
 
 static inline void war_autotune(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
     if (!cur || !cur->instance_count) return;
+    uint32_t pitches[128];
+    int np = _war_sel_pitches(env, pitches);
+    if (np <= 0) return;
     uint32_t pitch = (uint32_t)(cur->instance[0].pos[1] - (double)env->ctx_wayland->gutter_rows);
-    if (pitch > 127) return;
-    uint32_t layer = cur->layer;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t idx = pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    war_capture_slot* slot = &env->capture_slots[idx];
+    if (pitch > 127) pitch = pitches[0];
+    war_capture_slot* slot = _war_sel_slot(env, pitch);
     int cmdlen = (int)env->cmd_len;
     uint8_t turn_on = 0, turn_off = 0, set_params = 0;
     double retune_ms = 3.0;
@@ -2221,7 +2355,9 @@ static inline void war_autotune(war_env* env) {
     else if (strcmp(rest, "default") == 0) {
         _war_effect_set_param(slot, WAR_EFFECT_AUTOTUNE, 0, 3.0);
         _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "autotune ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "autotune ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_AUTOTUNE);
+        return;
     }
     else if (*rest) {
         set_params = 1;
@@ -2231,17 +2367,25 @@ static inline void war_autotune(war_env* env) {
         }
     }
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_AUTOTUNE);
-    if (turn_on && !was_active) {
+    if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_AUTOTUNE, 0, 3.0);
         _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 1);
-        snprintf(env->status_msg, sizeof(env->status_msg), "autotune ON (defaults)"); return;
+        snprintf(env->status_msg, sizeof(env->status_msg), "autotune ON (defaults)");
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_AUTOTUNE);
+        return;
     }
-    if (turn_off && was_active) { _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 0); snprintf(env->status_msg, sizeof(env->status_msg), "autotune OFF"); return; }
+    if (turn_off) {
+        _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 0);
+        _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_AUTOTUNE);
+        snprintf(env->status_msg, sizeof(env->status_msg), "autotune OFF");
+        return;
+    }
     if (set_params) {
         _war_effect_set_param(slot, WAR_EFFECT_AUTOTUNE, 0, retune_ms);
         _war_effect_set_active(slot, WAR_EFFECT_AUTOTUNE, 1);
         snprintf(env->status_msg, sizeof(env->status_msg), "autotune ON: retune=%.0fms", retune_ms);
     }
+    if (np > 1) _war_sel_copy_effect(env, pitches, np, pitch, WAR_EFFECT_AUTOTUNE);
 }
 
 static inline void _war_across_pitch_shift(war_env* env, uint32_t src_note, uint32_t layer, int32_t radius) {
@@ -2348,6 +2492,7 @@ static inline void war_capture_audio(war_env* env) {
             env->capture_accumulator = NULL;
             env->capture_accumulator_count = 0;
             env->capture_accumulator_capacity = 0;
+            _war_stem_invalidate(&env->capture_slots[idx]);
             // ACROSS: pitch-shift within radius
             if (env->across_mode) {
                 _war_across_pitch_shift(env, note, layer, env->across_radius);
@@ -2995,12 +3140,28 @@ static inline void war_delete_note_under_cursor(war_env* env) {
     }
 }
 
-static inline void war_split_note(war_env* env) {
-    war_cursor_context* cur = env->ctx_cursor;
+// Copy slot params without sharing owned sample/stem pointers (prevents double-free).
+static inline void _war_slot_clone_params(war_capture_slot* dst, const war_capture_slot* src) {
+    if (!dst || !src) return;
+    free(dst->samples);
+    _war_stem_free_slot(dst);
+    *dst = *src;
+    dst->samples = NULL;
+    dst->count = 0;
+    dst->capacity = 0;
+    dst->stem_vocals = NULL; dst->stem_vocals_count = 0;
+    dst->stem_drums = NULL; dst->stem_drums_count = 0;
+    dst->stem_bass = NULL; dst->stem_bass_count = 0;
+    dst->stem_other = NULL; dst->stem_other_count = 0;
+    dst->stem_instrumental = NULL; dst->stem_instrumental_count = 0;
+    dst->stem_ready = 0;
+    dst->stem_listen = WAR_STEM_OFF;
+}
+
+// Split note at column cx on row cy. Left stays on src pitch; right moves to empty pitch above.
+static inline void _war_split_at_col(war_env* env, float cx, float cy) {
     war_note_context* note = env->ctx_note;
-    if (!cur->instance_count || !note || !note->instance_count) return;
-    float cx = cur->instance[0].pos[0];
-    float cy = cur->instance[0].pos[1];
+    if (!note || !note->instance_count) return;
     uint32_t best = UINT32_MAX;
     uint64_t best_tick = 0;
     for (uint32_t i = 0; i < note->instance_count; i++) {
@@ -3026,18 +3187,18 @@ static inline void war_split_note(war_env* env) {
     uint32_t layer = (note->instance[best].flags >> 4) & 0xF;
     if (layer < 1 || layer > 9) layer = 1;
     uint32_t src_idx = src_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    // compute sample split point: left_w columns worth of audio
     double bpm = env->atomics->bpm;
     if (bpm <= 0.0) bpm = 100.0;
     double sec_per_cell = 15.0 / bpm;
     uint64_t split_frames = (uint64_t)((double)left_w * sec_per_cell * 48000.0);
     if (split_frames < 1) return;
     uint64_t split_samples = split_frames * 2;
+    if (split_samples & 1ULL) split_samples &= ~1ULL;
     war_capture_slot* src_slot = &env->capture_slots[src_idx];
     if (!src_slot->samples || split_samples >= src_slot->count) return;
     uint64_t right_samples = src_slot->count - split_samples;
-    if (right_samples & 1) right_samples &= ~1ULL;
-    // find empty dest slot first
+    if (right_samples & 1ULL) right_samples &= ~1ULL;
+    if (right_samples < 2) return;
     uint32_t dest_pitch = UINT32_MAX;
     uint32_t mi = 0;
     for (uint32_t p = src_pitch + 1; p < 128; p++) {
@@ -3047,15 +3208,12 @@ static inline void war_split_note(war_env* env) {
             break;
         }
     }
-    if (dest_pitch == UINT32_MAX) return;
-    if (mi >= 128 * WAR_CAPTURE_SLOT_LAYERS) return;
-    // verify dest slot is actually empty before using it
+    if (dest_pitch == UINT32_MAX || mi >= 128 * WAR_CAPTURE_SLOT_LAYERS) return;
     if (env->capture_slots[mi].samples && env->capture_slots[mi].count >= 2) return;
-    // save pre-split audio state for both slots
+
     uint64_t src_size = src_slot->count * sizeof(float);
     uint64_t dst_cnt = env->capture_slots[mi].count;
     uint64_t dst_size = dst_cnt * sizeof(float);
-    // flat buffer: [n(4) src_idx(4) cnt(8) cap(8) samples(n*4) dst_idx(4) cnt(8) cap(8) samples(n*4)]
     uint64_t audio_total = 4 + 4+8+8+src_size + 4+8+8+dst_size;
     uint8_t* audio_data = malloc(audio_total);
     if (!audio_data) return;
@@ -3074,258 +3232,72 @@ static inline void war_split_note(war_env* env) {
         if (env->capture_slots[mi].samples && dst_cnt > 0)
             memcpy(p, env->capture_slots[mi].samples, dst_size);
     }
-    // save note state
     war_undo_save(env);
-    // store audio snapshot at the same undo index
     uint32_t audio_idx = env->undo_pos - 1;
     free(env->undo_audio_data[audio_idx]);
     env->undo_audio_data[audio_idx] = audio_data;
     env->undo_audio_size[audio_idx] = audio_total;
-    // now perform the split
-    float keep_w, move_w;
-    uint32_t keep_i;
-    float move_pitch_row = (float)dest_pitch + (float)env->ctx_wayland->gutter_rows;
-    uint32_t col = (&env->ctx_color->layer_none)[layer];
-    if (left_w >= right_w) {
-        // left (larger) stays at original pitch, right (smaller) moves up
-        keep_w = left_w; move_w = right_w;
-        keep_i = best;
-        // copy only RIGHT portion audio to new slot (from split_samples onward)
-        float* copy = malloc(right_samples * sizeof(float));
-        if (copy) {
-            if (split_samples + right_samples <= src_slot->count)
-                memcpy(copy, src_slot->samples + split_samples, right_samples * sizeof(float));
-            free(env->capture_slots[mi].samples);
-            env->capture_slots[mi] = *src_slot;
-            env->capture_slots[mi].samples = copy;
-            env->capture_slots[mi].count = right_samples;
-            env->capture_slots[mi].capacity = right_samples;
-        }
-        // trim original slot to LEFT portion only (first split_samples)
-        float* trim = malloc(split_samples * sizeof(float));
-        if (trim) {
-            memcpy(trim, src_slot->samples, split_samples * sizeof(float));
-            free(src_slot->samples);
-            src_slot->samples = trim;
-            src_slot->count = split_samples;
-            src_slot->capacity = split_samples;
-        }
-        note->instance[keep_i].size[0] = keep_w;
-        if (note->instance_count < note->max_instances) {
-            uint32_t ni = note->instance_count++;
-            note->instance[ni] = note->instance[keep_i];
-            note->instance[ni].pos[0] = cx;
-            note->instance[ni].pos[1] = move_pitch_row;
-            note->instance[ni].size[0] = move_w;
-            note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
-            note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
-            note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
-            note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
-            note->instance[ni].tick = note->tick_counter++;
-        }
-    } else {
-        // right (larger) stays at original pitch, left (smaller) moves up
-        keep_w = right_w; move_w = left_w;
-        note->instance[best].pos[0] = cx;
-        note->instance[best].size[0] = keep_w;
-        keep_i = best;
-        // copy only LEFT portion audio to new slot (first split_samples)
-        float* copy = malloc(split_samples * sizeof(float));
-        if (copy) {
-            if (split_samples <= src_slot->count)
-                memcpy(copy, src_slot->samples, split_samples * sizeof(float));
-            free(env->capture_slots[mi].samples);
-            env->capture_slots[mi] = *src_slot;
-            env->capture_slots[mi].samples = copy;
-            env->capture_slots[mi].count = split_samples;
-            env->capture_slots[mi].capacity = split_samples;
-        }
-        // trim original slot to RIGHT portion only (from split_samples onward)
-        if (right_samples > 0) {
-            float* trim = malloc(right_samples * sizeof(float));
-            if (trim) {
-                memcpy(trim, src_slot->samples + split_samples, right_samples * sizeof(float));
-                free(src_slot->samples);
-                src_slot->samples = trim;
-                src_slot->count = right_samples;
-                src_slot->capacity = right_samples;
-            }
-        }
-        if (note->instance_count < note->max_instances) {
-            uint32_t ni = note->instance_count++;
-            note->instance[ni] = note->instance[keep_i];
-            note->instance[ni].pos[0] = note_start;
-            note->instance[ni].pos[1] = move_pitch_row;
-            note->instance[ni].size[0] = move_w;
-            note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
-            note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
-            note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
-            note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
-            note->instance[ni].tick = note->tick_counter++;
-        }
+
+    // Allocate both halves first so we never leave shared ownership
+    float* left = malloc(split_samples * sizeof(float));
+    float* right = malloc(right_samples * sizeof(float));
+    if (!left || !right) {
+        free(left); free(right);
+        return;
     }
-    snprintf(env->status_msg, sizeof(env->status_msg), "split: left=%.1f right=%.1f", left_w, right_w);
+    memcpy(left, src_slot->samples, split_samples * sizeof(float));
+    memcpy(right, src_slot->samples + split_samples, right_samples * sizeof(float));
+
+    // LEFT stays on original pitch
+    free(src_slot->samples);
+    src_slot->samples = left;
+    src_slot->count = split_samples;
+    src_slot->capacity = split_samples;
+    _war_stem_invalidate(src_slot);
+
+    // RIGHT goes to empty pitch above (params copied, no shared buffers)
+    _war_slot_clone_params(&env->capture_slots[mi], src_slot);
+    env->capture_slots[mi].samples = right;
+    env->capture_slots[mi].count = right_samples;
+    env->capture_slots[mi].capacity = right_samples;
+
+    // Notes: original shortened to left; new note for right at dest pitch
+    note->instance[best].size[0] = left_w;
+    if (note->instance_count < note->max_instances) {
+        float move_pitch_row = (float)dest_pitch + (float)env->ctx_wayland->gutter_rows;
+        uint32_t col = (&env->ctx_color->layer_none)[layer];
+        uint32_t ni = note->instance_count++;
+        note->instance[ni] = note->instance[best];
+        note->instance[ni].pos[0] = cx;
+        note->instance[ni].pos[1] = move_pitch_row;
+        note->instance[ni].size[0] = right_w;
+        note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
+        note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
+        note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
+        note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
+        note->instance[ni].tick = note->tick_counter++;
+        // keep same layer flags as original
+        note->instance[ni].flags = (note->instance[ni].flags & ~0xF0u) | ((layer & 0xF) << 4);
+    }
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "split: L%.1f@%u R%.1f@%u", left_w, src_pitch, right_w, dest_pitch);
+}
+
+static inline void war_split_note(war_env* env) {
+    war_cursor_context* cur = env->ctx_cursor;
+    if (!cur || !cur->instance_count) return;
+    _war_split_at_col(env, cur->instance[0].pos[0], cur->instance[0].pos[1]);
 }
 
 static inline void war_split_at_playback(war_env* env) {
     war_cursor_context* cur = env->ctx_cursor;
-    war_note_context* note = env->ctx_note;
-    if (!cur->instance_count || !note || !note->instance_count) return;
+    if (!cur || !cur->instance_count || !env->ctx_wayland) return;
     double _pb_bpm = env->atomics->bpm;
     if (_pb_bpm <= 0.0) _pb_bpm = 100.0;
     double _pb_spc = 15.0 / _pb_bpm;
     float cx = (float)((double)env->ctx_wayland->gutter_cols + env->play_bar_position_seconds / _pb_spc);
     float cy = cur->instance[0].pos[1];
-    uint32_t best = UINT32_MAX;
-    uint64_t best_tick = 0;
-    for (uint32_t i = 0; i < note->instance_count; i++) {
-        float nx0 = note->instance[i].pos[0];
-        float nx1 = nx0 + note->instance[i].size[0];
-        float ny = note->instance[i].pos[1];
-        if (cx >= nx0 && cx < nx1 && ny == cy) {
-            uint32_t _nl = (note->instance[i].flags >> 4) & 0xF;
-            if (_nl >= 1 && _nl <= 9 && !(env->layer_visible & (1 << (_nl - 1)))) continue;
-            if (best == UINT32_MAX || note->instance[i].tick > best_tick) {
-                best = i; best_tick = note->instance[i].tick;
-            }
-        }
-    }
-    if (best == UINT32_MAX) return;
-    float note_start = note->instance[best].pos[0];
-    float note_end = note_start + note->instance[best].size[0];
-    float left_w = cx - note_start;
-    float right_w = note_end - cx;
-    if (left_w < 0.02f || right_w < 0.02f) return;
-    uint32_t src_pitch = (uint32_t)(cy - (double)env->ctx_wayland->gutter_rows);
-    if (src_pitch > 127) return;
-    uint32_t layer = (note->instance[best].flags >> 4) & 0xF;
-    if (layer < 1 || layer > 9) layer = 1;
-    uint32_t src_idx = src_pitch * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-    double bpm = env->atomics->bpm;
-    if (bpm <= 0.0) bpm = 100.0;
-    double sec_per_cell = 15.0 / bpm;
-    uint64_t split_frames = (uint64_t)((double)left_w * sec_per_cell * 48000.0);
-    if (split_frames < 1) return;
-    uint64_t split_samples = split_frames * 2;
-    war_capture_slot* src_slot = &env->capture_slots[src_idx];
-    if (!src_slot->samples || split_samples >= src_slot->count) return;
-    uint64_t right_samples = src_slot->count - split_samples;
-    if (right_samples & 1) right_samples &= ~1ULL;
-    uint32_t dest_pitch = UINT32_MAX;
-    uint32_t mi = 0;
-    for (uint32_t p = src_pitch + 1; p < 128; p++) {
-        mi = p * WAR_CAPTURE_SLOT_LAYERS + (layer - 1);
-        if (!env->capture_slots[mi].samples || env->capture_slots[mi].count < 2) {
-            dest_pitch = p;
-            break;
-        }
-    }
-    if (dest_pitch == UINT32_MAX) return;
-    if (mi >= 128 * WAR_CAPTURE_SLOT_LAYERS) return;
-    if (env->capture_slots[mi].samples && env->capture_slots[mi].count >= 2) return;
-    uint64_t src_size = src_slot->count * sizeof(float);
-    uint64_t dst_cnt = env->capture_slots[mi].count;
-    uint64_t dst_size = dst_cnt * sizeof(float);
-    uint64_t audio_total = 4 + 4+8+8+src_size + 4+8+8+dst_size;
-    uint8_t* audio_data = malloc(audio_total);
-    if (!audio_data) return;
-    {
-        uint8_t* p = audio_data;
-        *(uint32_t*)p = 2; p += 4;
-        *(uint32_t*)p = src_idx; p += 4;
-        *(uint64_t*)p = src_slot->count; p += 8;
-        *(uint64_t*)p = src_slot->capacity; p += 8;
-        if (src_slot->samples && src_slot->count > 0)
-            memcpy(p, src_slot->samples, src_size);
-        p += src_size;
-        *(uint32_t*)p = mi; p += 4;
-        *(uint64_t*)p = dst_cnt; p += 8;
-        *(uint64_t*)p = env->capture_slots[mi].capacity; p += 8;
-        if (env->capture_slots[mi].samples && dst_cnt > 0)
-            memcpy(p, env->capture_slots[mi].samples, dst_size);
-    }
-    war_undo_save(env);
-    uint32_t audio_idx = env->undo_pos - 1;
-    free(env->undo_audio_data[audio_idx]);
-    env->undo_audio_data[audio_idx] = audio_data;
-    env->undo_audio_size[audio_idx] = audio_total;
-    float keep_w, move_w;
-    uint32_t keep_i;
-    float move_pitch_row = (float)dest_pitch + (float)env->ctx_wayland->gutter_rows;
-    uint32_t col = (&env->ctx_color->layer_none)[layer];
-    if (left_w >= right_w) {
-        keep_w = left_w; move_w = right_w;
-        keep_i = best;
-        float* copy = malloc(right_samples * sizeof(float));
-        if (copy) {
-            if (split_samples + right_samples <= src_slot->count)
-                memcpy(copy, src_slot->samples + split_samples, right_samples * sizeof(float));
-            free(env->capture_slots[mi].samples);
-            env->capture_slots[mi] = *src_slot;
-            env->capture_slots[mi].samples = copy;
-            env->capture_slots[mi].count = right_samples;
-            env->capture_slots[mi].capacity = right_samples;
-        }
-        float* trim = malloc(split_samples * sizeof(float));
-        if (trim) {
-            memcpy(trim, src_slot->samples, split_samples * sizeof(float));
-            free(src_slot->samples);
-            src_slot->samples = trim;
-            src_slot->count = split_samples;
-            src_slot->capacity = split_samples;
-        }
-        note->instance[keep_i].size[0] = keep_w;
-        if (note->instance_count < note->max_instances) {
-            uint32_t ni = note->instance_count++;
-            note->instance[ni] = note->instance[keep_i];
-            note->instance[ni].pos[0] = cx;
-            note->instance[ni].pos[1] = move_pitch_row;
-            note->instance[ni].size[0] = move_w;
-            note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
-            note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
-            note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
-            note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
-            note->instance[ni].tick = note->tick_counter++;
-        }
-    } else {
-        keep_w = right_w; move_w = left_w;
-        note->instance[best].pos[0] = cx;
-        note->instance[best].size[0] = keep_w;
-        keep_i = best;
-        float* copy = malloc(split_samples * sizeof(float));
-        if (copy) {
-            if (split_samples <= src_slot->count)
-                memcpy(copy, src_slot->samples, split_samples * sizeof(float));
-            free(env->capture_slots[mi].samples);
-            env->capture_slots[mi] = *src_slot;
-            env->capture_slots[mi].samples = copy;
-            env->capture_slots[mi].count = split_samples;
-            env->capture_slots[mi].capacity = split_samples;
-        }
-        if (right_samples > 0) {
-            float* trim = malloc(right_samples * sizeof(float));
-            if (trim) {
-                memcpy(trim, src_slot->samples + split_samples, right_samples * sizeof(float));
-                free(src_slot->samples);
-                src_slot->samples = trim;
-                src_slot->count = right_samples;
-                src_slot->capacity = right_samples;
-            }
-        }
-        if (note->instance_count < note->max_instances) {
-            uint32_t ni = note->instance_count++;
-            note->instance[ni] = note->instance[keep_i];
-            note->instance[ni].pos[0] = note_start;
-            note->instance[ni].pos[1] = move_pitch_row;
-            note->instance[ni].size[0] = move_w;
-            note->instance[ni].color[0] = ((col >> 24) & 0xFF) / 255.0f;
-            note->instance[ni].color[1] = ((col >> 16) & 0xFF) / 255.0f;
-            note->instance[ni].color[2] = ((col >> 8) & 0xFF) / 255.0f;
-            note->instance[ni].color[3] = (col & 0xFF) / 255.0f;
-            note->instance[ni].tick = note->tick_counter++;
-        }
-    }
-    snprintf(env->status_msg, sizeof(env->status_msg), "split@play: left=%.1f right=%.1f", left_w, right_w);
+    _war_split_at_col(env, cx, cy);
 }
 
 static inline void war_wave_view(war_env* env) {

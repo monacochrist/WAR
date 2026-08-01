@@ -23,6 +23,7 @@
 #include <pipewire/stream.h>
 #include <spa-0.2/spa/param/audio/raw.h>
 #include <spa-0.2/spa/pod/builder.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -373,6 +374,20 @@ typedef struct war_atomics {
 #define WAR_EFFECT_COUNT     9
 #define WAR_EFFECT_PARAMS    6 // max params per effect
 
+// stem listen mode (mutually exclusive playback source)
+#define WAR_STEM_OFF          0
+#define WAR_STEM_VOCALS       1
+#define WAR_STEM_DRUMS        2
+#define WAR_STEM_BASS         3
+#define WAR_STEM_OTHER        4
+#define WAR_STEM_INSTRUMENTAL 5
+#define WAR_STEM_READY_VOCALS (1u << 0)
+#define WAR_STEM_READY_DRUMS  (1u << 1)
+#define WAR_STEM_READY_BASS   (1u << 2)
+#define WAR_STEM_READY_OTHER  (1u << 3)
+#define WAR_STEM_READY_ALL    0x0Fu
+#define WAR_STEM_QUEUE_MAX    256
+
 typedef struct war_capture_slot {
     float* samples;
     uint64_t count;
@@ -386,6 +401,19 @@ typedef struct war_capture_slot {
     float release;
     uint64_t effect_flags; // bitmask: bit N = 1 if effect N+1 is active
     double effect_params[WAR_EFFECT_COUNT * WAR_EFFECT_PARAMS];
+    // Demucs stem caches (runtime only; not saved in .war)
+    float* stem_vocals;
+    float* stem_drums;
+    float* stem_bass;
+    float* stem_other;
+    float* stem_instrumental;
+    uint64_t stem_vocals_count;
+    uint64_t stem_drums_count;
+    uint64_t stem_bass_count;
+    uint64_t stem_other_count;
+    uint64_t stem_instrumental_count;
+    uint8_t stem_ready;  // WAR_STEM_READY_* bits
+    uint8_t stem_listen; // WAR_STEM_*
 } war_capture_slot;
 
 typedef struct war_glyph_info {
@@ -2840,6 +2868,16 @@ struct war_env {
     char cmd_tab_prefix[128];
     // status message (displayed on middle status bar until next command)
     char status_msg[128];
+    // Demucs stem extraction job queue (async worker)
+    pthread_t stem_thread;
+    pthread_mutex_t stem_mutex;
+    uint8_t stem_thread_alive;
+    uint8_t stem_worker_busy;
+    uint8_t stem_cancel;
+    uint32_t stem_queue[WAR_STEM_QUEUE_MAX]; // slot indices
+    uint32_t stem_queue_len;
+    uint32_t stem_done_count;
+    uint32_t stem_total_count;
     // freetype
     FT_Library ft_lib;
     FT_Face ft_face;

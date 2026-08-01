@@ -263,6 +263,13 @@ WAR connects to a MIDI controller via ALSA sequencer. Select a device with `A-o`
 | `:effect default` | Reset current effect to defaults |
 | `:whatson` | List all active effects on current slot |
 | `:offall` | Turn off all effects on current slot |
+| `:stem extract` | Run Demucs AI 4-stem split on selected row(s) (async; `pip install demucs`) |
+| `:stem vocals` / `drums` / `bass` / `other` | Solo that stem (auto-extract if missing) |
+| `:stem instrumental` | Play drums+bass+other (no vocals) |
+| `:stem off` | Play original full mix |
+| `:stem status` | Listen mode + ready flags + demucs availability |
+| `:stem clear` | Free stem caches / cancel queue for selection |
+| `:stemvocals on\|off` | Alias for `:stem vocals` / `:stem off` |
 | `:clear` | Clear current slot (frees samples, resets all params) |
 | `:clearall` | Clear ALL slots and note instances (reset project to default) |
 | `:gp` | Move cursor to playback bar position |
@@ -350,6 +357,8 @@ Effects process in series: Compress1 → Compress2 → Saturate → Gate → De-
 ## Visual Mode
 
 In visual mode, movement keys (`h`/`j`/`k`/`l`, `w`/`b`) extend the selection range. A blue highlight shows the selected area.
+
+**Row-range ops:** selected pitch rows (anchor→cursor) are the target for slot commands and adjustments — e.g. `:gain 10000`, `:pan 0`, `:eq1`, `:compress on`, `:clear`, `:offall`, `:stem extract` / `:stem vocals`, Ctrl+↑/↓ gain, Ctrl+←/→ pan, and master-mode ADSR tweaks apply to every selected row on the active layer.
 
 | Key | Action |
 |-----|--------|
