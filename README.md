@@ -20,7 +20,7 @@ chmod +x WAR-x86_64.AppImage
 
 **Optional (AI stems):** `pip install demucs` — then `:stem extract` / `:stem vocals` etc. writes each extracted stem into a new, savable slot above the source row (see CONTROLS.md).
 
-Full keybindings and controls: **[CONTROLS.md](CONTROLS.md)**
+Full keybindings and controls: **[CONTROLS.md](CONTROLS.md)** (for latest commit, not necessarily latest version)
 
 ## Feedback & Ideas
 
