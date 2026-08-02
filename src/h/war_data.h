@@ -1567,6 +1567,14 @@ typedef struct war_nsgt_context {
 } war_nsgt_context;
 
 typedef struct war_env war_env;
+
+// macro register event (Neovim-style: q<register> record, @<register> play)
+typedef struct war_macro_event {
+    uint32_t raw_sym;
+    uint32_t keysym;
+    uint32_t mod;
+    uint8_t pressed;
+} war_macro_event;
 typedef struct war_wayland_context war_wayland_context;
 
 typedef union war_function_union {
@@ -2856,6 +2864,15 @@ struct war_env {
     char cmd_tab_prefix[128];
     // status message (displayed on middle status bar until next command)
     char status_msg[128];
+#define WAR_MACRO_REGISTERS 62 // registers 0-9, a-z, A-Z
+    war_macro_event* macro_regs[WAR_MACRO_REGISTERS];
+    uint32_t macro_reg_len[WAR_MACRO_REGISTERS];
+    uint32_t macro_reg_cap[WAR_MACRO_REGISTERS];
+    uint8_t macro_rec_active;
+    uint8_t macro_rec_reg;
+    uint8_t macro_reg_pending;
+    uint8_t macro_play_pending;
+    uint8_t macro_playback_active;
     // Demucs stem extraction job queue (async worker)
     pthread_t stem_thread;
     pthread_mutex_t stem_mutex;

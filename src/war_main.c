@@ -1039,25 +1039,51 @@ static void _war_process_midi(war_env* env) {
     }
 }
 
-static void war_keyboard_key(void* data,
-                             struct wl_keyboard* keyboard,
-                             uint32_t serial,
-                             uint32_t time,
-                             uint32_t key,
-                             uint32_t state) {
-    war_wayland_context* ctx_wayland = data;
-    (void)keyboard;
-    (void)serial;
-    (void)time;
-    if (state == WL_KEYBOARD_KEY_STATE_RELEASED) {
+static uint32_t war_current_mods(war_wayland_context* ctx_wayland) {
+    uint32_t mod = 0;
+    {
+        xkb_mod_index_t mi;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
+                                      XKB_MOD_NAME_SHIFT);
+        if (mi != XKB_MOD_INVALID &&
+            xkb_state_mod_index_is_active(
+                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
+            mod |= MOD_SHIFT;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
+                                      XKB_MOD_NAME_CTRL);
+        if (mi != XKB_MOD_INVALID &&
+            xkb_state_mod_index_is_active(
+                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
+            mod |= MOD_CTRL;
+        mi =
+            xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_ALT);
+        if (mi != XKB_MOD_INVALID &&
+            xkb_state_mod_index_is_active(
+                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
+            mod |= MOD_ALT;
+        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
+                                      XKB_MOD_NAME_LOGO);
+        if (mi != XKB_MOD_INVALID &&
+            xkb_state_mod_index_is_active(
+                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
+            mod |= MOD_LOGO;
+    }
+    return mod;
+}
+
+// Core key dispatch: press (is_pressed != 0) or release. Macro playback
+// re-injects recorded events through here with a synthetic key code of 0.
+static void war_handle_key(war_wayland_context* ctx_wayland, uint32_t key,
+                           xkb_keysym_t raw_sym, uint32_t keysym, uint32_t mod,
+                           int is_pressed, uint32_t time) {
+    if (!is_pressed) {
         if (key == ctx_wayland->repeat_key) {
             ctx_wayland->repeat_active = 0;
             struct itimerspec off = {0};
             timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &off, NULL);
         }
         if (ctx_wayland->env) {
-            xkb_keysym_t rk = xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
-            uint32_t rk_norm = war_normalize_keysym(rk);
+            uint32_t rk_norm = keysym;
             int offset = _war_keysym_to_midi_offset(rk_norm);
             if (offset >= 0) {
                 int32_t base = war_octave_to_midi_base((int32_t)ctx_wayland->env->ctx_cursor->octave);
@@ -1090,9 +1116,6 @@ static void war_keyboard_key(void* data,
         }
         return;
     }
-    xkb_keysym_t raw_sym =
-        xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
-    uint32_t keysym = war_normalize_keysym(raw_sym);
     if (keysym == XKB_KEY_NoSymbol) return;
 
     war_env* env = ctx_wayland->env;
@@ -1110,36 +1133,7 @@ static void war_keyboard_key(void* data,
         ctx_wayland->keymap_state = 0;
         cur->prefix = 0;
     }
-    uint32_t mod = 0;
-    {
-        xkb_mod_index_t mi;
-        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
-                                      XKB_MOD_NAME_SHIFT);
-        if (mi != XKB_MOD_INVALID &&
-            xkb_state_mod_index_is_active(
-                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
-            mod |= MOD_SHIFT;
-        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
-                                      XKB_MOD_NAME_CTRL);
-        if (mi != XKB_MOD_INVALID &&
-            xkb_state_mod_index_is_active(
-                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
-            mod |= MOD_CTRL;
-        mi =
-            xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap, XKB_MOD_NAME_ALT);
-        if (mi != XKB_MOD_INVALID &&
-            xkb_state_mod_index_is_active(
-                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
-            mod |= MOD_ALT;
-        mi = xkb_keymap_mod_get_index(ctx_wayland->xkb_keymap,
-                                      XKB_MOD_NAME_LOGO);
-        if (mi != XKB_MOD_INVALID &&
-            xkb_state_mod_index_is_active(
-                ctx_wayland->xkb_state, mi, XKB_STATE_MODS_DEPRESSED))
-            mod |= MOD_LOGO;
-    }
-
-    if (ctx_wayland->repeat_rate > 0) {
+    if (!env->macro_playback_active && ctx_wayland->repeat_rate > 0) {
         ctx_wayland->repeat_key = key;
         ctx_wayland->repeat_sym = keysym;
         ctx_wayland->repeat_mod = mod;
@@ -2318,6 +2312,180 @@ static void war_keyboard_key(void* data,
     ctx_wayland->keymap_state = 0;
     if (!is_digit) cur->prefix = 0;
 }
+
+//---------------------------------------------------------------------------
+// MACRO SYSTEM (Neovim-style: q<register> record, @<register> play)
+//---------------------------------------------------------------------------
+static int _war_macro_reg_index(uint32_t keysym) {
+    if (keysym >= XKB_KEY_0 && keysym <= XKB_KEY_9)
+        return (int)(keysym - XKB_KEY_0);
+    if (keysym >= XKB_KEY_a && keysym <= XKB_KEY_z)
+        return 10 + (int)(keysym - XKB_KEY_a);
+    if (keysym >= XKB_KEY_A && keysym <= XKB_KEY_Z)
+        return 36 + (int)(keysym - XKB_KEY_A);
+    return -1;
+}
+
+static char _war_macro_reg_char(int reg) {
+    if (reg < 10) return (char)('0' + reg);
+    if (reg < 36) return (char)('a' + reg - 10);
+    return (char)('A' + reg - 36);
+}
+
+static void _war_macro_append(war_env* env, int reg, uint32_t raw_sym,
+                              uint32_t keysym, uint32_t mod, uint8_t pressed) {
+    if (reg < 0 || reg >= WAR_MACRO_REGISTERS) return;
+    if (env->macro_reg_len[reg] >= env->macro_reg_cap[reg]) {
+        uint32_t ncap =
+            env->macro_reg_cap[reg] ? env->macro_reg_cap[reg] * 2 : 256;
+        war_macro_event* nb =
+            realloc(env->macro_regs[reg], ncap * sizeof(war_macro_event));
+        if (!nb) return;
+        env->macro_regs[reg] = nb;
+        env->macro_reg_cap[reg] = ncap;
+    }
+    war_macro_event* ev = &env->macro_regs[reg][env->macro_reg_len[reg]++];
+    ev->raw_sym = raw_sym;
+    ev->keysym = keysym;
+    ev->mod = mod;
+    ev->pressed = pressed;
+}
+
+static void _war_macro_begin_record(war_env* env, int reg) {
+    env->macro_reg_len[reg] = 0; // overwrite register contents
+    env->macro_rec_active = 1;
+    env->macro_rec_reg = (uint8_t)reg;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "macro: recording into q%c", _war_macro_reg_char(reg));
+}
+
+static void _war_macro_end_record(war_env* env) {
+    int reg = env->macro_rec_reg;
+    env->macro_rec_active = 0;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "macro: q%c recorded (%u events)", _war_macro_reg_char(reg),
+             env->macro_reg_len[reg]);
+}
+
+static void _war_macro_play(war_env* env, int reg) {
+    war_wayland_context* wl = env->ctx_wayland;
+    uint32_t n = env->macro_reg_len[reg];
+    if (!n) {
+        snprintf(env->status_msg, sizeof(env->status_msg),
+                 "macro: @%c is empty", _war_macro_reg_char(reg));
+        return;
+    }
+    env->macro_playback_active = 1;
+    wl->repeat_active = 0;
+    struct itimerspec off = {0};
+    timerfd_settime(wl->repeat_timer_fd, 0, &off, NULL);
+    for (uint32_t i = 0; i < n; i++) {
+        war_macro_event* ev = &env->macro_regs[reg][i];
+        war_handle_key(wl, 0, ev->raw_sym, ev->keysym, ev->mod, ev->pressed,
+                       (uint32_t)(war_get_monotonic_time_us() / 1000));
+    }
+    env->macro_playback_active = 0;
+    snprintf(env->status_msg, sizeof(env->status_msg),
+             "macro: @%c played (%u events)", _war_macro_reg_char(reg), n);
+}
+
+static void war_keyboard_key(void* data,
+                             struct wl_keyboard* keyboard,
+                             uint32_t serial,
+                             uint32_t time,
+                             uint32_t key,
+                             uint32_t state) {
+    war_wayland_context* ctx_wayland = data;
+    (void)keyboard;
+    (void)serial;
+    if (state == WL_KEYBOARD_KEY_STATE_RELEASED) {
+        xkb_keysym_t rk =
+            xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
+        uint32_t rk_norm = war_normalize_keysym(rk);
+        uint32_t rmod = war_current_mods(ctx_wayland);
+        if (ctx_wayland->env && ctx_wayland->env->macro_rec_active &&
+            !ctx_wayland->env->macro_playback_active) {
+            _war_macro_append(ctx_wayland->env,
+                              ctx_wayland->env->macro_rec_reg, rk, rk_norm,
+                              rmod, 0);
+        }
+        war_handle_key(ctx_wayland, key, rk, rk_norm, rmod, 0, time);
+        return;
+    }
+    xkb_keysym_t raw_sym =
+        xkb_state_key_get_one_sym(ctx_wayland->xkb_state, key + 8);
+    uint32_t keysym = war_normalize_keysym(raw_sym);
+    if (keysym == XKB_KEY_NoSymbol) return;
+
+    war_env* env = ctx_wayland->env;
+    uint32_t mod = war_current_mods(ctx_wayland);
+
+    // macro record / play interception (record: roll-mode q, play: @ anywhere)
+    if (!env->macro_playback_active) {
+        if (env->macro_rec_active) {
+            // q (no mods, outside command mode) stops recording
+            if (!env->cmd_active && raw_sym == XKB_KEY_q && mod == 0) {
+                _war_macro_end_record(env);
+                return;
+            }
+            _war_macro_append(env, env->macro_rec_reg, raw_sym, keysym, mod, 1);
+        } else if (env->macro_reg_pending) {
+            if (raw_sym == XKB_KEY_Escape) {
+                env->macro_reg_pending = 0;
+                snprintf(env->status_msg, sizeof(env->status_msg),
+                         "macro: record cancelled");
+                return;
+            }
+            int reg = _war_macro_reg_index(keysym);
+            env->macro_reg_pending = 0;
+            if (reg >= 0) {
+                _war_macro_begin_record(env, reg);
+                return;
+            }
+            // not a register: fall through to normal handling
+        } else if (env->macro_play_pending) {
+            if (raw_sym == XKB_KEY_Escape) {
+                env->macro_play_pending = 0;
+                snprintf(env->status_msg, sizeof(env->status_msg),
+                         "macro: play cancelled");
+                return;
+            }
+            int reg = _war_macro_reg_index(keysym);
+            env->macro_play_pending = 0;
+            if (reg >= 0) {
+                _war_macro_play(env, reg);
+                return;
+            }
+            // not a register: fall through to normal handling
+        } else if (!env->cmd_active) {
+            // 'q' in roll mode (not actively capturing) starts recording
+            if (raw_sym == XKB_KEY_q && mod == 0 &&
+                env->active_mode == WAR_MODE_ID_ROLL &&
+                !env->atomics->capture) {
+                env->macro_reg_pending = 1;
+                snprintf(env->status_msg, sizeof(env->status_msg),
+                         "macro: record into register (0-9 a-z A-Z)");
+                ctx_wayland->repeat_active = 0;
+                struct itimerspec off = {0};
+                timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &off, NULL);
+                return;
+            }
+            // '@' (shift+2) plays back a macro
+            if (raw_sym == XKB_KEY_at) {
+                env->macro_play_pending = 1;
+                snprintf(env->status_msg, sizeof(env->status_msg),
+                         "macro: play register (0-9 a-z A-Z)");
+                ctx_wayland->repeat_active = 0;
+                struct itimerspec off = {0};
+                timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &off, NULL);
+                return;
+            }
+        }
+    }
+
+    war_handle_key(ctx_wayland, key, raw_sym, keysym, mod, 1, time);
+}
+
 static void war_keyboard_modifiers(void* data,
                                    struct wl_keyboard* keyboard,
                                    uint32_t serial,
@@ -3891,6 +4059,10 @@ int main(int argc, char** argv) {
     }
     free(env->capture_accumulator);
     env->capture_accumulator = NULL;
+    for (uint32_t i = 0; i < WAR_MACRO_REGISTERS; i++) {
+        free(env->macro_regs[i]);
+        env->macro_regs[i] = NULL;
+    }
     env->atomics = NULL;
     env->pc_capture = NULL;
     env->pc_loopback = NULL;
