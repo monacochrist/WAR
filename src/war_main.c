@@ -3579,8 +3579,10 @@ int main(int argc, char** argv) {
         // playback bar advancement (runs even without frame callbacks)
         // MOVED BEFORE mixing loop so playbar rendering uses current playhead
         double _pb_ccp = 0.0, _pb_spc = 0.0;
+        // elapsed wall-clock used to budget audio production; always tracked
+        // so preview-only (spacebar) output also produces enough audio
         uint64_t _delta_us = 0;
-        if (env->play_bar_playing || env->midi_seq) {
+        {
             uint64_t _now_us = war_get_monotonic_time_us();
             if (!env->play_bar_last_us)
                 env->play_bar_last_us = _now_us - 1000;
@@ -3694,9 +3696,11 @@ int main(int argc, char** argv) {
                     if (env->play_bar_voice_active[v] == 1) { any_active = 1; break; }
             }
             // compute adaptive chunk limit: produce enough audio to cover
-            // the wall-clock time since last frame so the ring buffer never drains
+            // the wall-clock time since the last frame so the ring buffer never
+            // drains. Include preview voices (spacebar), not just playbar/MIDI —
+            // otherwise preview-only output starves and wavers between bursts.
             uint32_t _max_chunks = 2;
-            if (env->play_bar_playing || env->midi_seq) {
+            if (any_active || env->play_bar_playing || env->midi_seq) {
                 uint64_t _need = (uint64_t)(_delta_us * 48 / 1000); // stereo samples needed
                 uint32_t _ch = (uint32_t)((_need + 31) / 32); // each chunk = 32 stereo samples
                 if (_ch > _max_chunks) _max_chunks = _ch;
