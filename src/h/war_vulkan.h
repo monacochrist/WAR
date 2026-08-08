@@ -530,17 +530,33 @@ static inline void war_piano_gutter_generate(war_piano_gutter_context* ctx_pg,
     for (uint32_t i = 0; i < 128; i++) {
         uint32_t c = i % 12;
         int black = (c == 1 || c == 3 || c == 6 || c == 8 || c == 10);
-        ctx_pg->instance[idx].color[0] = black ? 0 : 1;
-        ctx_pg->instance[idx].color[1] = black ? 0 : 1;
-        ctx_pg->instance[idx].color[2] = black ? 0 : 1;
+        float full_w = (float)gutter_cols;
+        // white key backing for every row
+        ctx_pg->instance[idx].color[0] = 1;
+        ctx_pg->instance[idx].color[1] = 1;
+        ctx_pg->instance[idx].color[2] = 1;
         ctx_pg->instance[idx].color[3] = 1;
         ctx_pg->instance[idx].pos[0] = 0.0f;
         ctx_pg->instance[idx].pos[1] = (float)(gutter_rows + i);
         ctx_pg->instance[idx].pos[2] = 0;
-        ctx_pg->instance[idx].size[0] = (float)gutter_cols;
+        ctx_pg->instance[idx].size[0] = full_w;
         ctx_pg->instance[idx].size[1] = 1;
         ctx_pg->instance[idx].flags = 0;
         idx++;
+        // black key covers left 2/3 so the right 1/3 stays white
+        if (black) {
+            ctx_pg->instance[idx].color[0] = 0;
+            ctx_pg->instance[idx].color[1] = 0;
+            ctx_pg->instance[idx].color[2] = 0;
+            ctx_pg->instance[idx].color[3] = 1;
+            ctx_pg->instance[idx].pos[0] = 0.0f;
+            ctx_pg->instance[idx].pos[1] = (float)(gutter_rows + i);
+            ctx_pg->instance[idx].pos[2] = 0;
+            ctx_pg->instance[idx].size[0] = full_w * 2.0f / 3.0f;
+            ctx_pg->instance[idx].size[1] = 1;
+            ctx_pg->instance[idx].flags = 0;
+            idx++;
+        }
     }
     ctx_pg->instance_count = (uint32_t)idx;
 }
@@ -2728,7 +2744,7 @@ static inline void war_render_frame(war_wayland_context* ctx_wayland,
             snprintf(_cb2, sizeof(_cb2), "%s", _cbp2[0] ? _cbp2 : "[No Name]");
         }
         int n = ctx_wayland->env->file_dirty
-                    ? snprintf(label, sizeof(label), "%s %.0f, %.0f +", _cb2, _crow2, _ccol2)
+                    ? snprintf(label, sizeof(label), "%s [+] %.0f, %.0f", _cb2, _crow2, _ccol2)
                     : snprintf(label, sizeof(label), "%s %.0f, %.0f", _cb2, _crow2, _ccol2);
         if (n < 0) n = 0;
         if (n > (int)sizeof(label) - 1) n = (int)sizeof(label) - 1;
