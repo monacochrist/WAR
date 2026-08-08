@@ -385,6 +385,8 @@ static inline int32_t war_octave_to_midi_base(int32_t octave) {
 }
 
 static inline void war_undo_save(war_env* env);
+static inline void _war_mark_dirty(war_env* env);
+static inline void _war_update_dirty(war_env* env);
 
 static inline void _war_record_place_note(war_env* env, uint32_t note, int voice) {
     war_note_context* note_ctx = env->ctx_note;
@@ -699,8 +701,12 @@ static inline void war_reset_step(war_env* env) {
     war_pan_follow(env);
 }
 
+static inline void war_capture_audio(war_env* env);
+
 static inline void war_midi_mode(war_env* env) {
     env->status_msg[0] = '\0';
+    if (env->active_mode != WAR_MODE_ID_MIDI && env->atomics->capture)
+        war_capture_audio(env);
     env->active_mode = (env->active_mode == WAR_MODE_ID_MIDI)
                            ? WAR_MODE_ID_ROLL
                            : WAR_MODE_ID_MIDI;
@@ -1064,7 +1070,7 @@ static inline void _war_visual_move_selection(war_env* env, float dx, float dy) 
             float nx0 = note->instance[i].pos[0];
             float nx1 = nx0 + note->instance[i].size[0];
             float ny = note->instance[i].pos[1];
-            if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
+            if (nx0 <= x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
                 uint32_t _vl = (note->instance[i].flags >> 4) & 0xF;
                 if (_vl >= 1 && _vl <= 9 && !(env->layer_visible & (1 << (_vl - 1)))) continue;
                 float old_sz = note->instance[i].size[0];
@@ -1092,7 +1098,7 @@ static inline void _war_visual_move_selection(war_env* env, float dx, float dy) 
         float nx0 = note->instance[i].pos[0];
         float nx1 = nx0 + note->instance[i].size[0];
         float ny = note->instance[i].pos[1];
-        if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
+        if (nx0 <= x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
             uint32_t _vl = (note->instance[i].flags >> 4) & 0xF;
             if (_vl >= 1 && _vl <= 9 && !(env->layer_visible & (1 << (_vl - 1)))) continue;
             note->instance[i].pos[0] += dx;
@@ -1567,6 +1573,7 @@ static inline void war_compress(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "compress: bad args"); return;
         }
     }
+    _war_mark_dirty(env);
     for (int i = 0; i < np; i++) {
         war_capture_slot* s = _war_sel_slot(env, pitches[i]);
         if (turn_off) {
@@ -1629,6 +1636,7 @@ static inline void war_clear(war_env* env) {
     int np = _war_sel_pitches(env, pitches);
     if (np <= 0) return;
     uint32_t layer = _war_sel_layer(env);
+    _war_mark_dirty(env);
     for (int i = 0; i < np; i++) {
         war_capture_slot* slot = _war_sel_slot(env, pitches[i]);
         free(slot->samples);
@@ -1652,6 +1660,7 @@ static inline void war_clear(war_env* env) {
 }
 
 static inline void war_clear_all(war_env* env) {
+    _war_mark_dirty(env);
     int cleared = 0;
     for (int p = 0; p < 128; p++) {
         for (int l = 0; l < WAR_CAPTURE_SLOT_LAYERS; l++) {
@@ -1700,6 +1709,7 @@ static inline void war_eq1(war_env* env) {
     const char* rest = env->cmd_buf + 4;
     while (*rest == ' ' || *rest == '\t') rest++;
     if (strcmp(rest, "off") == 0) {
+        _war_mark_dirty(env);
         for (int i = 0; i < np; i++) _war_sel_slot(env, pitches[i])->eq1 = 0;
         if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "EQ1 OFF (%d rows)", np);
         else snprintf(env->status_msg, sizeof(env->status_msg), "EQ1 OFF");
@@ -1710,6 +1720,7 @@ static inline void war_eq1(war_env* env) {
         snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ1 ON: %+d" : "EQ1 OFF", v); return;
     }
     if (*rest && sscanf(rest, "%d", &val) == 1 && val >= -1000 && val <= 1000) {
+        _war_mark_dirty(env);
         for (int i = 0; i < np; i++) _war_sel_slot(env, pitches[i])->eq1 = val;
         if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "EQ1: %+d (%d rows)", val, np);
         else snprintf(env->status_msg, sizeof(env->status_msg), "EQ1: %+d", val);
@@ -1733,6 +1744,7 @@ static inline void war_eq2(war_env* env) {
     const char* rest = env->cmd_buf + 4;
     while (*rest == ' ' || *rest == '\t') rest++;
     if (strcmp(rest, "off") == 0) {
+        _war_mark_dirty(env);
         for (int i = 0; i < np; i++) _war_sel_slot(env, pitches[i])->eq2 = 0;
         if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "EQ2 OFF (%d rows)", np);
         else snprintf(env->status_msg, sizeof(env->status_msg), "EQ2 OFF");
@@ -1743,6 +1755,7 @@ static inline void war_eq2(war_env* env) {
         snprintf(env->status_msg, sizeof(env->status_msg), v ? "EQ2 ON: %+d" : "EQ2 OFF", v); return;
     }
     if (*rest && sscanf(rest, "%d", &val) == 1 && val >= -1000 && val <= 1000) {
+        _war_mark_dirty(env);
         for (int i = 0; i < np; i++) _war_sel_slot(env, pitches[i])->eq2 = val;
         if (np > 1) snprintf(env->status_msg, sizeof(env->status_msg), "EQ2: %+d (%d rows)", val, np);
         else snprintf(env->status_msg, sizeof(env->status_msg), "EQ2: %+d", val);
@@ -1838,6 +1851,7 @@ static inline void war_saturate(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "saturate: bad args"); return;
         }
     }
+    _war_mark_dirty(env);
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_SATURATE);
     if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_SATURATE, 0, 3.0);
@@ -1924,6 +1938,7 @@ static inline void war_reverb(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "reverb: bad args"); return;
         }
     }
+    _war_mark_dirty(env);
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_REVERB);
     if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_REVERB, 0, 0.4);
@@ -2012,6 +2027,7 @@ static inline void war_delay(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "delay: bad args"); return;
         }
     }
+    _war_mark_dirty(env);
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_DELAY);
     if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_DELAY, 0, 60.0);
@@ -2103,6 +2119,7 @@ static inline void war_gate(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "gate: bad args"); return;
         }
     }
+    _war_mark_dirty(env);
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_GATE);
     if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_GATE, 0, -40.0);
@@ -2193,6 +2210,7 @@ static inline void war_deesser(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "deesser: bad args"); return;
         }
     }
+    _war_mark_dirty(env);
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_DEESSER);
     if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_DEESSER, 0, -30.0);
@@ -2281,6 +2299,7 @@ static inline void war_chorus(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "chorus: bad args"); return;
         }
     }
+    _war_mark_dirty(env);
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_CHORUS);
     if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_CHORUS, 0, 0.3);
@@ -2360,6 +2379,7 @@ static inline void war_autotune(war_env* env) {
             snprintf(env->status_msg, sizeof(env->status_msg), "autotune: bad args"); return;
         }
     }
+    _war_mark_dirty(env);
     uint8_t was_active = _war_effect_active(slot, WAR_EFFECT_AUTOTUNE);
     if (turn_on) {
         _war_effect_set_param(slot, WAR_EFFECT_AUTOTUNE, 0, 3.0);
@@ -2507,6 +2527,7 @@ static inline void war_capture_audio(war_env* env) {
             env->capture_slots[idx].count = 0;
             env->capture_slots[idx].capacity = 0;
         }
+        _war_mark_dirty(env);
         env->atomics->capture = 1;
         // flush stale data from previous capture
         const char* _dcname = env->dev_nodes[env->capture_mode > 0 ? env->capture_mode - 1 : 0];
@@ -2525,6 +2546,8 @@ static inline void war_capture_audio(war_env* env) {
 
 static inline void war_capture_audio_midi(war_env* env) {
     int was_capturing = env->atomics->capture;
+    if (!was_capturing && env->active_mode == WAR_MODE_ID_MIDI)
+        env->active_mode = WAR_MODE_ID_ROLL;
     war_capture_audio(env);
     // device routing — runs in any mode when capture starts
     if (!was_capturing && env->atomics->capture) {
@@ -2870,6 +2893,17 @@ static inline void war_place_note(war_env* env) {
         note->instance[i].tick);
 }
 
+// mark dirty without touching the undo tree: saved state no longer reachable via undo
+static inline void _war_mark_dirty(war_env* env) {
+    env->file_dirty = 1;
+    env->undo_save_marker = UINT32_MAX;
+}
+
+// recompute dirty from undo position vs the position saved at last save
+static inline void _war_update_dirty(war_env* env) {
+    env->file_dirty = (env->undo_pos != env->undo_save_marker) ? 1 : 0;
+}
+
 static inline void war_undo_save(war_env* env) {
     war_note_context* note = env->ctx_note;
     if (!note) return;
@@ -2898,6 +2932,10 @@ static inline void war_undo_save(war_env* env) {
         env->undo_audio_size[WAR_UNDO_MAX - 1] = 0;
         env->undo_count--;
         env->undo_pos--;
+        if (env->undo_save_marker > 0)
+            env->undo_save_marker--;
+        else
+            env->undo_save_marker = UINT32_MAX; // saved snapshot evicted from history
     }
     // save current state at undo_pos, then advance
     uint32_t idx = env->undo_pos;
@@ -2914,6 +2952,7 @@ static inline void war_undo_save(war_env* env) {
     env->undo_pos++;
     if (env->undo_pos > env->undo_count)
         env->undo_count = env->undo_pos;
+    env->file_dirty = 1;
 }
 
 // save current capture_slot state for the same slots encoded in entry save_idx-1
@@ -3011,6 +3050,7 @@ static inline void war_undo(war_env* env) {
         note->instance_count = cnt;
     }
     env->undo_pos = restore_idx;
+    _war_update_dirty(env);
 }
 
 static inline void war_redo(war_env* env) {
@@ -3027,6 +3067,7 @@ static inline void war_redo(war_env* env) {
         note->instance_count = cnt;
     }
     env->undo_pos = restore_idx;
+    _war_update_dirty(env);
 }
 
 static inline void war_trim_note_under_cursor(war_env* env) {
@@ -3081,7 +3122,7 @@ static inline void war_delete_note_under_cursor(war_env* env) {
             float nx0 = note->instance[i].pos[0];
             float nx1 = nx0 + note->instance[i].size[0];
             float ny = note->instance[i].pos[1];
-            if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
+            if (nx0 <= x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
                 uint32_t _dl = (note->instance[i].flags >> 4) & 0xF;
                 if (_dl >= 1 && _dl <= 9 && !(env->layer_visible & (1 << (_dl - 1)))) continue;
                 uint32_t last = note->instance_count - 1;
@@ -3334,7 +3375,7 @@ static inline void war_yank(war_env* env) {
         float nx0 = note->instance[i].pos[0];
         float nx1 = nx0 + note->instance[i].size[0];
         float ny = note->instance[i].pos[1];
-        if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
+        if (nx0 <= x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
             uint32_t _yl = (note->instance[i].flags >> 4) & 0xF;
             if (_yl >= 1 && _yl <= 9 && !(env->layer_visible & (1 << (_yl - 1)))) continue;
             count++;
@@ -3355,7 +3396,7 @@ static inline void war_yank(war_env* env) {
         float nx0 = note->instance[i].pos[0];
         float nx1 = nx0 + note->instance[i].size[0];
         float ny = note->instance[i].pos[1];
-        if (nx0 < x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
+        if (nx0 <= x1 && nx1 > x0 && ny >= y0 && ny <= y1) {
             uint32_t _yl2 = (note->instance[i].flags >> 4) & 0xF;
             if (_yl2 >= 1 && _yl2 <= 9 && !(env->layer_visible & (1 << (_yl2 - 1)))) continue;
             env->yank_buffer[j] = note->instance[i];

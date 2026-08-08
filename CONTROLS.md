@@ -96,9 +96,11 @@ Neovim-style key macro recording: record your key presses, then replay them.
 | `q` + `0-9` / `a-z` / `A-Z` | Record into that register (e.g. `qd`, `qA`, `q1`); `q` again stops recording |
 | `Escape` | Cancel waiting for a register, or stop without… (press during `q?` prompt) |
 | `@` + `0-9` / `a-z` / `A-Z` | Play back a recorded register (e.g. `@d`, `@c`) — works in any mode |
+| `<n>` + `@` + register | Play a register `<n>` times (e.g. `5@a`); leading digits are the repeat count |
 | `Escape` | Cancel waiting for a register during the `@?` prompt |
 
 - Registers are overwritten when you record into them again; `@` on an empty register shows a status message.
+- Repeat count caps at 1000; `@a` without a prefix plays once.
 - Everything typed while recording is captured (including `:` commands and MIDI mode keys). The `q` that stops recording is not captured.
 - During active audio capture, `q` keeps its capture-and-advance meaning (see Audio Capture above).
 - Auto-repeat (holding a key) records only the initial press; held note keys still work normally while recording.

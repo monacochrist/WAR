@@ -555,6 +555,8 @@ static void war_save_project(war_env* env, const char* filename) {
         }
     }
     fclose(f);
+    env->undo_save_marker = env->undo_pos;
+    env->file_dirty = 0;
     snprintf(env->status_msg, sizeof(env->status_msg), "%s saved (%u notes, %u slots)",
              strlen(path) > 75 ? path + strlen(path) - 75 : path, note_count, slot_count);
     fprintf(stderr, "SAVE: wrote %s (%u notes, %u slots)\n",
@@ -693,6 +695,8 @@ static void war_load_project(war_env* env, const char* filename) {
         }
     }
     fclose(f);
+    env->undo_save_marker = env->undo_pos;
+    env->file_dirty = 0;
     if (env->master_gain < -500000.0f) env->master_gain = 0.0f;
     snprintf(env->status_msg, sizeof(env->status_msg), "%s loaded (%u notes, %u slots)",
              strlen(path) > 75 ? path + strlen(path) - 75 : path, note_count, slot_count);
@@ -801,6 +805,7 @@ static void war_load_inst(war_env* env, const char* filename) {
         }
     }
     fclose(f);
+    _war_mark_dirty(env);
     snprintf(env->status_msg, sizeof(env->status_msg), "%s loaded (layer %d, %u pitches)",
              strlen(path) > 65 ? path + strlen(path) - 65 : path, layer, count);
     fprintf(stderr, "LOADINST: loaded %s (layer=%d, %u pitches)\n", path, layer, count);
@@ -1438,6 +1443,7 @@ static void war_handle_key(war_wayland_context* ctx_wayland, uint32_t key,
                     int _gnp = _war_sel_pitches(env, _gpitches);
                     for (int _gi = 0; _gi < _gnp; _gi++)
                         _war_sel_slot(env, _gpitches[_gi])->gain = (float)_gv;
+                    _war_mark_dirty(env);
                     if (_gnp > 1)
                         snprintf(env->status_msg, sizeof(env->status_msg), "G%+.0f (%d rows)", (float)_gv, _gnp);
                     else
@@ -1452,6 +1458,7 @@ static void war_handle_key(war_wayland_context* ctx_wayland, uint32_t key,
                     int _pnp = _war_sel_pitches(env, _ppitches);
                     for (int _pi = 0; _pi < _pnp; _pi++)
                         _war_sel_slot(env, _ppitches[_pi])->pan = _pv;
+                    _war_mark_dirty(env);
                     if (_pnp > 1)
                         snprintf(env->status_msg, sizeof(env->status_msg), "P%+d (%d rows)", _pv, _pnp);
                     else
@@ -2367,7 +2374,7 @@ static void _war_macro_end_record(war_env* env) {
              env->macro_reg_len[reg]);
 }
 
-static void _war_macro_play(war_env* env, int reg) {
+static void _war_macro_play(war_env* env, int reg, uint32_t count) {
     war_wayland_context* wl = env->ctx_wayland;
     uint32_t n = env->macro_reg_len[reg];
     if (!n) {
@@ -2375,18 +2382,23 @@ static void _war_macro_play(war_env* env, int reg) {
                  "macro: @%c is empty", _war_macro_reg_char(reg));
         return;
     }
+    if (count < 1) count = 1;
+    if (count > 1000) count = 1000;
     env->macro_playback_active = 1;
     wl->repeat_active = 0;
     struct itimerspec off = {0};
     timerfd_settime(wl->repeat_timer_fd, 0, &off, NULL);
-    for (uint32_t i = 0; i < n; i++) {
-        war_macro_event* ev = &env->macro_regs[reg][i];
-        war_handle_key(wl, 0, ev->raw_sym, ev->keysym, ev->mod, ev->pressed,
-                       (uint32_t)(war_get_monotonic_time_us() / 1000));
+    for (uint32_t c = 0; c < count; c++) {
+        for (uint32_t i = 0; i < n; i++) {
+            war_macro_event* ev = &env->macro_regs[reg][i];
+            war_handle_key(wl, 0, ev->raw_sym, ev->keysym, ev->mod, ev->pressed,
+                           (uint32_t)(war_get_monotonic_time_us() / 1000));
+        }
     }
     env->macro_playback_active = 0;
     snprintf(env->status_msg, sizeof(env->status_msg),
-             "macro: @%c played (%u events)", _war_macro_reg_char(reg), n);
+             "macro: @%c played (%ux, %u events)", _war_macro_reg_char(reg),
+             count, n);
 }
 
 static void war_keyboard_key(void* data,
@@ -2453,7 +2465,7 @@ static void war_keyboard_key(void* data,
             int reg = _war_macro_reg_index(keysym);
             env->macro_play_pending = 0;
             if (reg >= 0) {
-                _war_macro_play(env, reg);
+                _war_macro_play(env, reg, env->macro_play_count);
                 return;
             }
             // not a register: fall through to normal handling
@@ -2470,11 +2482,20 @@ static void war_keyboard_key(void* data,
                 timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &off, NULL);
                 return;
             }
-            // '@' (shift+2) plays back a macro
-            if (raw_sym == XKB_KEY_at) {
+            // '@' (shift+2) plays back a macro; ignore if Alt/Ctrl/Logo also
+            // held so combos like <A-S-2> (toggle layer 2) stay distinct.
+            // A numeric prefix (cur->prefix) becomes the repeat count: 5@a
+            // plays register 'a' five times.
+            if (raw_sym == XKB_KEY_at &&
+                !(mod & (MOD_ALT | MOD_CTRL | MOD_LOGO))) {
+                uint32_t _count = env->ctx_cursor->prefix;
+                if (_count == 0) _count = 1;
+                if (_count > 1000) _count = 1000;
+                env->macro_play_count = _count;
+                env->ctx_cursor->prefix = 0;
                 env->macro_play_pending = 1;
                 snprintf(env->status_msg, sizeof(env->status_msg),
-                         "macro: play register (0-9 a-z A-Z)");
+                         "macro: play register x%u (0-9 a-z A-Z)", _count);
                 ctx_wayland->repeat_active = 0;
                 struct itimerspec off = {0};
                 timerfd_settime(ctx_wayland->repeat_timer_fd, 0, &off, NULL);
@@ -2925,6 +2946,8 @@ int main(int argc, char** argv) {
     env->undo_count = 0;
     env->undo_pos = 0;
     env->current_project_path[0] = '\0';
+    env->file_dirty = 0;
+    env->undo_save_marker = 0;
     env->undo_note_counts = calloc(WAR_UNDO_MAX, sizeof(uint32_t));
     env->undo_notes = calloc(WAR_UNDO_MAX, sizeof(war_new_vulkan_note_instance*));
     env->undo_audio_data = calloc(WAR_UNDO_MAX, sizeof(uint8_t*));

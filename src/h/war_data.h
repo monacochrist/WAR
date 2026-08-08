@@ -2873,6 +2873,7 @@ struct war_env {
     uint8_t macro_reg_pending;
     uint8_t macro_play_pending;
     uint8_t macro_playback_active;
+    uint32_t macro_play_count;
     // Demucs stem extraction job queue (async worker)
     pthread_t stem_thread;
     pthread_mutex_t stem_mutex;
@@ -2906,6 +2907,8 @@ struct war_env {
     uint8_t** undo_audio_data; // flat per-entry: [n_slots(uint32), slot_idx(uint32), count(uint64), cap(uint64), samples(count*float), ...]
     uint64_t* undo_audio_size; // byte size of each undo_audio_data entry
     char current_project_path[1024];
+    uint8_t file_dirty;
+    uint32_t undo_save_marker; // undo_pos at last save; file clean iff undo_pos == undo_save_marker
 };
 
 typedef struct war_wayland_context {
